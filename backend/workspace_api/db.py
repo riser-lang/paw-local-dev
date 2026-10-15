@@ -738,6 +738,8 @@ def migrate() -> dict:
         _ensure_project_explainer_schema(conn)
         _ensure_v2_3_1_migration(conn)
         _ensure_governance_and_runtime_schema(conn)
+        from backend.pm.storage import migrate as migrate_pm
+        migrate_pm(conn)
         conn.executescript(
             """
             CREATE INDEX IF NOT EXISTS idx_wiki_drive_parent ON wiki_page(drive_id, parent_id);

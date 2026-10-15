@@ -113,14 +113,11 @@ def isolated_read_artifact(inp: ReaderInput, output_dir: str | Path, timeout: in
             cmd = [sys.executable, "--reader-worker", inp_json_path, str(out_p)]
         else:
             cmd = [sys.executable, "-m", "backend.reader.subprocess_worker", inp_json_path, str(out_p)]
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        from backend.pm.reader_process import process_options
+        try:
+            proc = subprocess.Popen(cmd, **process_options())
+        except OSError as exc:
+            return False, None, 'SUBPROCESS_START_FAILED', '解析进程无法启动（系统错误码：' + str(getattr(exc, 'winerror', None) or exc.errno) + '）'
 
         try:
             stdout_data, stderr_data = proc.communicate(timeout=timeout)

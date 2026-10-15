@@ -33,6 +33,10 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install Python Build Dependencies
         run: |
           python -m pip install --upgrade pip
@@ -68,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        block: [B1, B2, B3, B4, B5, B6, B7, B8]
+        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -131,6 +135,10 @@ jobs:
           Write-Host "Target Installer: $installer"
           mkdir -p reports
           python tests/run_e2e_tests.py --block ${{ matrix.block }} --installer-exe $installer --commit-sha ${{ github.sha }} --model-mode mock-llm --output-report reports/report_${{ matrix.block }}.json
+
+      - name: Verify cross-pipeline source completion
+        if: always() && matrix.block == 'PM02'
+        run: python scripts/verify_source_completion.py
 
       - name: Scan Artifacts for Credential Leaks
         if: always()
@@ -195,6 +203,12 @@ jobs:
           mkdir -p baseline_installer
           gh release download v2.3.7-baseline --repo ${{ github.repository }} --dir baseline_installer
 
+      - name: Download Baseline v2.3.9 Governance Negative Control
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path baseline_pm -Force | Out-Null
+          gh release download v2.3.9-baseline --repo ${{ github.repository }} --pattern '*.exe' --dir baseline_pm
+
       - name: Download Built Installer
         uses: actions/download-artifact@v4
         with:
@@ -229,6 +243,12 @@ jobs:
           Write-Host "Current 2.3.9 Installer: $current"
           mkdir -p reports
           python tests/run_e2e_tests.py --block NEGATIVE-CONTROL --installer-exe $current --baseline-exe $baseline --commit-sha ${{ github.sha }} --model-mode mock-llm --output-report reports/report_negative_control.json
+
+      - name: Execute PM Governance Negative Control
+        shell: pwsh
+        run: |
+          $baselinePm = (Get-ChildItem -Path baseline_pm\*.exe)[0].FullName
+          python tests/run_pm_tests.py --installer-exe $baselinePm --commit-sha ${{ github.sha }} --output-report reports/report_negative_pm.json
 
       - name: Scan Artifacts for Credential Leaks
         if: always()

@@ -30,6 +30,8 @@ class AgentPlanner:
         file_hash: str,
     ) -> List[str]:
         """Core planning execution when ANALYSIS_READY event occurs."""
+        from backend.pm.storage import ingest_evidence
+        ingest_evidence(evidence, file_hash)
         display_name = evidence.get("display_name") or "untitled"
         text_blocks = evidence.get("text_blocks", [])
         combined_text = " ".join(b.get("text", "") for b in text_blocks[:15])
@@ -46,6 +48,7 @@ class AgentPlanner:
         raw_proposals = provider.propose(evidence, projects, knowledge_items)
 
         created_candidate_ids = []
+        failed_proposals = 0
 
         # 4. Evaluate each proposal with Conflict Analyzer
         for prop in raw_proposals:
@@ -90,7 +93,11 @@ class AgentPlanner:
                 )
                 created_candidate_ids.append(cid)
             except Exception as exc:
+                failed_proposals += 1
                 logger.error(f"AgentPlanner failed to create candidate: {exc}", exc_info=True)
+
+        if failed_proposals:
+            raise RuntimeError(f'候选落库失败 {failed_proposals} 条；资料分析未完成，可重试')
 
         # 6. Publish REVIEW_REQUIRED event
         if created_candidate_ids:

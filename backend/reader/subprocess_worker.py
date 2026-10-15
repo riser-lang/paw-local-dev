@@ -21,6 +21,8 @@ from backend.reader.dispatch import read_artifact
 
 
 def main(args: list[str] | None = None) -> int:
+    from backend.pm.child_stdio import emit_json, force_utf8_stdio
+    force_utf8_stdio()
     if args is None:
         args = sys.argv[1:]
     if len(args) < 2:
@@ -42,25 +44,23 @@ def main(args: list[str] | None = None) -> int:
         )
 
         res = read_artifact(inp, output_dir)
-        sys.stdout.write(json.dumps({
+        emit_json({
             "ok": True,
             "reader_type": res.reader_type,
             "result_json": str(output_dir / "reader_result.json"),
             "fidelity_flags": res.fidelity_flags,
             "warnings": res.warnings,
-        }, ensure_ascii=False))
-        sys.stdout.flush()
+        })
         return 0
     except Exception as exc:
         err_msg = str(exc)
         tb = traceback.format_exc()
         sys.stderr.write(f"Worker parse error: {err_msg}\n{tb}\n")
-        sys.stdout.write(json.dumps({
+        emit_json({
             "ok": False,
             "error": err_msg,
             "error_type": type(exc).__name__,
-        }, ensure_ascii=False))
-        sys.stdout.flush()
+        })
         return 1
 
 

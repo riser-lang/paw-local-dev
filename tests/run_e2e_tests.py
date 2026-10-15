@@ -17,6 +17,7 @@ import sys
 import time
 import urllib.request
 import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 
@@ -242,31 +243,44 @@ def configure_mock_settings(work_dir: Optional[Path] = None):
 
 
 def poll_candidates_from_scanner(timeout_sec: int = 40) -> List[Dict[str, Any]]:
-    cand_list = []
-    for sec in range(timeout_sec):
-        time.sleep(1.0)
-        db_path = get_db_path()
-        if not db_path.exists():
-            continue
-        conn = sqlite3.connect(str(db_path), timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT * FROM candidate WHERE status='pending'").fetchall()
-        cand_list = [dict(r) for r in rows]
-        conn.close()
-        
-        scanner_status = ""
-        try:
-            prog = httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0).json()
-            scanner_status = prog.get("status", "")
-        except Exception:
-            pass
-            
-        if len(cand_list) >= 3 or (len(cand_list) >= 1 and scanner_status in ("idle", "completed") and sec >= 8):
-            logger.info(f"Candidates generated after {sec+1}s: {len(cand_list)} found (scanner_status={scanner_status})")
-            break
-        if (sec + 1) % 5 == 0:
-            logger.info(f"Waiting for candidates at {sec+1}s: {len(cand_list)} found (scanner_status={scanner_status})")
-    return cand_list
+    from tests.scanner_wait import wait_for_scan
+    def candidates():
+        with closing(sqlite3.connect(str(get_db_path()), timeout=10)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = [dict(r) for r in conn.execute("SELECT * FROM candidate WHERE status='pending'")]
+            logger.info('Completion barrier read %d pending proposals', len(rows))
+            return rows
+    def progress():
+        result = httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0).json()
+        if result.get('status') in ('completed', 'failed'):
+            logger.info('Scan completion evidence: %s', {k: result.get(k) for k in (
+                'status','total_files','phase1_success','phase2_success','failed_files','new_candidates_count')})
+            logger.info('Scan ingestion failures: %s', [{k:item.get(k) for k in ('file_name','error_type','error_message')}
+                                                       for item in result.get('failed_items',[])])
+        checkpoint = get_db_path().parent / 'scan_checkpoint.json'
+        if result.get('status') == 'completed' and checkpoint.is_file():
+            try:
+                checkpoint_data = json.loads(checkpoint.read_text(encoding='utf-8'))
+            except json.JSONDecodeError:
+                # Writer is replacing its checkpoint; this is not completion yet.
+                result['pipeline_complete'] = False
+                return result
+            files = checkpoint_data.get('files', checkpoint_data)
+            hashes = {entry['hash'] for entry in files.values() if isinstance(entry, dict) and entry.get('phase1_status') == 'success'}
+            if result.get('phase1_success', 0) and not hashes:
+                raise RuntimeError('扫描已摄取资料但检查点缺少来源哈希')
+            with closing(sqlite3.connect(str(get_db_path()), timeout=10)) as conn:
+                exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='analyzed_source'").fetchone()
+                if exists:
+                    columns = {r[1] for r in conn.execute('PRAGMA table_info(analyzed_source)')}
+                    sql = "SELECT file_hash FROM analyzed_source"
+                    if 'completion_state' in columns:
+                        sql += " WHERE completion_state='complete'"
+                    complete = {r[0] for r in conn.execute(sql)}
+                    result['pipeline_complete'] = hashes.issubset(complete)
+                    logger.info('Source completion evidence: expected=%d complete=%d all_done=%s',len(hashes),len(complete),result['pipeline_complete'])
+        return result
+    return wait_for_scan(candidates, progress, timeout_sec)
 
 
 def parse_candidate_types(cand_list: List[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -1231,6 +1245,9 @@ def main():
         run_b7(report, inst_path)
     elif block == "B8":
         run_b8(report, inst_path)
+    elif block == "PM02":
+        from tests.run_pm_tests import run_c02
+        run_c02(report, inst_path)
     elif block == "NEGATIVE-CONTROL":
         base_path = Path(args.baseline_exe)
         if base_path.is_dir():

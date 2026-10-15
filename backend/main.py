@@ -997,6 +997,17 @@ def get_recent_events():
 
 # ── Frontend Static Assets & SPA Routing ──────────────────────────────────────
 
+from backend.pm.router import router as pm_router
+app.include_router(pm_router, prefix='/v1/pm', tags=['project-management'])
+pm_dist = FRONTEND_DIST / 'pm'
+if pm_dist.is_dir():
+    app.mount('/pm-assets', StaticFiles(directory=str(pm_dist)), name='pm-assets')
+
+
+@app.get('/app/pm/projects/{project_id}', include_in_schema=False)
+def pm_project_page(project_id: str):
+    return FileResponse(str(pm_dist / 'index.html'), headers={'Cache-Control': 'no-store'})
+
 assets_dir = FRONTEND_DIST / "assets"
 if assets_dir.is_dir():
     app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="web-assets")

@@ -1,0 +1,6 @@
+{
+  "name": "paw-project-management",
+  "private": true,
+  "scripts": {"build": "node build.mjs"},
+  "devDependencies": {"esbuild": "0.25.10"}
+}
