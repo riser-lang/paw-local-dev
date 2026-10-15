@@ -1,0 +1,98 @@
+# Codex 开工必读（PAW 本地版 · 项目管理体系升级）
+
+更新于 2026-10-15，作者：Claude Code（审核人）。你是**执行者**，没有任何前情，请完整读完本文件再动手。
+
+## 0. 仓库与边界
+- 你的仓库：**公开仓库 `riser-lang/paw-local-dev`**，本地目录 `D:\PAW\paw-dev`。它是参赛版 2.3.9（私有仓库 tag v1.0.0-rc1）的一份清理过的快照，历史从这里开始。
+- **禁止触碰**：私有仓库 `riser-lang/paw-local`、目录 `D:\PAW\paw-beta`、`D:\PAW\paw-wt-claude`、`D:\PAW\参赛提交\`。那是比赛存档。
+- 仓库是公开的，**任何提交、日志、截图、报告都等于公开发布**：不得出现真实 Key、个人信息、服务器地址或 IP、用户真实文档。测试数据一律虚构。
+
+## 1. 三个角色
+| 角色 | 职责 |
+|---|---|
+| 产品负责人 | 不懂代码，时间很少；只在"上线前验收"时动手操作 |
+| 审核人 Claude Code | 审核 PR、判定、合并；掌管测试判定规则；亲自处理架构和判定逻辑上的难题 |
+| 你（Codex） | 实现、写测试、修复、写报告。**不得自行合并 PR** |
+
+## 2. 交接循环（每个任务都一样）
+1. 任务写在 `_handoff/TASK-C-xx.md`（审核人下达）；第一个任务 TASK-C-01 已经写好。
+2. 你在分支 `codex/C-xx` 上工作，开 PR 合入 `main`。
+3. 推送后云端自动测试（见第 5 节）。**等测试结果出来再写报告**，不论红绿都如实写。
+4. 写 `_handoff/DONE-C-xx.md`（格式见第 7 节），推送到同一个分支。
+5. 你在对话里的最后一句**只能是**这一行，让产品负责人原样转给审核人：
+   `Codex 完成了 C-xx，PR #<编号>，测试 <GREEN/RED>，报告 _handoff/DONE-C-xx.md`
+6. 审核人写 `_handoff/REVIEW-C-xx.md`：通过就由审核人合并，并下达下一个 TASK；不通过就写明要改什么，你在同一个分支上改。
+7. **并行规则（为了快）**：等审核期间，你可以开始下一个任务（新分支从 main 拉，或者在上一个分支的基础上叠加，在 DONE 报告里写清依赖关系）。未经审核通过的 PR 一律不得合并。
+
+## 3. 红线（违反任何一条直接打回）
+1. 正式数据只能经过 ReviewDecision → ApprovedChange → Committer 写入（`backend/governance/`），不得直接写业务表；新增的写入类型也必须走这条链路，并且可以撤销。
+2. `tests/paw_case.py`、`tests/paw_verdict.py`、`tests/paw_lint.py`、`tests/required_cases*.json` 归审核人所有。新功能的用例写进 `tests/proposed_cases_C-xx.json`（格式与 required_cases.json 相同），审核通过后由审核人改名为 `required_cases_C-xx.json`，此后即成为必过项。
+3. 不得修改测试预期、降低断言、跳过用例，也不得写永远成立的检查。lint 会拦住一部分，审核人还会人工看代码。以前的执行者就是这样栽的，见 `REVIEW-04.md` 到 `REVIEW-06.md`。
+4. 同一个问题最多自修 3 次，还不行就停下，在 DONE 报告里写明。
+5. 不连接任何服务器，不用 SSH。测试只用假 Key 和 mock-llm（`scripts/mock_openai_server.py`）；mock 只能根据请求内容作答，不得读取用例或判断用例编号。
+6. 不 force push，不改写历史，不删除文件（重构时移动文件可以，在报告里说明）。
+7. 每个结论都要附命令和关键输出；数字要注明来源；NOT RUN 不得写成 PASS；拿不准就写"未确认"。
+8. 用户已定的规则 R1–R5（见需求文档 4.4）原样遵守。凡是写着"由用户决定"的事项，绝不让 AI 自动处理。
+
+## 4. 上下文去哪看
+1. 需求：`_handoff/specs/PM_SYSTEM_SPEC_CLOUD_20261015.md`（云端原始需求，本地版按下表改编）
+2. 进度：`_handoff/STATUS.md`
+3. 程序结构：`_handoff/PROJECT_MAP.md`。后端是 FastAPI，入口 `run.py` → `backend/main.py`；审核写入链路在 `backend/governance/`；2.3.8 起的修补集中在 `backend/repair_v238.py`；扫描 → AI 提议在 `backend/runtime_core/planner.py` 和 `backend/provider/adapter.py`；数据库迁移在 `backend/workspace_api/db.py`
+4. 需求里提到的旧模块，本地大多同源存在：`backend/runtime/core/` 下的 paw_source_version_governance.py（根因 C1）、paw_project_semantic_coherence.py、paw_temporal_authority.py、paw_patrol_project_revision.py、paw_project_outcome.py；手册相关在 `backend/workspace_api/project_handbook.py`
+5. 测试流水线：`.github/workflows/test.yml` 和 `tests/run_e2e_tests.py`
+
+### 本地版改编（与需求文档冲突时，以此表为准）
+| 云端 | 本地版 |
+|---|---|
+| 语义工作由云端巡航执行者经 MCP 完成 | 由本地程序在巡航时用**用户自己的 Key** 调用模型完成；没有 Key 时显示"需要填写 Key 才能生成"，**不得编造内容**。每类语义工作写成"语义任务契约"（输入 / 输出 JSON schema），放在 `backend/pm/contracts/`；输出先校验 schema，不合格就丢弃并记录 |
+| 阶段 A 运维底座 | 只做：备份轮转和占用上限（目前每次批量核准都整库备份，会越积越多）、备份可恢复自检、系统状态红绿灯（巡航、扫描、备份、模型连通） |
+| WPS 镜像 | 用监控文件夹代替；随手记如本地已有入口就接上，没有就新增一个最简单的输入框 |
+| 新代码放哪里 | 新模块放 `backend/pm/`（档案、栏目配置、版本裁定、冲突判定、健康检查等），只依赖标准库 + 现有数据接口，通过一层存储适配访问数据库 |
+| 数据库 | 新表、新字段只能"增加"，用 migrate 实现；2.3.9 的旧库升级后必须能打开，数据不丢 |
+
+## 5. 测试：开发和测试并行
+- **快速测试**（每次推送都跑）：新建 `.github/workflows/unit.yml`，在 ubuntu-latest 上跑 pytest（`tests/unit/`），覆盖 `backend/pm/` 的纯逻辑：版本裁定、R3 分级、冲突判定、预算裁剪、schema 校验等。目标 5 分钟以内。
+- **完整测试**（每个 PR 都跑，仓库公开所以免费）：现有 test.yml 在 Windows 上把每个用例都清空、重装、实测，由 `paw_verdict.py` 统一判定。新功能的端到端用例沿用同样的写法：`with report.case(...) as c: c.fresh_install(...)`。
+- 截图：新页面用有界面的浏览器打开，桌面 1440px 宽、手机 390px 宽各截一张，作为产物上传；`c.screenshot()` 传入该页面的真实网址。
+- 推送前本地自查：`python tests/paw_lint.py` 必须输出 `lint clean`；`pytest tests/unit` 必须全部通过。
+
+## 6. 验收（三层，缺一层都不算完成）
+1. **自动验收**：同一个提交上 unit.yml 和 test.yml 都是 GREEN（paw_verdict 判定 GREEN，包括已批准的新用例）。
+2. **审核人验收**：逐个 PR 看代码、看测试有没有放水、对照需求逐条核对，写 REVIEW-C-xx.md。
+3. **产品负责人验收**：只在"上线"前做一次。审核人会写一份 10–15 分钟、大白话的验收清单；产品负责人照着在自己电脑上点一遍，反馈"对 / 不对 + 截图"。
+
+## 7. DONE 报告格式（`_handoff/DONE-C-xx.md`）
+1. 本任务子项逐条对照：完成 / 部分完成 / 未做 + 原因
+2. 改动清单：文件路径 + 改动目的
+3. 测试：unit 和 E2E 的运行链接（必须是 PR 头部提交）；`summary.md` 全文原样粘贴；新增用例清单（proposed_cases 文件）
+4. 截图文件名（来自哪次运行的产物）
+5. 风险、未确认事项、需要审核人或产品负责人决定的事
+6. 不超过 5 行的大白话摘要
+
+## 8. 上线（发布新版本）流程
+1. 一个阶段组合（见第 9 节）全部合并后，审核人通知你打发布候选：版本号改为 `2.4.0`，在 main 上打 tag `v2.4.0-rc1`。
+2. tag 触发完整测试，必须 GREEN；用这次运行的产物建一个**草稿** GitHub Release，附上安装包、SHA256、使用说明（同步更新新功能）和版本说明。
+3. 审核人核对，并写验收清单 → 产品负责人验收 → 审核人给出"可以上线"后，由审核人把 Release 从草稿改为正式发布。
+4. 出了问题怎么回滚：用户重装上一个正式版本的安装包即可。所以新版本必须保证旧库升级后能打开、数据不丢。
+
+## 9. 路线图（按顺序；每一项是一个 TASK，审核人按顺序下达）
+| 任务 | 内容 | 对应需求 |
+|---|---|---|
+| C-01 | 调研 + 测试底座 + 设计变量（已写好，见 TASK-C-01.md） | — |
+| C-02 | 项目档案数据层：栏目配置、档案结构（当前结论 + 来源 + 历史 + 撤销）、语义任务契约框架 | B1、B5 |
+| C-03 | 文档族版本自动裁定（R1/R2）+ 修复 C1、C2 | B2 |
+| C-04 | 栏目更新流程（一致 / 补充 / 替换 / 冲突，R3）+ 冲突清单 + 资料覆盖率与定向复读（C3） | B3、B4 |
+| C-05 | 输入自动流转 + 去向回执 + 低置信度归属进"需要你决定" | D1、D2 |
+| C-06 | 前端：驾驶舱、项目页、统一的"需要你决定"收件箱、最近变化时间线、手绘甘特图、手机端 | C1–C4、第 11 节 |
+| C-07 | 本地运维：备份轮转 + 上限、恢复自检、系统状态红绿灯 | A（本地部分） |
+| **发布** | v2.4.0-rc1 → 产品负责人验收 → 正式上线 | 第 8 节 |
+| C-08 | 缺口 / 风险 / 下一步建议（事实与建议分开）；AI 助手建议类问答（修复 C5） | E1、E2 |
+| C-09 | 每日健康检查 + 知识缺口清单 | E3、E4 |
+| C-10 | 周报、跨项目对比、进化指标、20–30 道标准考题回归 | F1–F3 |
+| **发布** | v2.5.0-rc1 → 验收 → 上线 | — |
+
+## 10. 前端（已裁定，不用再提方案）
+仓库里只有编译后的 `frontend/dist/assets/index-*.js`，没有 React 源码。**不要改那个压缩文件。** 新页面单独做成一个前端包：
+- 源码放 `frontend/pm-src/`（原生 JS 或 Preact 都可以），用 esbuild 构建到 `frontend/dist/pm/`；构建脚本放进打包流程，产物纳入安装包。
+- 由后端托管路由 `/app/pm/...`；现有页面通过 index.html 注入的脚本（参照现有的 `frontend/dist/paw_console.js`）加入导航入口，例如左侧"驾驶舱"，并把项目页链接到新档案页。
+- 设计：遵守需求文档第 11 节。先提取现有设计变量，写入 `_handoff/DESIGN_TOKENS.md`；rough.js、字体全部打包到本地，并记录许可证（`frontend/pm-src/THIRD_PARTY.md`）。

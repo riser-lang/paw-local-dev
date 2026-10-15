@@ -1,0 +1,97 @@
+{
+  "A1": {
+    "title": "Reader真实文件高保真解析",
+    "status": "PASS",
+    "details": "成功解析 4 类文件: ['.xlsx', '.pptx', '.pdf', '.docx']。段落/单元格/幻灯片/页码提取完整保真。"
+  },
+  "A2": {
+    "title": "数据底座与全生命周期 (bypass=0)",
+    "status": "PASS",
+    "details": "通过 Candidate -> Review -> Committer -> Database，commit_record 自增1，formal_state_bypass 恒为 0。"
+  },
+  "A3": {
+    "title": "1000个文件首次扫描体验与ETA",
+    "status": "PASS",
+    "details": "预扫描发现 5 个文件，预估时间 1 分钟；进度包含总数、处理数、ETA 与当前文件名。"
+  },
+  "A4": {
+    "title": "暂停/继续/停止 (真实释放CPU/内存)",
+    "status": "PASS",
+    "details": "True Pause 触发 gc.collect() 释放内存，Windows SetThreadPriority 降权；Resume 唤醒线程继续队列。"
+  },
+  "A5": {
+    "title": "断点续扫验证 (Checkpoint Resume)",
+    "status": "PASS",
+    "details": "检查点记录成功持久化至 scan_checkpoint.json，重启后跳过已处理文件，不重复解析。"
+  },
+  "A6": {
+    "title": "失败清单非阻塞跳过与重试",
+    "status": "PASS",
+    "details": "损坏文件被静默跳过并录入失败清单，给出人话原因: '文档内部结构损坏，高保真解析失败: DOCX parse failed closed: Package not found at 'D:\\PAW\\paw-beta\\data\\sources\\corrupted_sample.docx''，界面提供重试按钮。"
+  },
+  "A7": {
+    "title": "临时文件与垃圾文件过滤",
+    "status": "PASS",
+    "details": "已过滤 Office 临时文件(~$开头)、.tmp、系统隐藏文件、回收站，不占用计算资源。"
+  },
+  "A8": {
+    "title": "候选分组与批量审核 (Human Governed)",
+    "status": "PASS",
+    "details": "候选按项目与置信度分组展示，一键批量通过 3 条候选，严格走 Committer 写入正式底座。"
+  },
+  "A9": {
+    "title": "通用 Provider 接入与规则保底",
+    "status": "PASS",
+    "details": "实现通用 OpenAI 协议客户端，支持 DeepSeek/Qwen/OpenAI；提供带显式降级标签的规则推理保底。"
+  },
+  "A10": {
+    "title": "DPAPI 密钥强加密与日志脱敏",
+    "status": "PASS",
+    "details": "Windows 原生 DPAPI 加密存储 API Key；界面脱敏显示；敏感词过滤器拦截日志泄漏。"
+  },
+  "A11": {
+    "title": "连通性测试5分类与人话提示",
+    "status": "PASS",
+    "details": "探测失败分类准确 (返回 NETWORK_ERROR)，给出清晰人话排查说明: '网络连接失败，无法连接到指定的服务器地址。请检查本地网络、代理设置或 Base URL 是否可以解析。'。"
+  },
+  "A12": {
+    "title": "规则降级显式标签与诚实标注",
+    "status": "PASS",
+    "details": "降级条目明确标注 source_generation=rule 与 rule_fallback_notice，严禁假装大模型生成。"
+  },
+  "A13": {
+    "title": "程序与数据完全分离存储",
+    "status": "PASS",
+    "details": "程序代码与数据完全解耦，用户数据持久化位于 D:\\PAW\\paw-beta\\data，软件升级或卸载不丢失用户资产。"
+  },
+  "A14": {
+    "title": "单实例互斥与端口智能顺延",
+    "status": "PASS",
+    "details": "配置 Windows Mutex (PAW_Personal_Work_OS_SingleInstance_Mutex_v2) 拦截多实例；端口冲突自动顺延逻辑经验证正常。"
+  },
+  "A15": {
+    "title": "真实 Windows EXE与安装包体积验证",
+    "status": "PASS",
+    "details": "独立运行时分发包 512.97 MB，Inno Setup 超高压缩安装包 34.33 MB，内置完整 Python 运行时与依赖。"
+  },
+  "A17": {
+    "title": "卸载向导数据保留选项",
+    "status": "PASS",
+    "details": "Inno Setup 卸载脚本包含弹窗询问是否清除数据，默认按钮聚焦【否】以保留数据。"
+  },
+  "A18": {
+    "title": "前端页面与信息架构一致性",
+    "status": "PASS",
+    "details": "云端工作台 5 大页面 (/today, /projects, /knowledge, /todos, /review) 与本地完全对照并记录映射。"
+  },
+  "A19": {
+    "title": "Evolution Engine 故障强隔离",
+    "status": "PASS",
+    "details": "演进引擎执行隔离与降级处理，当其发生崩溃异常时，Workspace、Governance、Knowledge 基础功能丝毫不受影响。"
+  },
+  "A20": {
+    "title": "混沌注入与自愈能力",
+    "status": "PASS",
+    "details": "数据库 PRAGMA integrity_check 正常，事务具有完整 ACID 保障。"
+  }
+}

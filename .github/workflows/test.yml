@@ -1,0 +1,292 @@
+name: PAW Verification Pipeline (TASK-G-03)
+
+on:
+  push:
+    branches: [ main, 'codex/**', 'claude/**' ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Standalone Installer
+    runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y --no-progress
+
+      - name: Install Python Build Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.12.0
+
+      - name: Build Standalone Installer
+        run: |
+          python scripts/package_app.py
+
+      - name: Generate Installer SHA256 Text File
+        shell: pwsh
+        run: |
+          $exe = "dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe"
+          $hash = (Get-FileHash -Path $exe -Algorithm SHA256).Hash
+          "$hash  PAW_Personal_Work_OS_Setup_v2.3.9.exe" | Out-File -FilePath "dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe.sha256" -Encoding ascii
+          Get-Content "dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe.sha256"
+
+      - name: Upload Built Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-installer-exe
+          path: |
+            dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe
+            dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe.sha256
+          if-no-files-found: error
+          retention-days: 5
+
+  test-blocks:
+    name: Test Block ${{ matrix.block }}
+    runs-on: windows-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        block: [B1, B2, B3, B4, B5, B6, B7, B8]
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      PYTHONPATH: .
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Block Real AI Endpoints in Hosts File
+        shell: pwsh
+        run: |
+          $hostsPath = "C:\Windows\System32\drivers\etc\hosts"
+          $entries = "`r`n0.0.0.0 api.anthropic.com`r`n0.0.0.0 api.openai.com`r`n0.0.0.0 api.deepseek.com`r`n0.0.0.0 dashscope.aliyuncs.com"
+          Add-Content -Path $hostsPath -Value $entries
+          Write-Host "=== Updated Hosts File Security Barrier ==="
+          Get-Content $hostsPath | Select-Object -Last 6
+
+      - name: Install Test Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt httpx python-docx openpyxl python-pptx pypdf pillow playwright
+          playwright install chromium
+
+      - name: Download Built Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: built-installer-exe
+          path: installer_artifact
+
+      - name: Start Mock Model Server
+        shell: pwsh
+        run: |
+          Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
+          $retries = 15
+          while ($retries -gt 0) {
+            try {
+              $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
+              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live!"; break }
+            } catch {}
+            Start-Sleep -Seconds 1
+            $retries--
+          }
+
+      - name: Generate Test Fixtures
+        run: |
+          python scripts/generate_fixtures.py
+
+      - name: Execute Block Test (${{ matrix.block }})
+        shell: pwsh
+        run: |
+          chcp 65001
+          $installer = (Get-ChildItem -Path installer_artifact\*.exe)[0].FullName
+          Write-Host "Target Installer: $installer"
+          mkdir -p reports
+          python tests/run_e2e_tests.py --block ${{ matrix.block }} --installer-exe $installer --commit-sha ${{ github.sha }} --model-mode mock-llm --output-report reports/report_${{ matrix.block }}.json
+
+      - name: Scan Artifacts for Credential Leaks
+        if: always()
+        run: |
+          python scripts/scan_secrets_leak.py --scan-dir . --secret-value "${{ secrets.AGY_CREDENTIAL }}"
+
+      - name: Upload Block Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.block }}
+          path: reports/
+          retention-days: 5
+
+      - name: Upload Block Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-${{ matrix.block }}
+          path: screenshots/
+          retention-days: 5
+
+  negative-control:
+    name: Negative Controls (NC-01, NC-02, NC-03)
+    runs-on: windows-latest
+    needs: build
+    continue-on-error: true
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      PYTHONPATH: .
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Block Real AI Endpoints in Hosts File
+        shell: pwsh
+        run: |
+          $hostsPath = "C:\Windows\System32\drivers\etc\hosts"
+          $entries = "`r`n0.0.0.0 api.anthropic.com`r`n0.0.0.0 api.openai.com`r`n0.0.0.0 api.deepseek.com`r`n0.0.0.0 dashscope.aliyuncs.com"
+          Add-Content -Path $hostsPath -Value $entries
+          Write-Host "=== Updated Hosts File Security Barrier ==="
+          Get-Content $hostsPath | Select-Object -Last 6
+
+      - name: Install Test Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt httpx python-docx openpyxl python-pptx pypdf pillow playwright
+          playwright install chromium
+
+      - name: Download Baseline v2.3.7 Installer from Release
+        shell: pwsh
+        run: |
+          mkdir -p baseline_installer
+          gh release download v2.3.7-baseline --repo ${{ github.repository }} --dir baseline_installer
+
+      - name: Download Built Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: built-installer-exe
+          path: installer_artifact
+
+      - name: Start Mock Model Server
+        shell: pwsh
+        run: |
+          Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
+          $retries = 15
+          while ($retries -gt 0) {
+            try {
+              $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
+              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live!"; break }
+            } catch {}
+            Start-Sleep -Seconds 1
+            $retries--
+          }
+
+      - name: Generate Test Fixtures
+        run: |
+          python scripts/generate_fixtures.py
+
+      - name: Execute Negative Control Tests
+        shell: pwsh
+        run: |
+          chcp 65001
+          $baseline = (Get-ChildItem -Path baseline_installer\*.exe)[0].FullName
+          $current = (Get-ChildItem -Path installer_artifact\*.exe)[0].FullName
+          Write-Host "Baseline 2.3.7 Installer: $baseline"
+          Write-Host "Current 2.3.9 Installer: $current"
+          mkdir -p reports
+          python tests/run_e2e_tests.py --block NEGATIVE-CONTROL --installer-exe $current --baseline-exe $baseline --commit-sha ${{ github.sha }} --model-mode mock-llm --output-report reports/report_negative_control.json
+
+      - name: Scan Artifacts for Credential Leaks
+        if: always()
+        run: |
+          python scripts/scan_secrets_leak.py --scan-dir . --secret-value "${{ secrets.AGY_CREDENTIAL }}"
+
+      - name: Upload Negative Control Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-negative-control
+          path: reports/
+          retention-days: 5
+
+      - name: Upload Negative Control Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-negative-control
+          path: screenshots/
+          retention-days: 5
+
+  summary:
+    name: Reviewer Verdict Gate
+    runs-on: windows-latest
+    needs: [test-blocks, negative-control]
+    if: always()
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Download All Block Reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          path: all_reports
+          merge-multiple: true
+
+      - name: Execute Reviewer Verdict Gate
+        shell: pwsh
+        run: |
+          chcp 65001
+          Get-ChildItem all_reports -Recurse
+          python tests/paw_verdict.py all_reports ${{ github.sha }} summary.md
+
+      - name: Upload Pipeline Verdict Summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-verdict-summary
+          path: summary.md
+          retention-days: 10

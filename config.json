@@ -1,0 +1,20 @@
+{
+  "host": "127.0.0.1",
+  "port": 8800,
+  "provider": "deepseek",
+  "deepseek_api_key": "",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "deepseek_model": "deepseek-chat",
+  "openai_api_key": "",
+  "openai_base_url": "https://api.openai.com/v1",
+  "openai_model": "gpt-4o",
+  "claude_api_key": "",
+  "claude_base_url": "https://api.anthropic.com",
+  "claude_model": "claude-3-5-sonnet-20241022",
+  "watch_enabled": true,
+  "auto_propose": true,
+  "work_dir": "D:\\PAW\\paw-beta\\data\\sources",
+  "onboarding_completed": true,
+  "cruise_mode": "realtime",
+  "cruise_interval": 3600
+}

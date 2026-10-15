@@ -1,0 +1,170 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_version_id",
+    "claim_id",
+    "coverage_state",
+    "reason",
+    "findings",
+    "knowledge_proposals",
+    "project_consolidations",
+    "metric_proposals",
+    "data_assets"
+  ],
+  "properties": {
+    "source_version_id": {"type": "string"},
+    "claim_id": {"type": "string"},
+    "coverage_state": {
+      "type": "string",
+      "enum": [
+        "CONSOLIDATED",
+        "NO_KNOWLEDGE_IMPACT",
+        "DATA_EXTRACTED",
+        "PROJECT_CONTEXT_ONLY",
+        "VISUAL_PENDING",
+        "REVIEW_REQUIRED",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "reason": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding_type",
+          "title",
+          "content",
+          "assertion",
+          "severity",
+          "source_version_id",
+          "claim_id",
+          "evidence_locator"
+        ],
+        "properties": {
+          "finding_type": {"type": "string"},
+          "title": {"type": "string"},
+          "content": {"type": "string"},
+          "assertion": {"type": "string"},
+          "severity": {"type": "string"},
+          "source_version_id": {"type": "string"},
+          "claim_id": {"type": "string"},
+          "evidence_locator": {"type": "string"}
+        }
+      }
+    },
+    "knowledge_proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "canonical_topic",
+          "action",
+          "content",
+          "project_or_domain",
+          "source_version_id",
+          "claim_id",
+          "evidence_locator"
+        ],
+        "properties": {
+          "canonical_topic": {"type": "string"},
+          "action": {
+            "type": "string",
+            "enum": [
+              "CREATE",
+              "REVISE",
+              "MERGE",
+              "RETIRE",
+              "UNCHANGED",
+              "CONFLICT",
+              "INSUFFICIENT_EVIDENCE"
+            ]
+          },
+          "content": {"type": "string"},
+          "project_or_domain": {"type": "string"},
+          "source_version_id": {"type": "string"},
+          "claim_id": {"type": "string"},
+          "evidence_locator": {"type": "string"}
+        }
+      }
+    },
+    "project_consolidations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "project_id",
+          "project_name",
+          "operation",
+          "document_role",
+          "period",
+          "source_version_id",
+          "claim_id",
+          "evidence_locator"
+        ],
+        "properties": {
+          "project_id": {"type": "string"},
+          "project_name": {"type": "string"},
+          "operation": {"type": "string"},
+          "document_role": {"type": "string"},
+          "period": {"type": "string"},
+          "source_version_id": {"type": "string"},
+          "claim_id": {"type": "string"},
+          "evidence_locator": {"type": "string"}
+        }
+      }
+    },
+    "metric_proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "metric",
+          "value_number",
+          "value_text",
+          "unit",
+          "source_version_id",
+          "claim_id",
+          "evidence_locator"
+        ],
+        "properties": {
+          "metric": {"type": "string"},
+          "value_number": {"type": ["number", "null"]},
+          "value_text": {"type": ["string", "null"]},
+          "unit": {"type": "string"},
+          "source_version_id": {"type": "string"},
+          "claim_id": {"type": "string"},
+          "evidence_locator": {"type": "string"}
+        }
+      }
+    },
+    "data_assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_type",
+          "title",
+          "source_table",
+          "source_version_id",
+          "claim_id",
+          "evidence_locator"
+        ],
+        "properties": {
+          "asset_type": {"type": "string"},
+          "title": {"type": "string"},
+          "source_table": {"type": "string"},
+          "source_version_id": {"type": "string"},
+          "claim_id": {"type": "string"},
+          "evidence_locator": {"type": "string"}
+        }
+      }
+    }
+  }
+}

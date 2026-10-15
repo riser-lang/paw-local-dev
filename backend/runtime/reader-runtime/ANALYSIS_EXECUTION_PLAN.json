@@ -1,0 +1,62 @@
+{
+  "reader": {
+    "version": "paw-reader-fidelity/0.3.1",
+    "materializer": "paw-reader-materializer/4",
+    "evidence_schema": "reader-evidence/2",
+    "global_timeout": "NONE",
+    "persistence": "per-batch atomic checkpoint + per-source reader_result.json"
+  },
+  "semantic_models": {
+    "qwen_primary": {
+      "cli": "qoderclicn",
+      "model": "Qwen3.8-Max",
+      "scope": "CORE first（6个核心项目）; evidence/facts/metrics; quota-limited"
+    },
+    "agy_parallel_fallback": {
+      "cli": "agy",
+      "model": "gemini-3.7-flash-high",
+      "scope": "CORE parallel project signals + Qwen quota fallback + REFERENCE coarse scan"
+    },
+    "visual_specialist": {
+      "cli": "agy",
+      "model": "gemini-3.1-pro-high",
+      "scope": "business-important PPT/PDF/diagram/chart visual review only"
+    },
+    "opus_specialist": {
+      "model": "claude-opus-4-6-thinking",
+      "scope": "only difficult conflicts/high-impact cross-source reasoning; not bulk"
+    },
+    "final_synthesis": {
+      "model": "GPT-5.6 Sol",
+      "scope": "cross-source Knowledge/Project/Data draft after evidence reconciliation"
+    }
+  },
+  "quota_and_persistence": {
+    "unit_of_commit": "one SourceVersion result at a time",
+    "write_pattern": "write .partial -> fsync/close -> atomic rename to final JSON",
+    "checkpoint_after_each_source": true,
+    "append_only_events": "state/semantic_events.jsonl",
+    "quota_detection": [
+      "rate limit",
+      "quota",
+      "credits",
+      "429",
+      "too many requests",
+      "usage limit"
+    ],
+    "on_qwen_quota": "stop new Qwen calls, retain all completed outputs, mark QWEN_PAUSED_QUOTA, enqueue unprocessed CORE SourceVersions to queues/agy_fallback_pending.jsonl; never delete or restart completed results",
+    "session_strategy": "independent per SourceVersion; no single long session as sole state carrier",
+    "formal_state_write": "PROHIBITED until review/commit governance"
+  },
+  "project_priority": {
+    "CORE": [
+      "运营导师体系",
+      "运营实习生",
+      "星火计划新兵营",
+      "兵种培训",
+      "干部管理人才盘点",
+      "销售顾问技能大赛"
+    ],
+    "REFERENCE_MODE": "其余资料 Reader 全量保留；语义层粗扫并在发现与核心项目有规则/数据/时间线关联时升级深读"
+  }
+}

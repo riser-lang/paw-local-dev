@@ -1,0 +1,38 @@
+{
+  "_note": "Owned by the reviewer. Every listed case must appear exactly once with status PASS. Case ids and negative-control check names are fixed.",
+  "cases": {
+    "B1-01": "静默安装退出码 0，开始菜单和桌面快捷方式存在",
+    "B1-02": "从快捷方式启动后 /app 返回 200，工作台页面截图",
+    "B1-03": "卸载后清空检查全部为 0",
+    "B2-01": "未填 Key 时页面上能看到填 Key 指引（检查页面文字），截图",
+    "B2-02": "在设置页填入假 Key 和接口地址后，数据目录所有文件中都不含 Key 明文",
+    "B2-03": "填 Key 后向助手提一个问题，回答非空且无报错",
+    "B3-01": "docx 导入后，数据库中来自该文件的事实或证据数 >= 1",
+    "B3-02": "xlsx 导入后，数据库中来自该文件的事实或证据数 >= 1",
+    "B3-03": "pptx 导入后，数据库中来自该文件的事实或证据数 >= 1",
+    "B3-04": "pdf 导入后，数据库中来自该文件的事实或证据数 >= 1",
+    "B4-01": "导入文档后由模型替身经正常分析流程生成待审核候选 >= 1（禁止直接插库）",
+    "B4-02": "核准扁平格式项目更新 {project_name,new_summary}：目标项目进展被改写，项目总数不变",
+    "B4-03": "核准 proposed_change 为空、陈述中含项目名的项目更新：写入成功，项目总数不变",
+    "B4-04": "核准待办候选：todo 表新增一条，待办页面可见",
+    "B4-05": "核准知识候选：knowledge_page 新增一条",
+    "B4-06": "批量核准后再重复核准同一批：正式表计数不再变化",
+    "B4-07": "驳回候选：候选状态为 rejected，正式表计数不变",
+    "B5-01": "项目列表页显示全部项目，阶段显示为中文",
+    "B5-02": "项目详情的 30 秒快速了解四项都非空（接口和页面文字都要检查），截图",
+    "B5-03": "直接打开 /projects/<id> 最终显示该项目详情（页面含项目名）",
+    "B6-01": "从零开始触发巡航，轮询到完成状态",
+    "B6-02": "两个同名项目经收敛后只剩一个有效项目，且合并前备份文件存在",
+    "B7-01": "助手问题 1：回答非空、无报错",
+    "B7-02": "助手问题 2：回答非空、无报错",
+    "B7-03": "助手问题 3：回答引用了导入文档中的证据（含文件名或证据链接）",
+    "B8-01": "重启后项目数、待办数、知识数与重启前完全一致",
+    "B8-02": "覆盖安装后三项计数不变，且存在升级前快照文件",
+    "B8-03": "卸载后用户数据库仍保留（workspace.db 存在）"
+  },
+  "negative_controls": {
+    "NC-01": {"installer": "v2.3.7-baseline", "runs": "B4-02", "expect_failed_check": "project_update_committed"},
+    "NC-02": {"installer": "v2.3.7-baseline", "runs": "B5-02", "expect_failed_check": "explainer_fields_filled"},
+    "NC-03": {"installer": "current", "runs": "clean_check_with_leftover_file", "expect_failed_check": "environment_clean"}
+  }
+}

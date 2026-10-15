@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["summary", "facts", "inferences", "project_signals", "timeline", "metrics", "decisions_or_plans", "conflicts", "risks", "ambiguities", "related_projects", "needs_visual_review", "visual_review_reason"],
+  "properties": {
+    "summary": {"type": "string"},
+    "facts": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "inferences": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "project_signals": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "timeline": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "metrics": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "decisions_or_plans": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "conflicts": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "risks": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "ambiguities": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+    "related_projects": {"type": "array", "items": {"type": "object", "required": ["project", "relationship", "confidence"], "properties": {"project": {"type": "string"}, "relationship": {"type": "string"}, "confidence": {"enum": ["high", "medium", "low"]}, "evidence_locators": {"type": "array", "items": {"type": "string"}}}}},
+    "needs_visual_review": {"type": "boolean"},
+    "visual_review_reason": {"type": "string"}
+  },
+  "$defs": {
+    "evidence_item": {
+      "type": "object",
+      "required": ["content", "evidence_locators", "confidence"],
+      "properties": {
+        "content": {"type": "string"},
+        "evidence_locators": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "confidence": {"enum": ["high", "medium", "low"]}
+      }
+    }
+  }
+}

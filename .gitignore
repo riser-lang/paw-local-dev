@@ -1,0 +1,25 @@
+# Git ignore for PAW repository baseline (anchored root exclusions)
+/data/
+/dist/
+/build/
+/logs/
+/verification_logs/
+/fix_run/
+/out_*/
+/test_*/
+*.png
+*.db
+!template/workspace_template.db
+*.exe
+__pycache__/
+*.pyc
+*.log
+/scratch/
+/_to_delete/
+.env*
+*.key
+*.pem
+*.cer
+*.pfx
+/run_artifacts/
+/artifacts_run*/
