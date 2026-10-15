@@ -3,7 +3,16 @@ import {renderVersions} from './versions.js';
 import {renderUpdates} from './updates.js';
 const id = decodeURIComponent(location.pathname.split('/').pop());
 function node(tag, text, cls) {const el=document.createElement(tag); if(text!==undefined)el.textContent=text; if(cls)el.className=cls; return el;}
-async function api(url, body) {const r=await fetch(url,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.detail||'操作失败');return data;}
+let session;
+async function api(url, body) {
+ let options={};
+ if(body!==undefined){
+  session??=fetch('/v1/session').then(async r=>{if(!r.ok)throw Error('本地会话暂不可用');return r.json();}).catch(e=>{session=undefined;throw e;});
+  const local=await session;
+  options={method:'POST',headers:{'Content-Type':'application/json','x-paw-local-token':local.local_token},body:JSON.stringify(body)};
+ }
+ const r=await fetch(url,options);const data=await r.json();if(!r.ok)throw Error(data.detail||'操作失败');return data;
+}
 function action(label, callback) {const b=node('button',label);b.onclick=async()=>{b.disabled=true;try{await callback();}catch(e){notice(e.message);}finally{b.disabled=false;}};return b;}
 function notice(text){let p=document.querySelector('#notice');if(!p){p=node('p',undefined,'notice');p.id='notice';app.prepend(p);}p.textContent=text;}
 function reference(revision) {const a=node('a','查看来源');a.href=revision.source_url;a.onclick=async e=>{e.preventDefault();try{const s=await api(a.getAttribute('href'));document.querySelector('#source-title').textContent=s.title;document.querySelector('#source-text').textContent=s.body;document.querySelector('#source').showModal();}catch(err){notice(err.message);}};return a;}

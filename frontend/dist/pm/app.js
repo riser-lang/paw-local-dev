@@ -127,8 +127,21 @@
     if (cls) el.className = cls;
     return el;
   }
+  var session;
   async function api(url, body) {
-    const r = await fetch(url, body === void 0 ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    let options = {};
+    if (body !== void 0) {
+      session ?? (session = fetch("/v1/session").then(async (r2) => {
+        if (!r2.ok) throw Error("\u672C\u5730\u4F1A\u8BDD\u6682\u4E0D\u53EF\u7528");
+        return r2.json();
+      }).catch((e) => {
+        session = void 0;
+        throw e;
+      }));
+      const local = await session;
+      options = { method: "POST", headers: { "Content-Type": "application/json", "x-paw-local-token": local.local_token }, body: JSON.stringify(body) };
+    }
+    const r = await fetch(url, options);
     const data = await r.json();
     if (!r.ok) throw Error(data.detail || "\u64CD\u4F5C\u5931\u8D25");
     return data;

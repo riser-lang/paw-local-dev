@@ -105,6 +105,18 @@ def test_new_version_refreshes_only_its_part_of_a_multi_source_conclusion(databa
         assert {r[0] for r in conn.execute('SELECT source_version_id FROM pm_revision_source WHERE revision_id=?',(row['id'],))}=={'b','c'}
 
 
+def test_new_version_additions_are_not_lost_when_old_sentence_remains(database):
+    initial=seed()
+    ruling=ingest('b','方案_v2.docx','星河项目。原型已完成，联调已启动。')
+    with storage.connect() as conn:
+        row=updates.current(conn,'p','progress')
+        assert row['source_version_id']=='b'
+        assert '原型已完成' in row['text'] and '联调已启动' in row['text']
+    _,undo=committer.create_direct_user_approved_change('pm_undo','restore',{'change_id':ruling['change_id']})
+    assert committer.commit_approved_change(undo)['result']=='success'
+    with storage.connect() as conn:assert updates.current(conn,'p','progress')['id']==initial['id']
+
+
 def test_conflict_reassessment_does_not_amplify_reread_queue(database):
     seed()
     ingest('b','现场纪要.docx','星河项目。原型尚未完成。')

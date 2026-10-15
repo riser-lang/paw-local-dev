@@ -144,7 +144,7 @@ def execute(conn, change, payload):
             project = project_row(conn,pid)
             for row in rows:
                 # A reference never relabels old prose as a new source. Use an explicit verbatim excerpt.
-                replacement=row['text'] if row['text'] in new_source['body'] else '新版原文节选：' + new_source['body'][:2000]
+                replacement='新版原文节选：' + new_source['body'][:2000]
                 family_sources={r[0] for r in conn.execute('SELECT source_version_id FROM pm_family_member WHERE family_id=?',(fid,))}
                 parts=[dict(r) for r in conn.execute('SELECT source_version_id,text,extraction_id FROM pm_revision_source WHERE revision_id=?',(row['id'],))]
                 other_parts=[p for p in parts if p['source_version_id'] not in family_sources]
