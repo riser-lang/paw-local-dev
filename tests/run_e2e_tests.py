@@ -965,7 +965,7 @@ def run_b7(report: Report, installer_exe: Path):
         configure_mock_settings()
         chat_init = httpx.post("http://127.0.0.1:8800/v1/web/agy/chat", json={"mode": "chat"}).json()
         session_id = chat_init.get("session_id", "session-b701")
-        r = httpx.post(f"http://127.0.0.1:8800/v1/web/agy/chat/{session_id}/messages", json={"message": "请说明系统当前的核心架构与组成模块"}, timeout=15.0).json()
+        r = timed_answer(session_id, "请说明系统当前的核心架构与组成模块", "B7-01")
         ans1 = str(r.get("response") or r.get("reply") or r.get("content") or r)
         c.check("assistant_q1_not_empty", bool(ans1.strip()), True)
         final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app/agnes", "screen_B7_01.png", "B7-01")
@@ -979,7 +979,7 @@ def run_b7(report: Report, installer_exe: Path):
         configure_mock_settings()
         chat_init = httpx.post("http://127.0.0.1:8800/v1/web/agy/chat", json={"mode": "chat"}).json()
         session_id = chat_init.get("session_id", "session-b702")
-        r = httpx.post(f"http://127.0.0.1:8800/v1/web/agy/chat/{session_id}/messages", json={"message": "当前系统开发的核心里程碑与推进方向是什么？"}, timeout=15.0).json()
+        r = timed_answer(session_id, "当前系统开发的核心里程碑与推进方向是什么？", "B7-02")
         ans2 = str(r.get("response") or r.get("reply") or r.get("content") or r)
         c.check("assistant_q2_not_empty", bool(ans2.strip()), True)
         final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app/agnes", "screen_B7_02.png", "B7-02")
@@ -996,17 +996,29 @@ def run_b7(report: Report, installer_exe: Path):
         shutil.copy2(Path("tests/fixtures/sample_doc.docx"), work_dir / "sample_doc.docx")
         configure_mock_settings(work_dir=work_dir)
         httpx.post("http://127.0.0.1:8800/v1/local/scanner/start", json={"directory": str(work_dir), "target_dir": str(work_dir)}, timeout=10.0)
-        time.sleep(3)
+        poll_candidates_from_scanner()
 
         chat_init = httpx.post("http://127.0.0.1:8800/v1/web/agy/chat", json={"mode": "chat"}).json()
         session_id = chat_init.get("session_id", "session-b703")
-        r = httpx.post(f"http://127.0.0.1:8800/v1/web/agy/chat/{session_id}/messages", json={"message": "周报中规划的核心业务推进目标是什么？"}, timeout=15.0).json()
+        r = timed_answer(session_id, "周报中规划的核心业务推进目标是什么？", "B7-03")
         ans3 = str(r.get("response") or r.get("reply") or r.get("content") or r)
         has_cite = any(k in ans3 for k in ["sample_doc.docx", "sample_doc", "端侧高保真运行"])
         c.check("assistant_q3_cites_source_doc", has_cite, True)
         final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app/agnes", "screen_B7_03.png", "B7-03")
         c.screenshot(shot, "http://127.0.0.1:8800/app/agnes")
         stop_paw(proc)
+
+
+def timed_answer(session_id, message, label):
+    started=time.perf_counter()
+    result=None
+    try:
+        response=httpx.post(f"http://127.0.0.1:8800/v1/web/agy/chat/{session_id}/messages",json={'message':message},timeout=15.0)
+        response.raise_for_status()
+        result=response.json()
+        return result
+    finally:
+        logger.info('Assistant answer %s elapsed_seconds=%.4f timings=%s',label,time.perf_counter()-started,(result or {}).get('timings','no response / request failed'))
 
 
 def run_b8(report: Report, installer_exe: Path):
@@ -1248,6 +1260,9 @@ def main():
     elif block == "PM02":
         from tests.run_pm_tests import run_c02
         run_c02(report, inst_path)
+    elif block == "PM03":
+        from tests.run_pm_versions_tests import run_c03
+        run_c03(report, inst_path)
     elif block == "NEGATIVE-CONTROL":
         base_path = Path(args.baseline_exe)
         if base_path.is_dir():

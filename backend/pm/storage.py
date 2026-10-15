@@ -61,6 +61,8 @@ def migrate(conn):
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES project(id), contract TEXT NOT NULL,
       output_json TEXT NOT NULL, created_at TEXT NOT NULL);
     ''')
+    from .versions import migrate as migrate_versions
+    migrate_versions(conn)
 
 
 def config(path=None):

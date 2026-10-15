@@ -199,7 +199,13 @@ class SearchService:
         fallback_trace: List[str] = []
         last_error: Optional[str] = None
 
+        deadline=time.monotonic()+timeout_seconds
         for backend in self.backends:
+            remaining=deadline-time.monotonic()
+            if remaining <= 0:
+                fallback_trace.append('total_search_deadline')
+                break
+            request = SearchRequest(query=query,max_results=max_results,timeout_seconds=remaining,proxy=self.proxy)
             backend_name = backend.name
             try:
                 logger.info(f"[SearchService] Trying backend '{backend_name}' for query '{query}'")

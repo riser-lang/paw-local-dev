@@ -60,6 +60,7 @@ from backend.search.assistant_bridge import (
 )
 
 logger = logging.getLogger("paw.assistant")
+from backend.pm.answer_timing import measured, current as answer_timing
 router = APIRouter()
 
 MAX_MESSAGE_LEN = 4000
@@ -701,6 +702,7 @@ def _direct_response(session_id, session, effective_mode, user_msg_id, text, *, 
 
 
 @router.post("/chat/{session_id}/messages")
+@measured
 def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     """Send user message to Web Agy and receive strictly grounded answer with evidence footnote."""
     creds = settings.get_active_credentials()
@@ -848,6 +850,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
             session["v2_context"] = None
 
     # 2. Build V2 grounded turn (Project resolution + Query planner + Context pack + Answer contract)
+    context_started=time.perf_counter()
     turn = build_v2_turn(
         req.message,
         effective_mode,
@@ -855,6 +858,11 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         conversation=session.get("v2_context"),
         db_path=str(DB_PATH),
     )
+    stats=answer_timing.get()
+    if stats is not None:
+        stats['context_seconds']=round(time.perf_counter()-context_started,4)
+        stats['evidence_count']=len(turn['contract'].get('evidence_index') or [])
+        stats['context_bytes']=len(turn['prompt'].encode('utf-8'))
 
     # Update session context
     conv_dict = turn["conversation"].to_dict()
@@ -916,7 +924,11 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
 
     if should_search:
         logger.info(f"[WebSearch] Triggered software search for query '{req.message}' (reason: {search_trigger_reason})")
+        search_started=time.perf_counter()
         search_res = execute_software_search(req.message, settings)
+        if stats is not None:
+            stats['search_seconds']=round(time.perf_counter()-search_started,4)
+            stats['search_trace']=search_res.get('fallback_trace',[])
         provider = get_active_provider()
         is_universal_openai = hasattr(provider, "chat_completion")
 

@@ -223,10 +223,16 @@ if __name__ == '__main__':
     parser.add_argument('--installer-exe', required=True)
     parser.add_argument('--commit-sha', required=True)
     parser.add_argument('--output-report', required=True)
+    parser.add_argument('--version-negative',action='store_true')
     args=parser.parse_args()
     installer=Path(args.installer_exe)
     report=Report('NEGATIVE-CONTROL', args.commit_sha, 'mock-llm', get_file_sha256(installer))
-    run_governance_negative(report, installer)
+    if args.version_negative:
+        from tests.run_pm_versions_tests import run_c03_negative
+        run_c03_negative(report,installer)
+    else:
+        run_governance_negative(report, installer)
     report.save(args.output_report)
     expected=report.cases[0]
-    sys.exit(0 if expected.status == 'FAIL' and expected.failed_check == 'formal_fields_unchanged_after_cruise' else 1)
+    check='old_version_superseded' if args.version_negative else 'formal_fields_unchanged_after_cruise'
+    sys.exit(0 if expected.status == 'FAIL' and expected.failed_check == check else 1)

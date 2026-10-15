@@ -15,6 +15,9 @@ def append_revision(conn, project_id, section_id, text, source_id, change_id):
     if not isinstance(text, str) or not text.strip():
         raise ValueError('结论不能为空')
     storage.source(conn, source_id)
+    from .versions import is_current
+    if not is_current(conn,source_id):
+        raise ValueError('来源版本已被替换，不能作为栏目当前结论')
     old = conn.execute('SELECT revision_id FROM pm_section_current WHERE project_id=? AND section_id=?', (project_id, section_id)).fetchone()
     previous = old[0] if old else None
     if previous:
@@ -52,6 +55,9 @@ def record_project_change(conn, change, payload, ident, before):
 
 
 def execute(conn, change, payload):
+    from . import versions
+    if change['target_type'] == 'pm_version':
+        return versions.execute(conn,change,payload)
     if change['target_type'] == 'pm_section':
         if project_row(conn, payload['project_id']) is None:
             raise ValueError('项目不存在')
@@ -59,6 +65,9 @@ def execute(conn, change, payload):
     if change['target_type'] != 'pm_undo':
         raise ValueError('未知项目管理写入类型')
     original = payload['change_id']
+    version_project = versions.undo(conn,change,original)
+    if version_project is not None:
+        return version_project
     rows = conn.execute('SELECT * FROM pm_section_revision WHERE change_id=?', (original,)).fetchall()
     snap = conn.execute('SELECT * FROM pm_change_snapshot WHERE change_id=?', (original,)).fetchone()
     if not rows and not snap:

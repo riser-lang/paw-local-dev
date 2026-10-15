@@ -10,6 +10,7 @@ Integrates Web Search Service with Local AI Assistant Facade:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.search.contract import SearchResult
@@ -63,6 +64,10 @@ def evaluate_search_trigger(
     ]
     if any(nw in user_message for nw in negative_words):
         return False, "explicit_opt_out_or_internal_query"
+
+    explicit = bool(re.search(r'联网|查一下|搜一下|搜索|官网|新闻',user_message))
+    if not explicit and (evidence_count > 0 or re.search(r'文档|资料|周报|项目|里程碑',user_message)):
+        return False, 'workspace_evidence_or_document_question'
 
     # If mode is auto, check if provider natively supports web search
     if mode == "auto":

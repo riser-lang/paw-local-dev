@@ -410,6 +410,8 @@ def build_project_context_pack(conn: sqlite3.Connection, *,
     if include_raw_source:
         items += _layer_raw_source(conn, pid, lim["raw_source"])
 
+    from backend.pm.assistant_context import augment
+    items = augment(conn, items, pid)
     items = C.order_items(items)
     summary = C.summarise(items)
 
@@ -512,6 +514,8 @@ def build_global_workspace_context_pack(
             extra={"value": latest["value"] if latest else None, "unit": d.get("unit"), "scope": "未限定项目"}
         ))
 
+    from backend.pm.assistant_context import augment
+    items = augment(conn, items)
     items = C.order_items(items)
     summary = C.summarise(items)
 

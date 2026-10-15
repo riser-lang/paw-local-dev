@@ -48,6 +48,7 @@ def _payload_hash(payload: dict) -> str:
 
 # ── Payload schemas ─────────────────────────────────────────────────────────
 PAYLOAD_SCHEMAS: dict[str, dict[str, list[str]]] = {
+    "pm_version": {"rule": ["project_id", "source_version_id", "family_title"]},
     "pm_section": {"update": ["project_id", "section_id", "text", "source_version_id"]},
     "pm_undo": {"restore": ["change_id"]},
     "todo": {
@@ -858,14 +859,17 @@ def commit_approved_change(change_id: str) -> dict:
 
         # ── Transaction: execute payload write ──
         executor = EXECUTORS.get((ac["target_type"], ac["operation"]))
-        if executor is None and ac['target_type'] not in ('pm_section', 'pm_undo'):
+        if executor is None and ac['target_type'] not in ('pm_section', 'pm_undo', 'pm_version'):
             raise ValueError(f"No executor for {ac['target_type']}.{ac['operation']}")
 
         transaction_id = _uuid()
         from backend.pm import governance as pm_governance
-        if ac['target_type'] in ('pm_section', 'pm_undo'):
+        if ac['target_type'] in ('pm_section', 'pm_undo', 'pm_version'):
             committed_target_id = pm_governance.execute(conn, ac, payload)
         else:
+            from backend.pm.versions import is_current
+            if any(not is_current(conn, ref) for ref in json.loads(ac['source_refs'] or '[]') if isinstance(ref,str)):
+                raise ValueError('来源版本已被替换，请重新审核当前版本')
             before = pm_governance.project_row(conn, payload.get('id')) if ac['target_type'] == 'project' else None
             committed_target_id = executor(conn, payload)
             pm_governance.record_project_change(conn, ac, payload, committed_target_id, before)

@@ -391,6 +391,10 @@ def build_v2_turn(message: str, mode: str = "chat", *,
     contract = A.build_answer_contract(
         message=message, intent_info=intent, pack=pack, conv=conv)
     resolution_status, refusal = _refusal_for(resolution, pack, contract)
+    # A document question can have usable workspace evidence without naming a project.
+    # Keep that evidence grounded instead of rerouting the turn to general chat/web.
+    if pack.get('status') == 'GLOBAL_WORKSPACE_SCOPE' and contract.get('evidence_index') and re.search(r'文档|资料|周报|文件|工作台',message):
+        resolution_status,refusal='GLOBAL_WORKSPACE',None
     prompt = _render_bounded_prompt(contract, message, conv)
     return {
         "prompt": prompt,
