@@ -8,7 +8,7 @@ import os
 import sqlite3
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from pathlib import Path
 import httpx
 
@@ -46,7 +46,7 @@ def project():
 
 
 def read_rows(sql, params=()):
-    with sqlite3.connect(str(get_db_path())) as conn:
+    with closing(sqlite3.connect(str(get_db_path()))) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(r) for r in conn.execute(sql, params)]
 

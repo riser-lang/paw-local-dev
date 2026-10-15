@@ -136,6 +136,10 @@ jobs:
           mkdir -p reports
           python tests/run_e2e_tests.py --block ${{ matrix.block }} --installer-exe $installer --commit-sha ${{ github.sha }} --model-mode mock-llm --output-report reports/report_${{ matrix.block }}.json
 
+      - name: Verify cross-pipeline source completion
+        if: always() && matrix.block == 'PM02'
+        run: python scripts/verify_source_completion.py
+
       - name: Scan Artifacts for Credential Leaks
         if: always()
         run: |

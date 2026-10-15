@@ -286,6 +286,15 @@ class PawScanner:
                 pass
 
     def _run_scan_thread(self, target_phase: str = "all") -> None:
+        try:
+            self._run_scan_phases(target_phase)
+        except Exception:
+            self.status = 'failed'
+            self.current_phase = 'failed'
+            logger.exception('扫描未完成，保留检查点以便重试')
+            self._save_checkpoint()
+
+    def _run_scan_phases(self, target_phase: str = "all") -> None:
         self._set_thread_throttle()
         logger.info(f"PawScannerWorker thread started on directory: {self.sources_dir}")
 
@@ -421,6 +430,9 @@ class PawScanner:
                 continue
 
             # Already analysed by any pipeline: skip before spending a daily call.
+            # A watcher/cruise can own this version while the scanner runs.
+            # Completion must include that owner, not just this worker's loop.
+            governance.wait_for_source_completion(cp_entry.get('hash', ''))
             if governance.is_source_analyzed(cp_entry.get("hash", "")):
                 cp_entry["phase2_status"] = "skipped_already_analyzed"
                 self.phase2_processed += 1
@@ -645,6 +657,9 @@ class PawScanner:
         # Shared with watcher and cruise: an already-analysed file version is not
         # sent to the model again (saves quota and avoids re-filing decided proposals).
         if not governance.claim_source(f_hash):
+            governance.wait_for_source_completion(f_hash)
+            if not governance.is_source_analyzed(f_hash):
+                raise RuntimeError('其他管线未完成资料分析；本次扫描不能标记为完成')
             cp_entry = self._checkpoint.get(file_key, {})
             cp_entry["phase2_status"] = "skipped_already_analyzed"
             self._checkpoint[file_key] = cp_entry

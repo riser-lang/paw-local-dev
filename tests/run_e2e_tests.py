@@ -17,6 +17,7 @@ import sys
 import time
 import urllib.request
 import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 
@@ -244,11 +245,28 @@ def configure_mock_settings(work_dir: Optional[Path] = None):
 def poll_candidates_from_scanner(timeout_sec: int = 40) -> List[Dict[str, Any]]:
     from tests.scanner_wait import wait_for_scan
     def candidates():
-        with sqlite3.connect(str(get_db_path()), timeout=10) as conn:
+        with closing(sqlite3.connect(str(get_db_path()), timeout=10)) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute("SELECT * FROM candidate WHERE status='pending'")]
     def progress():
-        return httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0).json()
+        result = httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0).json()
+        checkpoint = get_db_path().parent / 'scan_checkpoint.json'
+        if result.get('status') == 'completed' and checkpoint.is_file():
+            checkpoint_data = json.loads(checkpoint.read_text(encoding='utf-8'))
+            files = checkpoint_data.get('files', checkpoint_data)
+            hashes = {entry['hash'] for entry in files.values() if isinstance(entry, dict) and entry.get('phase1_status') == 'success'}
+            if result.get('phase1_success', 0) and not hashes:
+                raise RuntimeError('扫描已摄取资料但检查点缺少来源哈希')
+            with closing(sqlite3.connect(str(get_db_path()), timeout=10)) as conn:
+                exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='analyzed_source'").fetchone()
+                if exists:
+                    columns = {r[1] for r in conn.execute('PRAGMA table_info(analyzed_source)')}
+                    sql = "SELECT file_hash FROM analyzed_source"
+                    if 'completion_state' in columns:
+                        sql += " WHERE completion_state='complete'"
+                    complete = {r[0] for r in conn.execute(sql)}
+                    result['pipeline_complete'] = hashes.issubset(complete)
+        return result
     return wait_for_scan(candidates, progress, timeout_sec)
 
 

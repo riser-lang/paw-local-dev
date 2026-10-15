@@ -27,6 +27,8 @@ from backend.governance.committer import (
 )
 from backend.runtime_core.event_bus import EventType, event_bus
 
+_schema_migration_lock = threading.Lock()
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -137,6 +139,10 @@ def _ensure_governance_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    with _schema_migration_lock:
+        columns = {r[1] for r in conn.execute('PRAGMA table_info(analyzed_source)')}
+        if 'completion_state' not in columns:
+            conn.execute("ALTER TABLE analyzed_source ADD COLUMN completion_state TEXT NOT NULL DEFAULT 'complete'")
 
 
 _DECIDED_STATUSES = ("accepted", "applied", "rejected")
@@ -157,7 +163,7 @@ def _find_active_project_by_name(name: str) -> Optional[str]:
         return None
     finally:
         conn.close()
-_source_lock = threading.Lock()
+_source_lock = threading.Condition()
 _sources_in_progress: set = set()
 
 
@@ -201,6 +207,18 @@ class GovernanceService:
     # ── File-version registry shared by watcher, cruise and folder scan ──────
 
     def is_source_analyzed(self, file_hash: str) -> bool:
+        # A legacy candidate row may be the FIRST of several rows still being
+        # filed. It is never a completion signal while any pipeline owns it.
+        with _source_lock:
+            if file_hash in _sources_in_progress:
+                return False
+        return self._is_source_recorded(file_hash)
+
+    def wait_for_source_completion(self, file_hash: str, timeout: float = 60) -> None:
+        from backend.pm.source_barrier import wait_until_idle
+        wait_until_idle(_source_lock, _sources_in_progress, file_hash, timeout)
+
+    def _is_source_recorded(self, file_hash: str) -> bool:
         """True when this exact file version was analysed before.
 
         Also recognises versions analysed by releases that predate the
@@ -210,8 +228,9 @@ class GovernanceService:
             return False
         conn = get_db()
         try:
-            if conn.execute("SELECT 1 FROM analyzed_source WHERE file_hash = ?", (file_hash,)).fetchone():
-                return True
+            recorded = conn.execute("SELECT completion_state FROM analyzed_source WHERE file_hash = ?", (file_hash,)).fetchone()
+            if recorded:
+                return recorded[0] == 'complete'
             # Only AI-pipeline candidates count: phase-1 version-review questions
             # (Scanner+...) and rule-engine proposals also carry the file hash
             # but do not mean the model has read the file.
@@ -235,7 +254,7 @@ class GovernanceService:
                 return False
             _sources_in_progress.add(file_hash)
         try:
-            if self.is_source_analyzed(file_hash):
+            if self._is_source_recorded(file_hash):
                 self.release_source(file_hash)
                 return False
         except Exception:
@@ -247,20 +266,22 @@ class GovernanceService:
                        candidates_created: Optional[int] = None) -> None:
         """Release a claim; when ``candidates_created`` is given, record the version as analysed."""
         try:
-            if candidates_created is not None:
+            if candidates_created is not None or pipeline:
                 conn = get_db()
                 try:
                     with conn:
                         conn.execute(
-                            "INSERT OR REPLACE INTO analyzed_source (file_hash, file_name, pipeline, candidates_created, analyzed_at) "
-                            "VALUES (?, ?, ?, ?, ?)",
-                            (file_hash, file_name, pipeline, int(candidates_created), _now_iso()),
+                            "INSERT OR REPLACE INTO analyzed_source (file_hash, file_name, pipeline, candidates_created, analyzed_at, completion_state) "
+                            "VALUES (?, ?, ?, ?, ?, ?)",
+                            (file_hash, file_name, pipeline, int(candidates_created or 0), _now_iso(),
+                             'complete' if candidates_created is not None else 'failed'),
                         )
                 finally:
                     conn.close()
         finally:
             with _source_lock:
                 _sources_in_progress.discard(file_hash)
+                _source_lock.notify_all()
 
     def list_candidates(self, status: str = "pending", limit: int = 500) -> List[Dict[str, Any]]:
         conn = get_db()

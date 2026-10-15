@@ -26,3 +26,9 @@ def test_completed_scan_does_not_hide_missing_candidates():
 def test_unfinished_scan_fails_instead_of_returning_partial_data():
     with pytest.raises(TimeoutError, match='phase2_analyzing'):
         wait_for_scan(lambda: ['todo'] * 4, lambda: {'status': 'phase2_analyzing'}, timeout_sec=2, sleep=lambda _: None)
+
+
+def test_completed_scanner_waits_for_other_ingestion_pipeline():
+    states=iter([{'status':'completed','pipeline_complete':False}, {'status':'completed','pipeline_complete':True}])
+    result=wait_for_scan(lambda:['all committed proposals'],lambda:next(states),sleep=lambda _:None)
+    assert result == ['all committed proposals']
