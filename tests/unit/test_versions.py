@@ -4,6 +4,18 @@ from pathlib import Path
 import pytest
 from backend.pm import storage,versions
 from backend.governance import committer
+from backend.pm.source_fingerprint import proposal_fingerprint
+
+
+def test_duplicate_content_has_distinct_review_for_distinct_version():
+    first=proposal_fingerprint('project','update',{'id':'p','summary':'完成原型'},['version-one'])
+    newer=proposal_fingerprint('project','update',{'id':'p','summary':'完成原型'},['version-two'])
+    assert first!=newer
+    assert first==proposal_fingerprint('project','update',{'summary':'完成原型','id':'p'},['version-one'])
+
+
+def test_same_source_set_deduplicates_independent_of_reference_order():
+    assert proposal_fingerprint('knowledge','create',{'title':'记录'},['a','b'])==proposal_fingerprint('knowledge','create',{'title':'记录'},['b','a','a'])
 
 
 @pytest.fixture

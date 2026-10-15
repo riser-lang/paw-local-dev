@@ -388,12 +388,8 @@ class GovernanceService:
             raise ValueError(f"Unsupported committer target/operation: {committer_target}.{operation}")
 
         # Construct fingerprint to avoid duplicate entries
-        fp_data = {
-            "target": committer_target,
-            "operation": operation,
-            "payload": payload,
-        }
-        dedup_fp = hashlib.sha256(json.dumps(fp_data, sort_keys=True).encode()).hexdigest()
+        from backend.pm.source_fingerprint import proposal_fingerprint
+        dedup_fp = proposal_fingerprint(committer_target,operation,payload,source_refs_list)
 
         # Wrap payload with operation metadata so consumer knows exact committer action
         proposed_change_data = {

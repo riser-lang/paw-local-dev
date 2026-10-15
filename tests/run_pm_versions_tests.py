@@ -13,7 +13,7 @@ from tests.run_e2e_tests import parse_candidate_types,timed_answer
 logger=logging.getLogger('pm.versions.tests')
 
 
-def import_doc(case,title,body):
+def import_doc(case,title,body,baseline=False):
     from docx import Document
     directory=Path(os.environ['TEMP'])/('PAW_PM_VERSION_'+case)
     directory.mkdir(parents=True,exist_ok=True)
@@ -25,8 +25,16 @@ def import_doc(case,title,body):
     api('POST','/v1/local/scanner/start',{'directory':str(directory),'force_restart':True})
     candidates=poll_candidates_from_scanner()
     matching=[r for r in candidates if sid in json.loads(r.get('source_refs') or '[]')]
-    if not matching:
+    if not matching and not baseline:
         raise RuntimeError('文档导入没有可核对的来源候选：'+title)
+    if baseline:
+        from tests.run_e2e_tests import get_db_path
+        ingested=read_rows('SELECT file_hash FROM analyzed_source WHERE file_hash=?',(sid,))
+        result_path=get_db_path().parent/'evidence'/(path.stem+'_'+sid[:8])/'reader_result.json'
+        parsed=json.loads(result_path.read_text(encoding='utf-8')) if result_path.is_file() else {}
+        original='\n'.join(str(b.get('text','')) for b in parsed.get('text_blocks',[]))
+        if len(ingested)!=1 or body not in original:
+            raise RuntimeError('baseline 资料未真实摄取，不能作为版本裁定负对照')
     return sid,matching
 
 
@@ -134,6 +142,6 @@ def run_c03_negative(report,installer):
         with running():
             # ASCII transport paths avoid the unrelated old English-Windows child encoding bug.
             pid,first,name=prepare('negative',negative=True)
-            second,_=import_doc('negative',name+'_v2.docx','冲刺项目。第二版：靛蓝联调已启动。')
+            second,_=import_doc('negative',name+'_v2.docx','冲刺项目。第二版：靛蓝联调已启动。',baseline=True)
             c.check('both_versions_ingested',len(read_rows('SELECT file_hash FROM analyzed_source')),2)
             assert_transition(c,pid,first,second,negative=True)
