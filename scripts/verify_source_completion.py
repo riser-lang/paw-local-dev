@@ -5,6 +5,7 @@ root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root))
 data=root/'scratch'/('source-barrier-'+uuid.uuid4().hex)
 data.mkdir(parents=True)
+(data/'config.json').write_text(json.dumps({'provider':'custom','work_dir':str(data/'sources'),'auto_propose':False}),encoding='utf-8')
 for key in list(os.environ):
     if 'API_KEY' in key or key.endswith('_BASE_URL'):
         os.environ.pop(key)

@@ -183,29 +183,11 @@ class LocalSourceWatcher:
             evidence_data = reader_result.to_dict()
             evidence_data["display_name"] = file_path.name
 
-            # 3. Provider proposes Candidate recommendations
-            provider = get_active_provider()
-            projects = list_projects()
-            knowledge_list = list_knowledge(limit=10)
-            proposals = provider.propose(evidence_data, projects, knowledge_list)
-
-            # 4. Insert each proposal into SQLite candidate table
-            for prop in proposals:
-                try:
-                    cid = governance.create_candidate(
-                        target_type=prop["target_type"],
-                        operation=prop["operation"],
-                        payload=prop["payload"],
-                        raw_excerpt=prop.get("raw_excerpt", ""),
-                        source_refs=[file_hash],
-                        confidence=prop.get("confidence", "HIGH"),
-                        analysis_model=settings.provider,
-                        review_brief=prop.get("review_brief"),
-                        evidence_locators=prop.get("evidence_locators"),
-                    )
-                    created_candidate_ids.append(cid)
-                except Exception as e:
-                    logger.error(f"Failed to create candidate for proposal: {e}")
+            # Use the same intake, candidate and source-completion contract as
+            # folder scanning and cruise; no second independent proposal loop.
+            from backend.runtime_core.planner import agent_planner
+            created_candidate_ids = agent_planner.plan_document_impact(
+                evidence_data, str(file_path), file_hash)
 
             record = {
                 "file": file_path.name,
@@ -223,6 +205,7 @@ class LocalSourceWatcher:
             )
         except Exception as exc:
             logger.error(f"Error processing file {file_path}: {exc}", exc_info=True)
+            raise
 
         return created_candidate_ids
 

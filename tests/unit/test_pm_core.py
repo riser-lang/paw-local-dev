@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from backend.pm import storage, dossier
-from backend.pm.budget import bounded_context, size
+from backend.pm.budget import bounded_context, size, model_messages
 from backend.pm.contracts import validate_contract
 from backend.pm.semantic import invoke
 from backend.pm.legacy_context import bounded_legacy
@@ -102,3 +102,13 @@ def test_legacy_endpoint_uses_same_budget_and_keeps_small_responses():
     assert size(result) <= 1024
     assert result['stage_summaries'][0]['source_url'] == '/v1/web/workspace/knowledge/k1'
     assert large['project']['description'] == '原始资料'*10000
+
+
+def test_model_budget_includes_instruction_schema_and_escaped_json():
+    value={'project_id':'p1','sources':[{'source_version_id':'v1','source_url':'/v1/pm/sources/v1','body':'说明“引用”的资料。'*10000}]}
+    messages=model_messages('任务与契约。'*50,value,4096)
+    assert size(messages) <= 4096
+    bounded=json.loads(messages[1]['content'])
+    assert bounded['sources'][0]['source_version_id']=='v1'
+    assert bounded['sources'][0]['source_url']=='/v1/pm/sources/v1'
+    assert '阶段节选' in bounded['sources'][0]['body']
