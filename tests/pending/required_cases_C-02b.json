@@ -1,0 +1,11 @@
+{
+  "_note": "Reviewer-owned (REVIEW-C-01). Activate together with C-02 by git mv to tests/required_cases_C-02b.json without changing content.",
+  "cases": {
+    "PM-GOV-01": "填假 Key（mock 会返回项目说明）后，触发一轮带项目分析的巡航：project 表所有项目的正式字段（latest_progress_summary、next_action_summary、stage、status、description）与巡航前逐字段相同",
+    "PM-GOV-02": "同一轮巡航后，模型生成的项目说明出现在非正式的派生区，项目档案页上标注为 AI 生成；audit_event 中不出现针对 project 表、change_id 为空的写入记录",
+    "PM-GOV-03": "直接调用项目分析接口（main.py 中原来直接调用分析器的入口）后，正式字段同样不变"
+  },
+  "negative_controls": {
+    "NC-PM-GOV": {"installer": "v2.3.9-baseline", "runs": "PM-GOV-01", "expect_failed_check": "formal_fields_unchanged_after_cruise"}
+  }
+}
