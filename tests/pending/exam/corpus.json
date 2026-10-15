@@ -1,0 +1,48 @@
+{
+  "_note": "Reviewer-owned exam corpus (all content fictional). Codex writes scripts/build_exam_corpus.py to render each doc into the stated file type; text must be rendered verbatim. Files are dropped into the watched folder in the listed order, one scan per step.",
+  "projects": ["星火导师计划", "人才盘点", "年度预算"],
+  "documents": [
+    {"step": 1, "file": "星火导师计划_方案_v1.docx", "type": "docx", "family": "星火导师方案", "effective_date": "2026-09-01",
+     "paragraphs": [
+       "星火导师计划实施方案 v1",
+       "生效日期：2026年9月1日",
+       "目标：第一期培养新任导师 30 名，导师认证通过率达到 80%。",
+       "负责人：周岚。",
+       "里程碑：10月10日完成导师招募；11月20日完成首轮带教；12月15日完成认证考核。"
+     ]},
+    {"step": 2, "file": "星火导师计划_方案_v2.docx", "type": "docx", "family": "星火导师方案", "effective_date": "2026-10-08",
+     "paragraphs": [
+       "星火导师计划实施方案 v2",
+       "生效日期：2026年10月8日",
+       "目标调整：第一期培养新任导师 40 名，导师认证通过率达到 85%。",
+       "负责人：周岚；副负责人：陈默。",
+       "里程碑：10月20日完成导师招募；11月30日完成首轮带教；认证考核日期待定。",
+       "本版替代 v1。"
+     ]},
+    {"step": 3, "file": "星火导师计划_10月周报.pptx", "type": "pptx",
+     "slides": [
+       {"title": "星火导师计划 10月第二周", "body": ["已招募导师 26 名", "首轮带教课程大纲已完成", "风险：两个校区尚未提名导师人选"]},
+       {"title": "下周计划", "body": ["完成剩余 14 名导师招募", "确定认证考核日期"]}
+     ]},
+    {"step": 4, "file": "人才盘点_进度表.xlsx", "type": "xlsx",
+     "sheets": [{"name": "进度", "rows": [
+       ["事项", "计划完成", "实际状态"],
+       ["访谈", "2026-10-12", "已完成 20 人"],
+       ["九宫格校准", "2026-10-25", "进行中"],
+       ["盘点报告", "2026-11-05", "未开始"]
+     ]}]},
+    {"step": 5, "file": "人才盘点_访谈纪要_A.docx", "type": "docx",
+     "paragraphs": ["人才盘点访谈纪要（HR 部）", "访谈结论：关键岗位继任者覆盖率为 60%。", "记录人：王一"]},
+    {"step": 6, "file": "人才盘点_访谈纪要_B.docx", "type": "docx",
+     "paragraphs": ["人才盘点访谈纪要（业务部）", "访谈结论：关键岗位继任者覆盖率为 45%。", "记录人：李二"]},
+    {"step": 7, "file": "年度预算_说明.md", "type": "md",
+     "paragraphs": ["# 2027 年度预算说明", "年度预算总额 1200 万元，其中培训预算 180 万元。", "预算需在 11 月 30 日前提交董事会。"]},
+    {"step": 8, "file": "会议记录_1015.docx", "type": "docx",
+     "paragraphs": ["10月15日例会记录", "讨论了下季度的若干安排，相关负责人会后跟进。"]}
+  ],
+  "expected_system_behaviour": {
+    "星火导师方案": "step 2 supersedes step 1 (R1: later effective date); v1 stays viewable as superseded",
+    "继任者覆盖率": "step 5 vs step 6 are equally valid and contradict (60% vs 45%) -> conflict list, not auto-resolved (R3)",
+    "会议记录_1015.docx": "names no project -> ownership cannot be decided -> '需要你决定' ownership card (R2), not auto-assigned"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "_note": "Reviewer-owned standard exam (F3). Run after all corpus steps are scanned and every non-decision candidate is approved through the normal review flow. Ask each question in a fresh assistant session. Checks are applied to the assistant answer text plus the source references the API returns with it.",
+  "check_semantics": {
+    "must_include": "every string appears in the answer text",
+    "must_include_any": "at least one string appears in the answer text",
+    "must_not_include": "none of the strings appears in the answer text",
+    "cite_file": "the answer's returned source references include this file name",
+    "must_not_cite_file": "the answer's returned source references do not include this file name",
+    "conflict_notice": "answer includes both conflicting values and one of 冲突/不一致/矛盾",
+    "suggestion_label": "answer contains a section explicitly labelled as 建议, and is not a refusal (no ANSWER_NOT_VERIFIED / 无法回答)",
+    "insufficient": "answer states the evidence is insufficient (依据不足/没有找到/资料中没有/未提及) and the question is recorded in the knowledge-gap list"
+  },
+  "gate": {"min_pass_rate": 0.9, "must_not_drop_below_previous_release": true},
+  "questions": [
+    {"id": "X01", "q": "星火导师计划第一期要培养多少名导师？", "must_include": ["40"], "must_not_include": ["30 名", "30名"], "cite_file": "星火导师计划_方案_v2.docx", "must_not_cite_file": "星火导师计划_方案_v1.docx"},
+    {"id": "X02", "q": "星火导师计划的导师认证通过率目标是多少？", "must_include": ["85%"], "must_not_include": ["80%"], "cite_file": "星火导师计划_方案_v2.docx"},
+    {"id": "X03", "q": "星火导师计划的负责人是谁？", "must_include": ["周岚"], "cite_file": "星火导师计划_方案_v2.docx"},
+    {"id": "X04", "q": "星火导师计划有没有副负责人？是谁？", "must_include": ["陈默"], "cite_file": "星火导师计划_方案_v2.docx"},
+    {"id": "X05", "q": "星火导师计划什么时候完成导师招募？", "must_include": ["10月20日"], "must_not_include": ["10月10日"]},
+    {"id": "X06", "q": "星火导师计划的认证考核安排在哪天？", "must_include_any": ["待定", "尚未确定", "日期待补", "未确定"], "must_not_include": ["12月15日"]},
+    {"id": "X07", "q": "星火导师计划目前已经招募了多少名导师？", "must_include": ["26"], "cite_file": "星火导师计划_10月周报.pptx"},
+    {"id": "X08", "q": "星火导师计划现在有什么风险？", "must_include": ["校区"], "cite_file": "星火导师计划_10月周报.pptx"},
+    {"id": "X09", "q": "星火导师计划下周要做什么？", "must_include_any": ["14 名", "14名"], "cite_file": "星火导师计划_10月周报.pptx"},
+    {"id": "X10", "q": "人才盘点的访谈完成了多少人？", "must_include": ["20"], "cite_file": "人才盘点_进度表.xlsx"},
+    {"id": "X11", "q": "人才盘点的九宫格校准进展如何？", "must_include": ["进行中"], "cite_file": "人才盘点_进度表.xlsx"},
+    {"id": "X12", "q": "人才盘点的盘点报告计划什么时候完成？", "must_include_any": ["11-05", "11月5日", "11 月 5 日"], "cite_file": "人才盘点_进度表.xlsx"},
+    {"id": "X13", "q": "人才盘点中关键岗位继任者覆盖率是多少？", "conflict_notice": ["60%", "45%"]},
+    {"id": "X14", "q": "年度预算总额是多少？", "must_include": ["1200"], "cite_file": "年度预算_说明.md"},
+    {"id": "X15", "q": "培训预算有多少？", "must_include": ["180"], "cite_file": "年度预算_说明.md"},
+    {"id": "X16", "q": "年度预算什么时候要提交董事会？", "must_include": ["11月30日"], "cite_file": "年度预算_说明.md"},
+    {"id": "X17", "q": "10月15日的例会记录属于哪个项目？", "must_include_any": ["无法确定", "待确认", "需要你决定", "未归属", "尚未归入"]},
+    {"id": "X18", "q": "星火导师计划最早的 v1 方案里原定培养多少名导师？", "must_include": ["30"], "must_include_any": ["v1", "旧版", "已被替代", "superseded", "原方案"]},
+    {"id": "X19", "q": "星火导师计划后续最好如何优化？", "suggestion_label": true, "cite_file": "星火导师计划_10月周报.pptx"},
+    {"id": "X20", "q": "人才盘点下一步应该做什么？", "suggestion_label": true, "must_include_any": ["九宫格", "盘点报告"]},
+    {"id": "X21", "q": "这三个项目里哪个风险最高？为什么？", "must_include_any": ["星火导师计划", "人才盘点"], "must_not_include": ["ANSWER_NOT_VERIFIED"]},
+    {"id": "X22", "q": "星火导师计划的预算是多少？", "insufficient": true},
+    {"id": "X23", "q": "陈默是人才盘点项目的负责人吗？", "must_include_any": ["不是", "没有", "未提及", "星火导师计划"]},
+    {"id": "X24", "q": "年度预算项目由谁负责？", "insufficient": true}
+  ]
+}
