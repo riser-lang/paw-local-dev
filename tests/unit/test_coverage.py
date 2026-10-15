@@ -63,3 +63,10 @@ def test_reread_round_is_bounded_and_does_not_repeat_completed_trigger(database,
     assert len(set(processed))==13
     with storage.connect() as conn:
         assert {r[0] for r in conn.execute('SELECT attempts FROM pm_reread_job')}=={1}
+
+
+def test_semantic_body_contains_real_notes_but_not_empty_style_metadata():
+    value=evidence_body({'structured_semantics':{'headers_footers':[{'paragraphs':[{'text':'','runs':[],'style':'Normal'}]}],
+        'footnotes':[{'text':'实际脚注内容'}]}})
+    assert value=='脚注：实际脚注内容'
+    assert 'Normal' not in value and 'runs' not in value

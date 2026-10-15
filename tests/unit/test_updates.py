@@ -115,3 +115,16 @@ def test_conflict_reassessment_does_not_amplify_reread_queue(database):
     with storage.connect() as conn:
         assert conn.execute('SELECT COUNT(*) FROM pm_reread_job').fetchone()[0]==2
         assert {c['status'] for c in updates.read_conflicts(conn,'p')}=={'open','stale'}
+
+
+def test_more_than_default_eight_configured_sections_are_supported(database,monkeypatch):
+    configs=[{'id':'custom'+str(i),'title':'自定栏目'+str(i),'project_fields':[]} for i in range(9)]
+    monkeypatch.setattr(storage,'config',lambda:{'sections':configs,'context_budget_bytes':16384})
+    body='星河项目。\n'+'\n'.join('事实片段'+str(i) for i in range(9))
+    ingest('a','资料_v1.docx',body)
+    output={'sections':[{'section_id':c['id'],'relation':'supplement','text':'事实片段'+str(i),'quote':'事实片段'+str(i)} for i,c in enumerate(configs)]}
+    model=SimpleNamespace(api_key='fake',chat_completion=lambda **_: (json.dumps(output),{},None))
+    result=updates.process_source('a',model)
+    assert len(result['items'])==9 and all(i['status']=='applied' for i in result['items'])
+    with storage.connect() as conn:
+        assert {r[0] for r in conn.execute('SELECT section_id FROM pm_section_current')}=={s['id'] for s in configs}

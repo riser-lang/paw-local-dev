@@ -112,6 +112,7 @@ def source(conn, ident, extraction=None):
         raise ValueError('来源版本不存在')
     result = dict(row)
     result['url'] = '/v1/pm/sources/' + ident
+    if extraction=='initial':result['url']+='?extraction=initial'
     if extraction!='initial':
         selected=conn.execute('SELECT * FROM pm_source_extraction WHERE source_version_id=?'+(' AND id=?' if extraction else '')+' ORDER BY last_observed_at DESC,id DESC LIMIT 1',
                              (ident,extraction) if extraction else (ident,)).fetchone()

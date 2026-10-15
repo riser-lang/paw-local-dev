@@ -20,17 +20,29 @@ def migrate(conn):
 
 def evidence_body(evidence):
     parts=[str(b.get('text','')) for b in evidence.get('text_blocks',[]) if str(b.get('text','')).strip()]
-    if evidence.get('tables'):parts.append(storage.encoded(evidence['tables']))
+    for table in evidence.get('tables',[]):
+        for row in table.get('rows',[]):
+            cells=[str(c.get('text',c.get('display_value',''))) if isinstance(c,dict) else str(c) for c in row]
+            if any(cells):parts.append('表格：'+'：'.join(cells))
     sem=evidence.get('structured_semantics') or {}
     for sheet in sem.get('sheets',[]):
         parts.append('工作表：'+str(sheet.get('title','')))
         for cell in sheet.get('cells',[]):
             parts.append(str(cell.get('coordinate',''))+'：'+str(cell.get('display_value',cell.get('raw_value',''))))
             if cell.get('formula'):parts.append('公式：'+str(cell['formula']))
-    for key in ('headers_footers','footnotes','endnotes','comments'):
-        if sem.get(key):parts.append(key+'：'+storage.encoded(sem[key]))
+    def texts(value):
+        if isinstance(value,dict):
+            own=value.get('text') or value.get('body')
+            if isinstance(own,str) and own.strip():return [own]
+            return [text for child in value.values() if isinstance(child,(dict,list)) for text in texts(child)]
+        if isinstance(value,list):return [text for child in value for text in texts(child)]
+        return []
+    for key,label in [('headers_footers','页眉页脚'),('footnotes','脚注'),('endnotes','尾注'),('comments','批注')]:
+        for text in dict.fromkeys(texts(sem.get(key))):parts.append(label+'：'+text)
     for slide in sem.get('slides',[]):
-        if slide.get('notes'):parts.append('幻灯片备注：'+storage.encoded(slide['notes']))
+        notes=slide.get('notes')
+        for text in ([notes] if isinstance(notes,str) and notes.strip() else texts(notes)):
+            parts.append('幻灯片备注：'+text)
     return '\n'.join(parts)
 
 
