@@ -1,0 +1,12 @@
+{
+  "_note": "Reviewer-owned. Activate by git mv to tests/required_cases_C-02.json in the C-02 PR without changing content.",
+  "cases": {
+    "PM-B1-01": "项目档案接口返回的栏目与配置文件 backend/pm/dossier_sections.json 完全一致（数量、顺序、标题）",
+    "PM-B1-02": "测试中修改配置文件里的一个栏目标题并重启后，接口返回新标题（证明栏目没有写死在代码中）",
+    "PM-B1-03": "核准一条项目更新后，'一句话现状'或'进度与里程碑'栏目的当前结论包含该进展原文，并附 source_version_id",
+    "PM-B1-04": "同一栏目写入第二条结论后，当前结论只有一条，旧结论出现在该栏目的历史中",
+    "PM-B1-05": "撤销最近一次栏目变更后，当前结论恢复为上一条，正式表计数与变更前一致，撤销记录可查",
+    "PM-B5-01": "项目上下文接口返回的总字节数不超过配置的预算上限；超出部分以阶段摘要代替，原始证据仍可通过来源链接打开"
+  },
+  "negative_controls": {}
+}

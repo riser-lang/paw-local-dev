@@ -1,0 +1,13 @@
+{
+  "_note": "Reviewer-owned. Activate by git mv to tests/required_cases_C-03.json in the C-03 PR without changing content.",
+  "cases": {
+    "PM-B2-01": "同一文档族放入'方案_v1.docx'后再放入'方案_v2.docx'：v2 成为当前版本，v1 标为 superseded，栏目引用全部切换到 v2",
+    "PM-B2-02": "文件内写明的生效日期优先于版本号：'方案_v3.docx'（文内生效日期较早）与'方案_v2.docx'（文内生效日期较晚）并存时，v2 为当前版本",
+    "PM-B2-03": "文件名相似但无法确定是否同族时，不自动归族，'需要你决定'中出现一张确认卡片，正式数据不变",
+    "PM-B2-04": "撤销一次版本裁定后，旧版恢复为当前版本，栏目引用随之恢复",
+    "PM-B2-05": "AI 助手回答涉及该文档族时，只引用当前版本，不引用 superseded 版本"
+  },
+  "negative_controls": {
+    "NC-PM-B2": {"installer": "v2.3.9-baseline", "runs": "PM-B2-01", "expect_failed_check": "old_version_superseded"}
+  }
+}
