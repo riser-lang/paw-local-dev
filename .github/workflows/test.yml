@@ -283,6 +283,16 @@ jobs:
           Get-ChildItem all_reports -Recurse
           python tests/paw_verdict.py all_reports ${{ github.sha }} summary.md
 
+      - name: Publish Reviewer Verdict to Job Summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path summary.md) {
+            Get-Content summary.md -Raw -Encoding utf8 | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          } else {
+            "Reviewer verdict did not produce summary.md; see the failed gate step." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
       - name: Upload Pipeline Verdict Summary
         if: always()
         uses: actions/upload-artifact@v4
