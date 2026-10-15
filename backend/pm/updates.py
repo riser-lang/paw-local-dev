@@ -37,6 +37,9 @@ def process_source(sid,provider,only_sections=None):
         coverage=conn.execute('SELECT ratio FROM pm_coverage WHERE source_version_id=?',(sid,)).fetchone()
         if coverage and coverage['ratio'] is not None and coverage['ratio']<.8:
             enqueue(conn,sid,'low_coverage',sid)
+            # This connection owns only the derived trigger observation so far.
+            # Release its writer before a potentially slow model request.
+            conn.commit()
         member=conn.execute('SELECT f.* FROM pm_family_member m JOIN pm_family f ON f.id=m.family_id WHERE m.source_version_id=?',(sid,)).fetchone()
         if not member or not versions.is_current(conn,sid):
             return {'status':'needs_assignment','items':[]}

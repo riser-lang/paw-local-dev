@@ -140,3 +140,22 @@ def test_more_than_default_eight_configured_sections_are_supported(database,monk
     assert len(result['items'])==9 and all(i['status']=='applied' for i in result['items'])
     with storage.connect() as conn:
         assert {r[0] for r in conn.execute('SELECT section_id FROM pm_section_current')}=={s['id'] for s in configs}
+
+
+def test_low_coverage_observation_does_not_hold_writer_during_model(database):
+    import sqlite3
+    from backend.pm import coverage
+    seed()
+    ingest('b','现场纪要.docx','星河项目。联调已启动。')
+    with storage.connect() as conn:
+        coverage.record(conn,'b','现场纪要.docx',{'reader_type':'PDF','structured_semantics':{'pages':[
+            {'page':1,'classification':'native-text'},{'page':2,'classification':'image-only'}]}})
+    def answer(**kwargs):
+        # A concurrent local writer must not wait for network/model latency.
+        with sqlite3.connect(str(database),timeout=.05) as other:
+            other.execute("UPDATE pm_coverage SET updated_at='concurrent-writer' WHERE source_version_id='b'")
+        return json.dumps({'sections':[{'section_id':'progress','relation':'supplement','text':'联调已启动','quote':'联调已启动'}]}),{},None
+    result=updates.process_source('b',SimpleNamespace(api_key='fake',chat_completion=answer))
+    assert result['items'][0]['status']=='applied'
+    with storage.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM pm_reread_job WHERE reason='low_coverage'").fetchone()[0]==1
