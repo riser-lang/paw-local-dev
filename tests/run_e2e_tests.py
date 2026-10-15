@@ -163,7 +163,7 @@ def stop_paw(proc: Optional[subprocess.Popen]):
                 pass
 
 
-def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str = "", wait_ms: int = 1200) -> Tuple[str, str, Path]:
+def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str = "", wait_ms: int = 1200, ready_texts: tuple = ()) -> Tuple[str, str, Path]:
     """Uses Playwright to render page, retrieve final URL and inner body text, and capture screenshot."""
     out_path = SCREENSHOTS_DIR / output_png_name
     final_url = page_url
@@ -175,8 +175,16 @@ def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str =
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 900})
+            project_responses = []
+            page.on('response', lambda response: project_responses.append(response.status) if '/v1/web/workspace/projects' in response.url else None)
             page.goto(page_url, wait_until="domcontentloaded", timeout=12000)
             page.wait_for_timeout(wait_ms)
+            if ready_texts:
+                first_text = page.inner_text('body')
+                started = time.monotonic()
+                logger.info('Page readiness %s initial_matches=%s/%s project_response_statuses=%s', case_id, sum(text in first_text for text in ready_texts), len(ready_texts), project_responses)
+                page.wait_for_function('(texts) => texts.every(text => document.body.innerText.includes(text))', arg=list(ready_texts), timeout=12000)
+                logger.info('Page readiness %s condition_seconds=%.4f project_response_statuses=%s', case_id, time.monotonic()-started, project_responses)
             final_url = page.url
             try:
                 body_text = page.inner_text("body")
@@ -852,7 +860,7 @@ def run_b5(report: Report, installer_exe: Path):
         conn.commit()
         conn.close()
 
-        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app/projects", "screen_B5_01.png", "B5-01")
+        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app/projects", "screen_B5_01.png", "B5-01", ready_texts=("智能认知治理工程", "端侧沙箱执行系统", "规划中", "执行中"))
         c.check("projects_list_rendered_names", "智能认知治理工程" in body_text and "端侧沙箱执行系统" in body_text, True)
         c.check("projects_list_rendered_chinese_stages", "规划中" in body_text and "执行中" in body_text, True)
         c.screenshot(shot, "http://127.0.0.1:8800/app/projects")
