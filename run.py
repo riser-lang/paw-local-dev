@@ -43,6 +43,18 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8", errors="replace")
 
+# Reader children do not initialize configuration, a database, the desktop
+# tray, or a gateway. This also prevents late workers recreating cleared data.
+if __name__ == '__main__':
+    _worker_args = None
+    if len(sys.argv) > 1 and sys.argv[1] == '--reader-worker':
+        _worker_args = sys.argv[2:]
+    elif len(sys.argv) > 2 and sys.argv[1:3] == ['-m', 'backend.reader.subprocess_worker']:
+        _worker_args = sys.argv[3:]
+    if _worker_args is not None:
+        from backend.reader.subprocess_worker import main as _reader_worker_main
+        sys.exit(_reader_worker_main(_worker_args))
+
 import uvicorn
 from backend.core.config import settings
 from backend.tray.tray_app import PawSystemTray

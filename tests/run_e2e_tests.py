@@ -255,6 +255,8 @@ def poll_candidates_from_scanner(timeout_sec: int = 40) -> List[Dict[str, Any]]:
         if result.get('status') in ('completed', 'failed'):
             logger.info('Scan completion evidence: %s', {k: result.get(k) for k in (
                 'status','total_files','phase1_success','phase2_success','failed_files','new_candidates_count')})
+            logger.info('Scan ingestion failures: %s', [{k:item.get(k) for k in ('file_name','error_type','error_message')}
+                                                       for item in result.get('failed_items',[])])
         checkpoint = get_db_path().parent / 'scan_checkpoint.json'
         if result.get('status') == 'completed' and checkpoint.is_file():
             try:
