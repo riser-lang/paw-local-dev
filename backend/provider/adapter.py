@@ -516,12 +516,21 @@ class UniversalOpenAIProvider(BaseProvider):
         try:
             # Grounded answers (structured sections + evidence map) can take well over
             # 45 s on slower models; allow 120 s for the response, 10 s to connect.
+            from backend.pm.answer_timing import current as answer_timing
+            stats=answer_timing.get()
+            call_started=time.perf_counter()
+            if stats is not None:
+                stats['model_calls']+=1
+                stats['prompt_bytes']=max(stats['prompt_bytes'],len(json.dumps(messages,ensure_ascii=False).encode('utf-8')))
             with httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
                 resp = client.post(url, headers=headers, json=body)
                 if resp.status_code == 400 and body.get("enable_search"):
                     # Retry without enable_search if provider rejects unknown parameter
                     body.pop("enable_search", None)
                     resp = client.post(url, headers=headers, json=body)
+
+                if stats is not None:
+                    stats['model_seconds']=round(stats['model_seconds']+time.perf_counter()-call_started,4)
 
                 if resp.status_code == 200:
                     data = resp.json()

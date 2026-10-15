@@ -10,6 +10,7 @@ Features:
 from __future__ import annotations
 
 import logging
+import time
 from typing import List, Optional
 
 import httpx
@@ -178,7 +179,12 @@ class DuckDuckGoLiteBackend(SearchBackend):
         ]
 
         last_err: Optional[Exception] = None
+        deadline=time.monotonic()+timeout
         for endpoint in endpoints:
+            remaining=deadline-time.monotonic()
+            if remaining <= 0:
+                raise SearchTimeoutError('DuckDuckGo total fallback budget exhausted')
+            client_kwargs['timeout']=remaining
             try:
                 with httpx.Client(**client_kwargs) as client:
                     resp = client.post(endpoint, data=data)

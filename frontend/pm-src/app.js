@@ -1,4 +1,5 @@
 const app = document.querySelector('#app');
+import {renderVersions} from './versions.js';
 const id = decodeURIComponent(location.pathname.split('/').pop());
 function node(tag, text, cls) {const el=document.createElement(tag); if(text!==undefined)el.textContent=text; if(cls)el.className=cls; return el;}
 async function api(url, body) {const r=await fetch(url,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.detail||'操作失败');return data;}
@@ -12,6 +13,7 @@ async function render(){const data=await api('/v1/pm/projects/'+encodeURICompone
  const history=node('details');history.append(node('summary','历史（'+section.history.length+'）'));for(const r of section.history){history.append(node('p',r.text+(r.withdrawn?'（已撤销）':'')),reference(r));}card.append(history);grid.append(card);}
  for(const draft of data.ai_generated){const card=node('article',undefined,'ai');card.append(node('strong','AI 生成 · 尚未成为正式事实'));for(const [k,label]of Object.entries({one_sentence:'一句话说明',current_state:'目前做到哪里',key_open_issue:'当前关键问题',next_step:'下一步建议'}))card.append(node('p',label+'：'+draft.content[k]));card.append(action('采纳',async()=>{const r=await api('/v1/pm/projects/'+encodeURIComponent(id)+'/derived/'+encodeURIComponent(draft.id)+'/adopt',{});notice('已生成候选，前往“待我审核”核准后才会写入正式档案。候选：'+r.candidate_id);}));app.append(card);}
  if(!data.ai_generated.length)app.append(node('p','暂无 AI 生成说明。需要填写 Key 才能生成；已有正式事实可直接查看。','empty'));
+ await renderVersions({app,id,node,action,api,reference,notice,refresh:render});
 }
 document.querySelector('#close-source').onclick=()=>document.querySelector('#source').close();
 render().catch(e=>{app.replaceChildren(node('h1','项目档案暂不可用'),node('p',e.message));});

@@ -10,6 +10,41 @@ from .budget import bounded_context
 router = APIRouter()
 
 
+@router.get('/projects/{project_id}/families')
+def families(project_id: str):
+    from .versions import read
+    with storage.connect() as conn:
+        return {'items':read(conn,project_id)}
+
+
+@router.get('/decisions')
+def family_decisions():
+    with storage.connect() as conn:
+        return {'items':[dict(r) for r in conn.execute("SELECT * FROM pm_family_decision WHERE status='pending' ORDER BY created_at")]}
+
+
+class FamilyChoice(BaseModel):
+    project_id: str
+    family_id: str | None = None
+    family_title: str = Field(min_length=1,max_length=300)
+
+
+@router.post('/decisions/{decision_id}/resolve')
+def resolve_family(decision_id: str, body: FamilyChoice):
+    from backend.governance.committer import create_direct_user_approved_change,commit_approved_change
+    with storage.connect() as conn:
+        card=conn.execute("SELECT * FROM pm_family_decision WHERE id=? AND status='pending'",(decision_id,)).fetchone()
+        if not card:
+            raise HTTPException(409,'待决事项已变化')
+        sid=card['source_version_id']
+    _,cid=create_direct_user_approved_change('pm_version','rule',
+        {**body.model_dump(),'source_version_id':sid,'decision_id':decision_id},[sid])
+    result=commit_approved_change(cid)
+    if result['result']!='success':
+        raise HTTPException(409,result.get('error','裁定失败'))
+    return {**result,'change_id':cid}
+
+
 class SectionProposal(BaseModel):
     section_id: str
     text: str = Field(min_length=1, max_length=50000)

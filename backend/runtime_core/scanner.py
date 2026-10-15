@@ -537,108 +537,22 @@ class PawScanner:
         return True
 
     def _register_source_identity_and_version(self, p: Path, doc_stem: str, f_hash: str, mtime: float, size: int) -> None:
-        """Requirement R3: Register source identity and multi-version candidates without overwriting."""
-        base_family = _normalize_source_family(doc_stem)
+        """Register immutable intake only; PM Committer owns effective family/status."""
         now = datetime.now(timezone.utc).isoformat()
-        source_version_id = f_hash[:16]
-
+        sid = f_hash[:16]
         conn = get_db()
-        should_create_candidate = False
-        candidate_kwargs: Dict[str, Any] = {}
         try:
             with conn:
-                # 1. Lookup or create logical_document
-                row = conn.execute(
-                    "SELECT logical_document_id FROM logical_document WHERE display_name = ?",
-                    (base_family,),
-                ).fetchone()
-
-                if row:
-                    logical_doc_id = row[0]
-                else:
-                    logical_doc_id = f"ld_{f_hash[:12]}"
-                    conn.execute(
-                        """INSERT INTO logical_document (
-                            logical_document_id, object_id, display_name, family_status, created_at, updated_at
-                        ) VALUES (?, ?, ?, 'active', ?, ?)""",
-                        (logical_doc_id, base_family, base_family, now, now),
-                    )
-
-                # 2. Check if this version is already registered
-                v_row = conn.execute(
-                    "SELECT source_version_id, governance_status FROM source_version_governance WHERE source_version_id = ?",
-                    (source_version_id,),
-                ).fetchone()
-
-                if not v_row:
-                    provenance_meta = json.dumps({
-                        "file_path": str(p),
-                        "file_name": p.name,
-                        "mtime": mtime,
-                        "size": size,
-                        "hash": f_hash,
-                    }, ensure_ascii=False)
-
-                    # R3.3: latest observed != effective_current; default to 'unresolved' and rank 99
-                    conn.execute(
-                        """INSERT INTO source_version_governance (
-                            source_version_id, logical_document_id, governance_status,
-                            supersedes_source_version_id, effective_from, effective_to,
-                            authority_rank, authority_reason, confidence, provenance_json,
-                            created_at, updated_at
-                        ) VALUES (?, ?, 'unresolved', NULL, NULL, NULL, 99, '本地扫描初次摄取，待审核认定有效版本', 'HIGH', ?, ?, ?)""",
-                        (source_version_id, logical_doc_id, provenance_meta, now, now),
-                    )
-
-                    # 3. Detect multi-version and propose human review question (R3.4)
-                    other_versions = conn.execute(
-                        "SELECT source_version_id, provenance_json FROM source_version_governance WHERE logical_document_id = ? AND source_version_id != ?",
-                        (logical_doc_id, source_version_id),
-                    ).fetchall()
-
-                    if other_versions:
-                        other_names = []
-                        for ov in other_versions:
-                            try:
-                                prov = json.loads(ov[1])
-                                other_names.append(prov.get("file_name", ov[0]))
-                            except Exception:
-                                other_names.append(ov[0])
-                        other_names.append(p.name)
-
-                        sample_names = " / ".join(other_names[:3])
-                        should_create_candidate = True
-                        candidate_kwargs = {
-                            "target_type": "knowledge",
-                            "operation": "create",
-                            "payload": {
-                                "title": f"【版本认定】《{base_family}》多版本有效性认定",
-                                "slug": f"ver-{logical_doc_id[:24]}",
-                                "logical_document_id": logical_doc_id,
-                                "candidate_versions": other_names,
-                                "latest_observed": p.name,
-                            },
-                            "raw_excerpt": f"检测到同源文件的多个历史或分支版本：{sample_names}",
-                            "source_refs": [f_hash],
-                            "confidence": "MEDIUM",
-                            "analysis_model": "Scanner+TemporalAuthorityResolver",
-                            "review_brief": {
-                                "summary": f"发现同一来源文档存在相近的多个版本（{sample_names}），哪一个是当前有效版本？",
-                                "risk_level": "MEDIUM",
-                                "recommended_action": "请在审核中心确认有效版本，避免旧版本事实被覆盖",
-                                "generation_mode": "TEMPORAL_AUTHORITY_QUESTION",
-                            },
-                        }
-        except Exception as exc:
-            logger.warning(f"Failed to register source version governance: {exc}")
+                logical_id = "intake-" + sid
+                conn.execute("INSERT OR IGNORE INTO logical_document VALUES(?,?,?,'active',?,?)",
+                             (logical_id,f_hash,p.name,now,now))
+                conn.execute("""INSERT OR IGNORE INTO source_version_governance(
+                    source_version_id,logical_document_id,governance_status,authority_rank,
+                    authority_reason,confidence,provenance_json,created_at,updated_at)
+                    VALUES(?,?,'unresolved',99,'摄取登记；有效版本由 PM 治理链裁定','HIGH',?,?,?)""",
+                    (sid,logical_id,json.dumps({'file_name':p.name,'hash':f_hash},ensure_ascii=False),now,now))
         finally:
             conn.close()
-
-        if should_create_candidate and candidate_kwargs:
-            try:
-                governance.create_candidate(**candidate_kwargs)
-            except Exception as e:
-                logger.warning(f"Failed to create version review candidate: {e}")
 
     # ── Phase 2 Worker: AI Analysis & Candidate Proposal ──────────────────────
 

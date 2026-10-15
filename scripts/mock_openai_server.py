@@ -271,12 +271,11 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
         # 4. Grounded Q&A (Assistant)
         else:
-            doc_name = extract_doc_name(all_text)
-            reply_content = (
-                f"根据已归档的项目文档记载 [文档依据: {doc_name} 第1节]：\n"
-                f"本项目核心目标为实现云原生治理与离线端侧高保真运行，目前已完成基础架构梳理与端侧适配。\n"
-                f"针对您提出的问题（“{user_prompt[:40]}...”），系统已依据导入的文档事实进行交叉比对，确认无冲突。"
-            )
+            try:
+                from scripts.mock_grounded_answer import answer
+            except ModuleNotFoundError:
+                from mock_grounded_answer import answer
+            reply_content=answer(all_text)
 
         resp = {
             "id": f"chatcmpl-mock-{int(time.time()*1000)}",
