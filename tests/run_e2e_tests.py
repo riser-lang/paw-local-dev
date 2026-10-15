@@ -242,31 +242,14 @@ def configure_mock_settings(work_dir: Optional[Path] = None):
 
 
 def poll_candidates_from_scanner(timeout_sec: int = 40) -> List[Dict[str, Any]]:
-    cand_list = []
-    for sec in range(timeout_sec):
-        time.sleep(1.0)
-        db_path = get_db_path()
-        if not db_path.exists():
-            continue
-        conn = sqlite3.connect(str(db_path), timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT * FROM candidate WHERE status='pending'").fetchall()
-        cand_list = [dict(r) for r in rows]
-        conn.close()
-        
-        scanner_status = ""
-        try:
-            prog = httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0).json()
-            scanner_status = prog.get("status", "")
-        except Exception:
-            pass
-            
-        if len(cand_list) >= 3 or (len(cand_list) >= 1 and scanner_status in ("idle", "completed") and sec >= 8):
-            logger.info(f"Candidates generated after {sec+1}s: {len(cand_list)} found (scanner_status={scanner_status})")
-            break
-        if (sec + 1) % 5 == 0:
-            logger.info(f"Waiting for candidates at {sec+1}s: {len(cand_list)} found (scanner_status={scanner_status})")
-    return cand_list
+    from tests.scanner_wait import wait_for_scan
+    def candidates():
+        with sqlite3.connect(str(get_db_path()), timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(r) for r in conn.execute("SELECT * FROM candidate WHERE status='pending'")]
+    def progress():
+        return httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0).json()
+    return wait_for_scan(candidates, progress, timeout_sec)
 
 
 def parse_candidate_types(cand_list: List[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -1231,6 +1214,9 @@ def main():
         run_b7(report, inst_path)
     elif block == "B8":
         run_b8(report, inst_path)
+    elif block == "PM02":
+        from tests.run_pm_tests import run_c02
+        run_c02(report, inst_path)
     elif block == "NEGATIVE-CONTROL":
         base_path = Path(args.baseline_exe)
         if base_path.is_dir():

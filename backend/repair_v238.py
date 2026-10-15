@@ -397,7 +397,9 @@ def install():
             context['project_handbook'] = _local_handbook(context,explainer)
             context['handbook_quality_gate'] = 'PARTIAL'
             context['handbook_metadata'] = {'authority':'stored_record_read_model','formal_state':False}
-        return context
+        from backend.pm.legacy_context import bounded_legacy
+        from backend.pm.storage import config as pm_config
+        return bounded_legacy(context, pm_config()['context_budget_bytes'])
     _replace_references(original_context,project_context)
     original_list = repository.list_projects
     def list_projects(limit=100):

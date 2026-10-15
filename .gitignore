@@ -12,6 +12,7 @@
 !template/workspace_template.db
 *.exe
 __pycache__/
+node_modules/
 *.pyc
 *.log
 /scratch/

@@ -30,6 +30,8 @@ class AgentPlanner:
         file_hash: str,
     ) -> List[str]:
         """Core planning execution when ANALYSIS_READY event occurs."""
+        from backend.pm.storage import ingest_evidence
+        ingest_evidence(evidence, file_hash)
         display_name = evidence.get("display_name") or "untitled"
         text_blocks = evidence.get("text_blocks", [])
         combined_text = " ".join(b.get("text", "") for b in text_blocks[:15])

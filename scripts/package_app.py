@@ -52,6 +52,14 @@ def main():
 
     print("[PASS] 基础文件与 SQLite 模板核验完毕")
 
+    # Build the maintainable PM frontend, never patch compiled React assets.
+    npm = shutil.which('npm.cmd') or shutil.which('npm')
+    if not npm:
+        raise RuntimeError('npm is required to build frontend/pm-src')
+    pm_source = ROOT_DIR / 'frontend' / 'pm-src'
+    subprocess.run([npm, 'ci', '--ignore-scripts'], cwd=pm_source, check=True)
+    subprocess.run([npm, 'run', 'build'], cwd=pm_source, check=True)
+
     # 2. Run PyInstaller
     cmd = [sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", str(SPEC_FILE)]
     print(f"\n[INFO] 执行 PyInstaller 构建: {' '.join(cmd)}")

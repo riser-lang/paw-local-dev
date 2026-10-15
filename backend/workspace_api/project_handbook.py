@@ -710,6 +710,12 @@ def read_project_explainer(project_id: str, *, db_path: str | None = None) -> di
     conn = sqlite3.connect(db_path or str(DB_PATH))
     conn.row_factory = sqlite3.Row
     try:
+        from backend.pm.storage import derived
+        drafts = derived(conn, project_id)
+        if drafts:
+            return {'explainer': {k: 'AI 生成：' + v for k, v in drafts[0]['content'].items()},
+                    'updated_at': drafts[0]['created_at'], 'authority': 'ai_generated',
+                    'formal_state': False, 'source': 'pm_ai_explainer', 'label': 'AI 生成'}
         handbook = conn.execute(
             "SELECT sections_json, updated_at FROM project_handbook WHERE project_id=?",
             (project_id,),

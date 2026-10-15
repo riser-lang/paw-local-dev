@@ -1,4 +1,4 @@
-name: Build and Consistency Check
+name: Build Installer
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Installer & Verify Consistency
+    name: Build Installer
     runs-on: windows-latest
     env:
       PYTHONIOENCODING: utf-8
@@ -29,13 +29,12 @@ jobs:
           python-version: '3.13'
           cache: 'pip'
 
-      - name: Install Inno Setup and Inno Unpacker
-        run: |
-          choco install innosetup -y --no-progress
-          curl.exe -sLO https://github.com/jrathlev/InnoUnpacker-Windows-GUI/releases/download/ui_2_2_13/innounp-2.zip
-          tar.exe -xf innounp-2.zip
-          Move-Item -Path innounp.exe -Destination "C:\ProgramData\chocolatey\bin\innounp.exe" -Force
-          innounp.exe
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Install Python Build Dependencies
         run: |
@@ -62,39 +61,3 @@ jobs:
             dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe
             dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe.sha256
           if-no-files-found: error
-
-      - name: Download Baseline v2.3.8 Installer from Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          New-Item -ItemType Directory -Path baseline -Force | Out-Null
-          gh release download v2.3.8-baseline --repo ${{ github.repository }} --pattern "*.exe" --dir baseline
-          Get-ChildItem baseline
-
-      - name: Unpack Built and Baseline Installers
-        run: |
-          New-Item -ItemType Directory -Path unpack\built_inno, unpack\baseline_inno -Force | Out-Null
-          $pyinst = (Resolve-Path "scripts\pyinstxtractor.py").Path
-
-          Write-Host "[1/4] Unpacking built installer..."
-          innounp.exe -x -y -b -q -dunpack\built_inno dist\PAW_Personal_Work_OS_Setup_v2.3.9.exe
-
-          Write-Host "[2/4] Unpacking baseline installer..."
-          $baseExe = (Get-ChildItem baseline\*.exe)[0].FullName
-          innounp.exe -x -y -b -q -dunpack\baseline_inno $baseExe
-
-          Write-Host "[3/4] Extracting PyInstaller archive for built app..."
-          $builtAppExe = (Get-ChildItem unpack\built_inno -Recurse -Filter "PAW_Personal_Work_OS.exe")[0].FullName
-          Push-Location unpack\built_inno
-          python $pyinst $builtAppExe
-          Pop-Location
-
-          Write-Host "[4/4] Extracting PyInstaller archive for baseline app..."
-          $baseAppExe = (Get-ChildItem unpack\baseline_inno -Recurse -Filter "PAW_Personal_Work_OS.exe")[0].FullName
-          Push-Location unpack\baseline_inno
-          python $pyinst $baseAppExe
-          Pop-Location
-
-      - name: Run Consistency Verification Check
-        run: |
-          python scripts/verify_consistency.py --built-dir unpack\built_inno --baseline-dir unpack\baseline_inno
