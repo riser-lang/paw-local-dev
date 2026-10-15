@@ -48,6 +48,7 @@ def _payload_hash(payload: dict) -> str:
 
 # ── Payload schemas ─────────────────────────────────────────────────────────
 PAYLOAD_SCHEMAS: dict[str, dict[str, list[str]]] = {
+    "pm_update_decision": {"resolve": ["assessment_id", "choice"]},
     "pm_version": {"rule": ["project_id", "source_version_id", "family_title"]},
     "pm_section": {"update": ["project_id", "section_id", "text", "source_version_id"]},
     "pm_undo": {"restore": ["change_id"]},
@@ -859,12 +860,12 @@ def commit_approved_change(change_id: str) -> dict:
 
         # ── Transaction: execute payload write ──
         executor = EXECUTORS.get((ac["target_type"], ac["operation"]))
-        if executor is None and ac['target_type'] not in ('pm_section', 'pm_undo', 'pm_version'):
+        if executor is None and ac['target_type'] not in ('pm_section', 'pm_undo', 'pm_version', 'pm_update_decision'):
             raise ValueError(f"No executor for {ac['target_type']}.{ac['operation']}")
 
         transaction_id = _uuid()
         from backend.pm import governance as pm_governance
-        if ac['target_type'] in ('pm_section', 'pm_undo', 'pm_version'):
+        if ac['target_type'] in ('pm_section', 'pm_undo', 'pm_version', 'pm_update_decision'):
             committed_target_id = pm_governance.execute(conn, ac, payload)
         else:
             from backend.pm.versions import is_current

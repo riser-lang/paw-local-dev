@@ -1263,6 +1263,9 @@ def main():
     elif block == "PM03":
         from tests.run_pm_versions_tests import run_c03
         run_c03(report, inst_path)
+    elif block == "PM04":
+        from tests.run_pm_updates_tests import run_c04
+        run_c04(report, inst_path)
     elif block == "NEGATIVE-CONTROL":
         base_path = Path(args.baseline_exe)
         if base_path.is_dir():

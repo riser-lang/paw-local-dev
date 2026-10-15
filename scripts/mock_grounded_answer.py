@@ -8,6 +8,39 @@ def terms(text):
     return {t for word in words for t in ([word] if not re.search('[\u4e00-\u9fff]',word) else [word[i:i+2] for i in range(len(word)-1)])}
 
 
+def section_updates(value):
+    """Generic extractive contract implementation, driven by supplied configuration."""
+    body=value['body'];sections=value['sections'];output=[]
+    labelled=[]
+    for section in sections:
+        match=re.search(re.escape(section['title'])+r'\s*[:：]([^\n]+)',body)
+        if match:
+            labelled.append((section,match.group(1).strip().strip('。；')))
+    if not labelled:
+        # A general progress note has no invented KPI/risk or next-step sections.
+        progress=next((s for s in sections if '进度' in s['title']),None)
+        sentences=[s.strip() for s in re.split('[。\n]',body) if s.strip() and not s.strip().endswith('项目')
+                   and re.search(r'完成|启动|联调|原型|里程碑|开发|上线|交付',s)
+                   and not re.match(r'headers_footers|footnotes|endnotes|comments|[\[{]',s.strip())]
+        if progress and sentences:labelled=[(progress,sentences[0][:2000])]
+    def normalize(text):return re.sub(r'[\s。；：:，,]','',text)
+    def subject(text):
+        hit=re.match(r'(.{2,30}?)(?:状态为|状态是|为|是|[:：])(.+)',text)
+        return hit.groups() if hit else None
+    for section,text in labelled:
+        prior=(section.get('current') or {}).get('text','')
+        relation='supplement'
+        if prior and (normalize(text)==normalize(prior) or normalize(text) in normalize(prior)):
+            relation='consistent'
+        elif prior:
+            incoming=subject(text)
+            older=[subject(s.strip()) for s in re.split('[。\n]',prior)]
+            if incoming and any(old and old[0]==incoming[0] and normalize(old[1])!=normalize(incoming[1]) for old in older):
+                relation='conflict'
+        output.append({'section_id':section['section_id'],'relation':relation,'text':text,'quote':text})
+    return {'sections':output}
+
+
 def answer(prompt):
     question=prompt.rsplit('--- 用户消息 ---',1)[-1].split('【严格修复')[0].strip()
     refs={ident.split(':',1)[1]:ident for ident in re.findall(r'^- ([A-Z_]+:[^\s]+)\s+\[',prompt,re.M)}

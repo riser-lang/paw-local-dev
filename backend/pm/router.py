@@ -10,6 +10,62 @@ from .budget import bounded_context
 router = APIRouter()
 
 
+@router.get('/coverage')
+def coverage_report():
+    from .coverage import read
+    with storage.connect() as conn:return {'items':read(conn)}
+
+
+@router.get('/projects/{project_id}/assessments')
+def assessments(project_id: str):
+    with storage.connect() as conn:
+        return {'items':[dict(r) for r in conn.execute('SELECT * FROM pm_section_assessment WHERE project_id=? ORDER BY created_at DESC',(project_id,))]}
+
+
+@router.post('/projects/{project_id}/sources/{source_id}/assess')
+def assess_source(project_id: str,source_id: str):
+    from .updates import process_source
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        member=conn.execute('SELECT f.project_id FROM pm_family_member m JOIN pm_family f ON f.id=m.family_id WHERE m.source_version_id=?',(source_id,)).fetchone()
+        if not member or member[0]!=project_id:raise HTTPException(409,'先确认项目和文档族归属')
+    return process_source(source_id,get_active_provider())
+
+
+@router.get('/projects/{project_id}/conflicts')
+def conflicts(project_id: str):
+    from .updates import read_conflicts
+    with storage.connect() as conn:return {'items':read_conflicts(conn,project_id)}
+
+
+class UpdateChoice(BaseModel):
+    choice: str
+
+
+@router.post('/assessments/{assessment_id}/resolve')
+def resolve_update(assessment_id: str,body: UpdateChoice):
+    from backend.governance.committer import create_direct_user_approved_change,commit_approved_change
+    _,cid=create_direct_user_approved_change('pm_update_decision','resolve',{'assessment_id':assessment_id,'choice':body.choice})
+    result=commit_approved_change(cid)
+    if result['result']!='success':raise HTTPException(409,result.get('error','裁决失败'))
+    return {**result,'change_id':cid}
+
+
+@router.get('/reread')
+def reread_jobs():
+    with storage.connect() as conn:return {'items':[dict(r) for r in conn.execute('SELECT * FROM pm_reread_job ORDER BY created_at DESC')]}
+
+
+class RereadLimit(BaseModel):
+    limit: int = Field(default=5,ge=5,le=10)
+
+
+@router.post('/reread/run')
+def run_reread(body: RereadLimit):
+    from .reread import run
+    return run(body.limit)
+
+
 @router.get('/projects/{project_id}/families')
 def families(project_id: str):
     from .versions import read
@@ -71,10 +127,10 @@ def context(project_id: str):
 
 
 @router.get('/sources/{source_version_id}')
-def get_source(source_version_id: str):
+def get_source(source_version_id: str,extraction: str | None = None):
     try:
         with storage.connect() as conn:
-            return storage.source(conn, source_version_id)
+            return storage.source(conn, source_version_id,extraction)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
 

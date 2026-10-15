@@ -254,6 +254,13 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
         if user_prompt.strip().lower() == "ping":
             reply_content = "pong"
 
+        elif '语义任务契约：section_update' in system_prompt:
+            try:
+                from scripts.mock_grounded_answer import section_updates
+            except ModuleNotFoundError:
+                from mock_grounded_answer import section_updates
+            reply_content=json.dumps(section_updates(json.loads(user_prompt)),ensure_ascii=False)
+
         # 2. Project Explainer 30-Second Summary (Level-1 Explainer)
         elif any(k in all_text for k in ["30秒说明", "一句话读懂", "提炼30秒说明", "key_open_issue"]):
             proj_name = extract_project_name(all_text)

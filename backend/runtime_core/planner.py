@@ -47,6 +47,11 @@ class AgentPlanner:
 
         # 3. Model Inference via Provider Adapter
         provider = get_active_provider()
+        from backend.pm import storage
+        from backend.pm.updates import process_source
+        with storage.connect() as conn:
+            conn.execute('INSERT INTO pm_source_location VALUES(?,?) ON CONFLICT(source_version_id) DO UPDATE SET path=excluded.path',(file_hash,source_file_path))
+        process_source(file_hash,provider)
         raw_proposals = provider.propose(evidence, projects, knowledge_items)
 
         created_candidate_ids = []

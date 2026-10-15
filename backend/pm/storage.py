@@ -63,6 +63,10 @@ def migrate(conn):
     ''')
     from .versions import migrate as migrate_versions
     migrate_versions(conn)
+    from .coverage import migrate as migrate_coverage
+    from .updates import migrate as migrate_updates
+    migrate_coverage(conn)
+    migrate_updates(conn)
 
 
 def config(path=None):
@@ -90,19 +94,34 @@ def store_source(conn, ident, title, body, evidence=None, kind='document'):
 
 
 def ingest_evidence(evidence, file_hash, db_path=None):
-    body = '\n'.join(str(b.get('text', '')) for b in evidence.get('text_blocks', []))
-    body += '\n' + encoded(evidence.get('tables', [])) if evidence.get('tables') else ''
+    from .coverage import evidence_body,save_extraction
+    body = evidence_body(evidence)
     with connect(db_path) as conn:
-        store_source(conn, file_hash, evidence.get('display_name') or '输入资料', body, evidence,
-                     'capture' if evidence.get('is_capture') else 'document')
+        if not conn.execute('SELECT 1 FROM pm_source WHERE source_version_id=?',(file_hash,)).fetchone():
+            store_source(conn, file_hash, evidence.get('display_name') or '输入资料', body, evidence,
+                         'capture' if evidence.get('is_capture') else 'document')
+        save_extraction(conn,file_hash,evidence)
+        if not evidence.get('is_capture'):
+            from .coverage import record
+            record(conn,file_hash,evidence.get('display_name') or '输入资料',evidence)
 
 
-def source(conn, ident):
+def source(conn, ident, extraction=None):
     row = conn.execute('SELECT * FROM pm_source WHERE source_version_id=?', (ident,)).fetchone()
     if row is None:
         raise ValueError('来源版本不存在')
     result = dict(row)
     result['url'] = '/v1/pm/sources/' + ident
+    if extraction!='initial':
+        selected=conn.execute('SELECT * FROM pm_source_extraction WHERE source_version_id=?'+(' AND id=?' if extraction else '')+' ORDER BY last_observed_at DESC,id DESC LIMIT 1',
+                             (ident,extraction) if extraction else (ident,)).fetchone()
+        if extraction and selected is None:raise ValueError('读取快照不存在')
+        if selected:
+            result['body']=selected['body']
+            result['extraction_id']=selected['id']
+            result['url']+='?extraction='+selected['id']
+    result.setdefault('extraction_id','initial')
+    result['initial_extraction_url']='/v1/pm/sources/'+ident+'?extraction=initial'
     return result
 
 
