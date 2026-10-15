@@ -247,7 +247,12 @@ def configure_mock_settings(work_dir: Optional[Path] = None):
     }
     if work_dir:
         body["work_dir"] = str(work_dir)
-    httpx.post("http://127.0.0.1:8800/v1/local/settings", json=body, timeout=10.0)
+    started = time.monotonic()
+    try:
+        response = httpx.post("http://127.0.0.1:8800/v1/local/settings", json=body, timeout=10.0)
+        response.raise_for_status()
+    finally:
+        logger.info('Mock settings elapsed_seconds=%.4f', time.monotonic()-started)
 
 
 def poll_candidates_from_scanner(timeout_sec: int = 40) -> List[Dict[str, Any]]:
