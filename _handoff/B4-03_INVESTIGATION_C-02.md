@@ -59,3 +59,5 @@ Scanner waited for owner release; final proposals: 4; completion record: complet
 后续 run 38735466289 的 B4 日志进一步区分了问题：B4-03 已 PASS；其他空候选用例的真实摄取状态是 `phase1_success=0, failed_files=1`，并非仅仅候选等待不足。解包产物在本机独立目录中可读文件；云端失败条件尚不能在本机完整复现。最后一次自修将 reader worker 的入口提前到配置/uvicorn/托盘导入之前，且显式绑定 stdin/stdout/stderr，避免窗口程序对子进程标准流和桌面初始化的依赖；失败原因现在输出在摄取诊断中。不把该措施宣称为已证实修复，需看最终完整运行。
 
 依据：[PyInstaller 6.12 无控制台与子进程说明](https://pyinstaller.org/en/v6.12.0/common-issues-and-pitfalls.html)、[PyInstaller 官方 subprocess recipe](https://github.com/pyinstaller/pyinstaller/wiki/Recipe-subprocess)。这些资料说明了启动隔离的注意事项；本地完整子进程启动、stdin EOF 与入口不初始化桌面的测试提供代码层证据。
+
+最终实现 cdca0d2 / run 38737413019 仍为 RED（27/37）；B4-03 也在该轮 FAIL，不算稳定修复。B4 job 116430991523 的失败记录为 `SUBPROCESS_CRASH / Worker parse error: 'charmap' codec can't encode characters in position 107-112`。这是 Windows 子进程中文输出的编码故障；现有 subprocess_worker.py 使用 ensure_ascii=False 写标准流，与该诊断相符，完整抛错行号因父进程截断日志仍未确认。已停止产品改动；建议审核人确认 worker stdout/stderr 的 UTF-8 或 ASCII JSON 策略后在英文 Windows 继续验证。没有进行第四次自修。完整原文门禁、三个修复提交与失败项见 DONE-C-02.md。
