@@ -115,6 +115,10 @@ class LocalSourceWatcher:
         new_dirs = [Path(d) for d in dirs if str(d).strip()]
         if not new_dirs:
             return
+        if new_dirs == self.sources_dirs:
+            # Saving other settings must not stop a dispatching Observer.
+            # Watchdog.stop() can wait on a lock held by a running file handler.
+            return
         self.sources_dirs = new_dirs
         self.sources_dir = new_dirs[0]
         if self.observer and self.observer.is_alive():

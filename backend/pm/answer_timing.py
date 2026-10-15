@@ -16,6 +16,18 @@ def measured(function):
         started=time.perf_counter()
         try:
             result=function(*args,**kwargs)
+            # A model cannot erase an unresolved conflict by omitting its disclaimer.
+            if isinstance(result,dict):
+                pid=(result.get('grounding') or {}).get('project_id')
+                if pid:
+                    from . import storage
+                    from .updates import read_conflicts
+                    with storage.connect() as conn:
+                        conflicts=[c for c in read_conflicts(conn,pid) if c['status']=='open']
+                    if conflicts:
+                        result['conflicts']=[{'id':c['id'],'section_id':c['section_id']} for c in conflicts]
+                        if '存在冲突，待用户裁决' not in str(result.get('response','')):
+                            result['response']='存在冲突，待用户裁决（'+ '、'.join(sorted({c['section_id'] for c in conflicts}))+'）；以下内容不能视为该处的新结论。\n\n'+str(result.get('response',''))
             stats['total_seconds']=round(time.perf_counter()-started,4)
             if isinstance(result,dict):
                 result['timings']=dict(stats)

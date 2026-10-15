@@ -26,11 +26,18 @@ def augment(conn, items, project_id=None):
       WHERE (? IS NULL OR r.project_id=?) ORDER BY r.created_at DESC LIMIT 16''',(project_id,project_id)).fetchall()
     from backend.brain.context import agy_context_v2 as C
     for row in sections:
-        if is_current(conn,row['source_version_id']):
+        refs=[r[0] for r in conn.execute('SELECT source_version_id FROM pm_revision_source WHERE revision_id=?',(row['id'],))]
+        if is_current(conn,row['source_version_id']) and all(is_current(conn,ref) for ref in refs):
             items.append(C.make_item(layer='PROJECT_HANDBOOK',item_id='pm-section-'+row['id'],
                 title=row['section_id']+' · '+row['title'],content=row['text'],
                 source_ref='/v1/pm/sources/'+row['source_version_id'],
                 extra={'source_version_id':row['source_version_id']}))
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name='pm_conflict'").fetchone():
+        for conflict in conn.execute("SELECT f.* FROM pm_conflict f JOIN pm_section_current c ON c.project_id=f.project_id AND c.section_id=f.section_id AND c.revision_id=f.left_revision_id WHERE f.status='open' AND (? IS NULL OR f.project_id=?)",(project_id,project_id)):
+            items.append(C.make_item(layer='PROJECT_HANDBOOK',item_id='pm-conflict-'+conflict['id'],
+                title='存在冲突，待用户裁决 · '+conflict['section_id'],
+                content='当前结论：'+conflict['left_text']+'\n另一份有效资料：'+conflict['right_text']+'\n裁决前不能将任一方说成已确定的新结论。',
+                authority=C.A_EVIDENCE,source_ref='/v1/pm/projects/'+conflict['project_id']+'/conflicts'))
     rows=conn.execute('''SELECT s.*,i.project_id,f.current_source_id,m.family_id FROM pm_source s
       LEFT JOIN pm_document_intake i ON i.source_version_id=s.source_version_id
       LEFT JOIN pm_family_member m ON m.source_version_id=s.source_version_id

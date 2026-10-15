@@ -130,9 +130,11 @@ class PawScheduler:
         )
 
         files_processed = 0
+        files_attempted = 0
         files_unchanged = 0
         total_files_in_dir = 0
         new_candidates = 0
+        item_budget=10  # R5: one-by-one, at most ten intake/reread items in a cruise.
 
         try:
             for scan_dir in (getattr(self, "sources_dirs", None) or [self.sources_dir]):
@@ -140,6 +142,7 @@ class PawScheduler:
                     continue
                 for p in scan_dir.iterdir():
                     if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS and not _is_temporary_file(p):
+                        if files_attempted>=item_budget:break
                         total_files_in_dir += 1
                         try:
                             f_hash = artifact_sha256(p)
@@ -155,6 +158,7 @@ class PawScheduler:
                             continue
 
                         # Process file with fault isolation
+                        files_attempted+=1
                         cids = None
                         try:
                             cids = self.process_source_file(p, f_hash)
@@ -174,7 +178,7 @@ class PawScheduler:
             captures_processed = 0
             try:
                 from backend.workspace_api.repository import unprocessed_captures
-                pending_caps = unprocessed_captures(limit=20)
+                pending_caps = unprocessed_captures(limit=max(0,item_budget-files_attempted))
                 for cap in pending_caps:
                     cids = self.process_capture(cap["id"])
                     if cids:
@@ -197,9 +201,13 @@ class PawScheduler:
             analyzed_projects = []
             if analyze_projects:
                 try:
-                    analyzed_projects = project_analyzer.analyze_projects(max_projects=10, force=force_rescan)
+                    analyzed_projects = project_analyzer.analyze_projects(max_projects=max(0,item_budget-files_attempted-captures_processed), force=force_rescan)
                 except Exception as exc:
                     logger.warning(f"ProjectAnalyzer during cruise warning: {exc}")
+
+            from backend.pm.reread import run as run_targeted_reread
+            remaining=item_budget-files_attempted-captures_processed-len(analyzed_projects)
+            reread=run_targeted_reread(remaining) if remaining>0 else {'processed':0,'items':[]}
 
             # Run Evolution Engine health check and background self-diagnosis
             try:
@@ -225,6 +233,7 @@ class PawScheduler:
                 "captures_analyzed": captures_processed,
                 "candidates_produced": new_candidates,
                 "projects_analyzed": len(analyzed_projects),
+                "targeted_reread": reread,
                 "projects_details": [p.get("name") for p in analyzed_projects],
                 "evolution": evo_diagnosis,
                 "started_at": started_at,

@@ -99,6 +99,13 @@ def _get_or_create_local_session(session_id: str, project_id: Optional[str] = No
 
 # ── Offline Grounded Retrieval Fallback Formatter (Requirement 3.4.2 & A31) ──
 
+def _conflict_preface(turn, text):
+    conflict_items=[i for i in (turn.get('contract') or {}).get('context_items',[]) if str(i.get('item_id','')).startswith('pm-conflict-')]
+    if conflict_items:
+        return '存在冲突，待用户裁决；以下内容不能视为该处的新结论。\n\n'+text
+    return text
+
+
 def _build_offline_retrieval_response(turn: Dict[str, Any]) -> str:
     """Format grounded evidence into structured retrieval display when no AI model is active."""
     contract = turn.get("contract") or {}
@@ -134,7 +141,7 @@ def _build_offline_retrieval_response(turn: Dict[str, Any]) -> str:
 
     lines.append("")
     lines.append("以上是工作台里的原始记录，没有经过 AI 总结。模型可用时再问一次，就能得到整理好的回答。")
-    return "\n".join(lines)
+    return _conflict_preface(turn,"\n".join(lines))
 
 
 _OFFLINE_LAYER_ORDER = {"PROJECT_OUTCOME": 0, "TODO": 1, "CONFIRMED_KNOWLEDGE": 2, "PROJECT_DATA_METRIC": 3,
@@ -1233,6 +1240,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     # 7. Extract visible response (strip machine-only EVIDENCE_MAP block)
     visible, _ = agy_v2_answer.extract_evidence_map(response_text)
     final_visible = _plain(visible if grounded else response_text)
+    final_visible = _conflict_preface(turn,final_visible)
 
     # 8. Record in chat_history.db (visible transcript only)
     if user_msg_id:

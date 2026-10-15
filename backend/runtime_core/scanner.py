@@ -512,6 +512,12 @@ class PawScanner:
         # R2: Subprocess isolation with watchdog
         ok, reader_result, fail_code, fail_reason = isolated_read_artifact(inp, evidence_subdir, timeout=60)
         if not ok or not reader_result:
+            from backend.pm import storage
+            from backend.pm.coverage import record
+            with storage.connect() as conn:
+                record(conn,f_hash,p.name,reader_result.to_dict() if reader_result else {
+                    'reader_type':p.suffix.lstrip('.').upper(),'warnings':['资料读取失败：'+(fail_code or 'READ_FAILED')],
+                    'fidelity_flags':{'structure_parsed':False}})
             self._record_failure(
                 p,
                 fail_code or "PARSE_ERROR",

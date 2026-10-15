@@ -138,17 +138,24 @@ def execute(conn, change, payload):
         conn.execute('UPDATE pm_family SET current_source_id=? WHERE id=?',(winner,fid))
         if previous:
             new_source = storage.source(conn,winner)
-            rows = conn.execute('SELECT r.* FROM pm_section_current c JOIN pm_section_revision r ON r.id=c.revision_id WHERE c.project_id=? AND r.source_version_id IN (SELECT source_version_id FROM pm_family_member WHERE family_id=?)',(pid,fid)).fetchall()
+            rows = conn.execute('''SELECT r.* FROM pm_section_current c JOIN pm_section_revision r ON r.id=c.revision_id
+              WHERE c.project_id=? AND (r.source_version_id IN (SELECT source_version_id FROM pm_family_member WHERE family_id=?)
+              OR EXISTS(SELECT 1 FROM pm_revision_source rs JOIN pm_family_member m ON m.source_version_id=rs.source_version_id WHERE rs.revision_id=r.id AND m.family_id=?))''',(pid,fid,fid)).fetchall()
             project = project_row(conn,pid)
             for row in rows:
                 # A reference never relabels old prose as a new source. Use an explicit verbatim excerpt.
-                text = row['text'] if row['text'] in new_source['body'] else '新版原文节选：' + new_source['body'][:2000]
+                replacement='新版原文节选：' + new_source['body'][:2000]
+                family_sources={r[0] for r in conn.execute('SELECT source_version_id FROM pm_family_member WHERE family_id=?',(fid,))}
+                parts=[dict(r) for r in conn.execute('SELECT source_version_id,text,extraction_id FROM pm_revision_source WHERE revision_id=?',(row['id'],))]
+                other_parts=[p for p in parts if p['source_version_id'] not in family_sources]
+                parts=[{'source_version_id':winner,'text':replacement}]+other_parts
+                text='\n'.join(p['text'] for p in parts)
                 from .rules import requires_user
                 if requires_user(text,row['section_id']):
-                    conn.execute('INSERT OR IGNORE INTO pm_family_decision(id,source_version_id,project_id,options_json,prompt,created_at) VALUES(?,?,?,?,?,?)',
-                        (str(uuid.uuid4()),winner,pid,'[]','需要你决定：新版涉及用户专属结论；原栏目保留，核准后才可更新。',storage.now()))
+                    from .updates import version_sensitive
+                    version_sensitive(conn,pid,row['section_id'],winner,replacement,new_source['body'][:2000],row['id'])
                     continue
-                revision = append_revision(conn,pid,row['section_id'],text,winner,change['change_id'])
+                revision = append_revision(conn,pid,row['section_id'],text,winner,change['change_id'],parts)
                 snapshot['sections'].append({'section_id':row['section_id'],'before':row['id'],'after':revision})
                 section = next(s for s in storage.config()['sections'] if s['id']==row['section_id'])
                 for field in section.get('project_fields',[]):
@@ -174,6 +181,9 @@ def undo(conn, change, original):
     latest = conn.execute('SELECT change_id FROM pm_version_ruling WHERE family_id=? AND undone_by IS NULL ORDER BY created_at DESC,change_id DESC LIMIT 1',(family['id'],)).fetchone()
     if ruling['undone_by'] or latest[0] != original or family['current_source_id'] != ruling['current_source_id']:
         raise ValueError('版本已有后续裁定，请先撤销后续变更')
+    if conn.execute('SELECT 1 FROM pm_section_current c JOIN pm_section_revision r ON r.id=c.revision_id WHERE c.project_id=? AND r.source_version_id=? AND r.change_id<>? AND r.created_at>?',
+        (family['project_id'],ruling['current_source_id'],original,ruling['created_at'])).fetchone():
+        raise ValueError('新版已有后续栏目变更，请先撤销栏目变更')
     snap = json.loads(ruling['snapshot_json'])
     for section in snap['sections']:
         current = conn.execute('SELECT revision_id FROM pm_section_current WHERE project_id=? AND section_id=?',(family['project_id'],section['section_id'])).fetchone()
