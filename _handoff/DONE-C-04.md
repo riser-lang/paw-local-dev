@@ -1,6 +1,6 @@
 # DONE-C-04：自动验收通过，C-04 固定停点
 
-2026-10-15；分支 codex/C-04；[PR #4](https://github.com/riser-lang/paw-local-dev/pull/4) → main，未合并。**依赖待审核的 PR #3 / C-03**，从其 9f10e8c 叠加；请先审核、合并 #3，再审核 #4 的 C-04 增量。没有自行合并任何 GitHub PR。
+2026-10-16（补齐收尾修复与双运行）；分支 codex/C-04；[PR #4](https://github.com/riser-lang/paw-local-dev/pull/4) → main，未合并。**依赖待审核的 PR #3 / C-03**，从其 9f10e8c 叠加；请先审核、合并 #3，再审核 #4 的 C-04 增量。没有自行合并任何 GitHub PR。
 
 已切回 main 执行 git pull --ff-only，更新到 70a6677；随后以 ee65734 正常合并 main 的设计交付说明到本分支，没有改写历史。C-06 迁移遵循 STATUS 最新要求，当前不复制或修改只读 design-export，不提前开始 C-05/C-06。
 
@@ -32,11 +32,12 @@
 - scripts/mock_grounded_answer.py、mock_openai_server.py：配置标题驱动、从请求原文摘句的通用 section_update 回答，不按用例/题号/题目分支；没有使用 C-10 考题。
 - tests/run_pm_updates_tests.py：8 项独立 fresh_install 的安装版验收，真实资料正常扫描，不用 SQL 写入候选/栏目/冲突；SQL 只读回证据。真实有界面浏览器点击裁决及截图。
 - tests/run_e2e_tests.py、.github/workflows/test.yml：加入 PM04；B5-01 用内容就绪条件替代仅固定睡眠后立即判定，记录项目接口状态和等待耗时，原名称/阶段断言保留。
+- backend/watcher/observer.py、tests/unit/test_watch_reconfigure.py：相同目录设置幂等，避免等待繁忙事件锁；实际改目录仍重配；测试设置请求保持 10 秒并记录耗时。
 - tests/unit/test_updates.py、test_coverage.py：治理与撤销、用户专属门禁、错引拒绝、多来源换版、新版增量、真实覆盖、快照、复读幂等/额度、九栏配置等。
 
 ## 3. 测试与运行
 
-最后功能/验收代码头部 **7babd17e2a4c564340ba1b46a11ada10b7f57497**，产品修复提交 4e7f49a；PR 测试的临时合并提交为 **c5a6704c8a39656572677f1f03af662ddffdccc0**，见下方原始 summary。报告是在两套完整门禁结束后写入；后续只追加交接文档，不拿文档运行覆盖以下历史结果。
+最后功能/验收代码头部 **572625142559e7e2f218b5bc0e724a37627779a9**，产品修复提交 4e7f49a、56e9ea9、5726251；PR 测试的临时合并提交为 **15dcb51791656699b88815f4f3a1bfb855750f9b**，见下方原始 summary。报告是在两套完整门禁结束后写入；后续只追加交接文档，不拿文档运行覆盖以下历史结果。
 
 | 头部 | 事件 / 完整 E2E | 结果 | unit |
 |---|---|---|---|
@@ -48,8 +49,14 @@
 | 4e7f49a | PR [38761705821](https://github.com/riser-lang/paw-local-dev/actions/runs/38761705821) | GREEN 50/50 | [38761705648](https://github.com/riser-lang/paw-local-dev/actions/runs/38761705648) GREEN 77 |
 | 7babd17 | push [38762954177](https://github.com/riser-lang/paw-local-dev/actions/runs/38762954177) | **GREEN 50/50** | [38762954354](https://github.com/riser-lang/paw-local-dev/actions/runs/38762954354) GREEN，77 passed in 2.82s |
 | 7babd17 | PR [38762963209](https://github.com/riser-lang/paw-local-dev/actions/runs/38762963209) | **GREEN 50/50** | [38762963224](https://github.com/riser-lang/paw-local-dev/actions/runs/38762963224) GREEN，77 passed in 1.72s |
+| ff931f9（前次报告文档） | push [38765000498](https://github.com/riser-lang/paw-local-dev/actions/runs/38765000498) | RED 49/50；PM-B2-05: FAIL (exception) | [38765000413](https://github.com/riser-lang/paw-local-dev/actions/runs/38765000413) GREEN 77 |
+| ff931f9（前次报告文档） | pr [38765006808](https://github.com/riser-lang/paw-local-dev/actions/runs/38765006808) | GREEN 50/50 | [38765006654](https://github.com/riser-lang/paw-local-dev/actions/runs/38765006654) GREEN 77 |
+| 56e9ea9 | push [38765975171](https://github.com/riser-lang/paw-local-dev/actions/runs/38765975171) | GREEN 50/50 | [38765975588](https://github.com/riser-lang/paw-local-dev/actions/runs/38765975588) GREEN 78 |
+| 56e9ea9 | pr [38765981995](https://github.com/riser-lang/paw-local-dev/actions/runs/38765981995) | GREEN 50/50 | [38765982385](https://github.com/riser-lang/paw-local-dev/actions/runs/38765982385) GREEN 78 |
+| 5726251 | push [38767261175](https://github.com/riser-lang/paw-local-dev/actions/runs/38767261175) | GREEN 50/50 | [38767261079](https://github.com/riser-lang/paw-local-dev/actions/runs/38767261079) GREEN 80，80 passed in 1.68s |
+| 5726251 | pr [38767274451](https://github.com/riser-lang/paw-local-dev/actions/runs/38767274451) | GREEN 50/50 | [38767273642](https://github.com/riser-lang/paw-local-dev/actions/runs/38767273642) GREEN 80，80 passed in 1.72s |
 
-[最终 Build Installer 38762963723](https://github.com/riser-lang/paw-local-dev/actions/runs/38762963723) GREEN；此前 38759583023、38760800148、38761705725 构建也 GREEN。不把打包成功当功能验收，不取消 push 或 pull_request，不通过反复 rerun 挑一次绿灯。
+[最终 Build Installer 38767273669](https://github.com/riser-lang/paw-local-dev/actions/runs/38767273669) GREEN；此前 38759583023、38760800148、38761705725、38762963723、38765006649、38765982255 构建也 GREEN。不把打包成功当功能验收，不取消 push 或 pull_request，不通过反复 rerun 挑一次绿灯。
 
 PM04 新增用例直接来自审核人的 required_cases_C-04.json：PM-B3-01…06、PM-B4-01…02。git mv 激活，blob **c4bd8dee04b9267ae514a5c36722e60ad6718619** 未变；不另建 proposed_cases 改标准。最终两套 summary 的五个负对照均在审核人指定检查有效失败，整体门禁 GREEN。PM04 八例分别有 6、9、7、14、11、11、17、9 项检查，八例均有独立清空/安装证据（最终 PR report_PM04.json）。
 
@@ -59,6 +66,14 @@ PM04 新增用例直接来自审核人的 required_cases_C-04.json：PM-B3-01…
 2. **PM-B3-06 产品问题**：新 PM 页缺少本地会话，浏览器带 Origin 的写请求不能满足既有 R5 校验；原先本机无 Origin 的 API 验证未覆盖这个条件。4e7f49a 在页面写入前请求既有 /v1/session 并带 x-paw-local-token，未改后端安全规则。最终真实浏览器点按钮，显示已裁决，且读取 direct_user/committed、当前栏目与撤销恢复全部 PASS。针对这两项云端问题的产品自修为一次。
 3. **B5-01 稳定性问题**：4e7f49a push 的 screen_B5_01.png 显示首次启动控制中心覆盖、背景项目页尚未就绪，旧测试 DOMContentLoaded 后固定 1.2 秒便取正文；同提交 PR PASS。历史该次项目接口状态未记录，不能完全排除瞬态接口失败，未伪称已证明只有前端耗时。7babd17 增加实际内容条件轮询（两项目名、两中文阶段，12 秒有界等待），原检查名与断言不变；记录接口状态、最初匹配数及就绪耗时。最终 push / PR 均 initial_matches=4/4、project_response_statuses=[200]，条件等待分别 **0.0155 / 0.0161 秒**，两套均 PASS。若接口失败或始终未就绪，仍会 RED，没有用更长固定睡眠掩盖。
 
+4. **低覆盖写锁（56e9ea9）**：低覆盖观察登记复读任务后，连接尚未提交便等待模型，可能占用 SQLite 写锁。新增回归在模型回调期间让另一连接写入非正式覆盖记录，旧代码实际失败在 sqlite3.OperationalError: database is locked；修复后通过，另一连接只有 0.05 秒锁等待。修复只把本连接的派生触发观察提前提交，正式写入仍由 Committer 复查当前来源/栏目依据。该问题一次定点修复；本地当时 78 passed in 4.06s，不将它推断为历史 B7-03 超时原因。
+
+5. **重复监控设置（5726251）**：ff931f9 push 的 PM-B2-05 在第二份资料导入前，第二次保存设置发生约 10 秒 ReadTimeout；最后成功请求为 16:07:31.523 的项目档案读取，16:07:41.623 已进入清理，没有第二份 scanner/start 或 timed_answer 日志，不能算“助手 15 秒回答超时”。调用链每次保存相同目录也会 watcher.stop/start；真实 watchdog 事件持有 dispatch 锁时，旧方法在 0.2642 秒观测窗内无法返回，释放事件后才返回；新方法同目录不重启，0.0002 秒返回。历史该请求没有后端阶段堆栈，内部停顿点不能直接证明；实验复现并修复了与该调用链一致的产品阻塞路径。实际改目录仍重配。两个回归执行原集成方法（AST 隔离可选 Reader 依赖），本地最终 80 项 PASS。设置请求 10 秒、回答 15 秒未改；每次设置请求 finally 记录耗时并检查 HTTP 状态，后续可区分设置与回答超时；最终 PM-B2-05 双运行 PASS。该问题一次定点修复。
+
+最新 push PM03：10 次设置保存为 0.008–0.029 秒；PM-B2-05 实际回答 0.1345 秒，见该次 PM03 job 原始日志。
+
+最新 pr PM03：10 次设置保存为 0.0129–0.0158 秒；PM-B2-05 实际回答 0.1203 秒，见该次 PM03 job 原始日志。
+
 ### B7-03 / B4-03 持续观察
 
 C-03 历史超时调查及初始/修复双运行在 DONE-C-03.md、B7-03_INVESTIGATION_C-03.md；历史 15 秒超时的确切停顿位置仍未确认，15 秒标准未改。C-03 报告文档提交 9f10e8c 的后续 push [38755056421](https://github.com/riser-lang/paw-local-dev/actions/runs/38755056421) / PR [38755067064](https://github.com/riser-lang/paw-local-dev/actions/runs/38755067064) 也均 42/42 GREEN，unit 38755056346 / 38755067411 GREEN 54，build 38755067639 GREEN。
@@ -67,15 +82,15 @@ C-03 历史超时调查及初始/修复双运行在 DONE-C-03.md、B7-03_INVESTI
 
 | 回答 | push 秒 | PR 秒 |
 |---|---:|---:|
-| B7-01 | 0.1318 | 0.1326 |
-| B7-02 | 0.9318 | 0.3092 |
-| B7-03 | **0.0983** | **0.0872** |
+| B7-01 | 0.1693 | 0.1506 |
+| B7-02 | 0.0955 | 0.1084 |
+| B7-03 | 0.1316 | 0.1489 |
 
-B7-03 两套均 model_calls=1、search_seconds=0、context_bytes=4423；模型耗时 0.0145 / 0.0107 秒，未发生模型重试。B4-03、B5-02 在以上 C-04 八次完整运行中均 PASS。最终 B5-01 的就绪日志见各自 B5 job；所有数字均为 mock / 云端 Windows 测试数据，不外推真实模型耗时。
+B7-03 两套 model_calls=1 / 1，search_seconds=0.0 / 0.0，context_bytes=4423 / 4423，模型耗时 0.0249 / 0.0206 秒。没有把设置阶段异常冒充回答异常；原回答超时仍为 15 秒。B4-03、B5-02 在报告各轮均 PASS，所有数值为 mock 云端测试数据，不外推真实模型耗时。
 
 本地命令与关键输出：
 
-- python -m pytest tests/unit -q → **77 passed in 3.26s**；python tests/paw_lint.py → **lint clean**；git diff --check 无错误。
+- python -m pytest tests/unit -q → **80 passed in 3.28s**；python tests/paw_lint.py → **lint clean**；git diff --check 无错误。
 - python scripts/verify_source_completion.py → Partial proposals: 3; legacy analyzed predicate: True; fixed predicate: False / Scanner waited for owner release; final proposals: 4; completion record: complete; PASS。
 - 隔离源码 API 联调：真实扫描 → 双来源补充 → 来源快照可打开 → 撤销；冲突 → 助手提示 → 裁决 → 撤销；真实 PPTX 两页其中空白一页，ratio=0.5；复读实际处理冲突双方 + 低覆盖共 3 条，均 completed。只用独立 scratch 数据目录与假 Key/mock，仅清理本次自建进程，未运行本机全局清空/安装。
 - 本机额外 headed 浏览器验证在启动时出现 spawn UNKNOWN，**NOT RUN / 未计为 PASS**；不能拿该 API 联调冒充按钮操作。上面按钮验证与截图由云端安装版 headed Playwright 完成。
@@ -85,7 +100,7 @@ B7-03 两套均 model_calls=1、search_seconds=0、context_bytes=4423；模型�
 ### 最终 push summary.md 全文（原样）
 
 ```text
-# Pipeline verdict for 7babd17e2a4c564340ba1b46a11ada10b7f57497
+# Pipeline verdict for 572625142559e7e2f218b5bc0e724a37627779a9
 
 Required cases: 50 | PASS 50 | FAIL 0 | NOT RUN 0
 
@@ -154,7 +169,7 @@ VERDICT: GREEN```
 ### 最终 PR summary.md 全文（原样）
 
 ```text
-# Pipeline verdict for c5a6704c8a39656572677f1f03af662ddffdccc0
+# Pipeline verdict for 15dcb51791656699b88815f4f3a1bfb855750f9b
 
 Required cases: 50 | PASS 50 | FAIL 0 | NOT RUN 0
 
@@ -222,7 +237,7 @@ VERDICT: GREEN```
 
 ## 4. 截图
 
-最终 PR 运行 **38762963209** 的 **screens-PM04** 产物：screen_PM_B3_04_1440.png、screen_PM_B3_04_390.png。均为有界面浏览器在实际 /app/pm/projects/<本例项目 ID> 页面截取，c.screenshot 保存真实 URL。已下载检查：桌面双侧冲突/来源/裁决后果可见，390px 单列，DOM 横向溢出断言通过，没有拼图或替换数据。最终 report-PM04 的 PM-B3-06 验证真正的页面点击和落库，不依赖截图证明写入。
+最终 PR 运行 **38767274451** 的 **screens-PM04** 产物：screen_PM_B3_04_1440.png、screen_PM_B3_04_390.png。均为有界面浏览器在实际 /app/pm/projects/<本例项目 ID> 页面截取，c.screenshot 保存真实 URL。已下载检查：桌面双侧冲突/来源/裁决后果可见，390px 单列，DOM 横向溢出断言通过，没有拼图或替换数据。最终 report-PM04 的 PM-B3-06 验证真正的页面点击和落库，不依赖截图证明写入。
 
 B5-01 的失败证据来自 38761697849 的 screens-B5/screen_B5_01.png，保留在该次运行，未伪装成成功截图；就绪修复证据来自最终两个 B5 job 的原始日志。
 
@@ -231,6 +246,7 @@ B5-01 的失败证据来自 38761697849 的 screens-B5/screen_B5_01.png，保留
 - 本次只使用假 Key 与 mock，真实模型分类质量和真实联网耗时未验证；无 Key 不生成语义结论。B7-03 历史超时位置和 B5-01 历史单次接口状态仍未确认，保留原 RED 和新增计时，不申请放宽标准。
 - 覆盖率度量结构可读取情况，不能等同逐字理解正确率。未执行 OCR；DOCX/Excel 物理分页未确认；图像/图表语义不声称已读。模型上下文仍受预算约束，原文和提取快照可打开。同族版本切换使用明确原文节选（最多 2000 字符）作为同步投影，未提供的后续段落不伪称已经语义综合。
 - 复读 completed 表示执行了实际 Reader，不保证原来的图像/空白限制被修复；限制仍展示。仅待执行项自动运行；失败/源字节改变的项不无限重试；进程意外退出时 running 项的恢复策略尚未实现，交 C-07 运维完善。源文件改动必须重新摄取新版本，不用变化后的字节冒充旧来源。
+- 真实更换监控目录仍沿既有重启流程，繁忙事件时的切换耗时未限定；本修复仅让相同目录重复保存幂等，不宣称覆盖所有监控器运维情形。
 - 栏目/裁决已有后续变化时，旧的提交或撤销会拒绝，需重新判定；不覆盖新事实。重复冲突复核采用稳定触发身份，避免一轮复读再造一轮相同任务。巡航的 files_total 仍是本轮遍历计数，不能据此宣称已处理整个目录。
 - C-06 仍按 STATUS 已交付设计迁移：只读 D:\PAW\design-export；TodayViewModel / ProjectViewModel 由本地后端组装，回调走本地治理；本地状态为巡航/扫描/备份/模型连通/磁盘；演示数据不进产品；CI 安装 Node，产物进入安装包；字体按实际字重精简并保留许可证。未迁移任何设计文件，本任务基础交互页后续换外观。
 - PR #3/#4 均待 Claude Code 审核，未改版本号、未发布或替换 2.3.9 比赛保底。C-04 固定停点，不开始 C-05；C-10 仍要求通用 mock 摘句与建议标注，题库不动。
