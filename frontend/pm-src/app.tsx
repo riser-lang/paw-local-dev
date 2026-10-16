@@ -74,6 +74,24 @@ function AssignmentDialog({requests,onConfirm,onCancel}:{requests:any[],onConfir
  </section></div>;
 }
 
+function Operations({refresh,version}:{refresh:()=>Promise<void>,version:number}){
+ const [data,setData]=useState<any>(null);const [statuses,setStatuses]=useState<any[]>([]);const [count,setCount]=useState(7);const [mb,setMb]=useState(512);const [busy,setBusy]=useState(false);
+ useEffect(()=>{Promise.all([api('/v1/pm/backups'),api('/v1/pm/system/status')]).then(([b,s])=>{setData(b);setCount(b.policy.max_count);setMb(b.policy.max_bytes/1024**2);setStatuses(s.items);}).catch(e=>notice(e.message));},[version]);
+ async function run(fn:()=>Promise<any>){setBusy(true);try{const result=await fn();await refresh();notice(result.ok===false?'操作未成功，请查看系统状态。':'本地维护操作完成。');}catch(e){notice((e as Error).message);}finally{setBusy(false);}}
+ return <section className="pm-root pm-page pm-maintenance" aria-label="本地维护"><h2>本地维护</h2>
+  <ul>{statuses.map(s=><li key={s.key}><strong>{s.label} · {{ok:'● 正常',warn:'▲ 注意',error:'✕ 异常',unknown:'○ 未知'}[s.state]}</strong>：{s.summary}；最后成功：{s.last_success_at||'暂无记录'}{s.detail&&<span>；{s.detail}</span>}</li>)}</ul>
+  {data&&<><p>自动备份 {data.items.filter((b:any)=>b.automatic).length} 份；手动及其他保留备份 {data.items.filter((b:any)=>!b.automatic).length} 份。手动备份不参与自动轮转。</p>
+   <div className="pm-policy"><label>自动备份最多份数<input type="number" min="1" max="100" value={count} onChange={e=>setCount(Number(e.target.value))}/></label>
+   <label>自动备份容量上限（MB）<input type="number" min="1" value={mb} onChange={e=>setMb(Number(e.target.value))}/></label></div>
+   <button className="pm-btn" disabled={busy} onClick={()=>run(()=>api('/v1/pm/backups/policy',{max_count:count,max_bytes:Math.floor(mb*1024**2)}))}>保存备份上限</button>
+   <button className="pm-btn" disabled={busy} onClick={()=>run(()=>api('/v1/local/backup/create',{tag:'manual'}))}>手动备份</button>
+   <button className="pm-btn" disabled={busy||!data.items.length} onClick={()=>run(()=>api('/v1/pm/backups/selfcheck',{}))}>备份恢复自检</button>
+   <button className="pm-btn" disabled={busy} onClick={()=>run(()=>api('/v1/local/provider/test_connection',{}))}>测试模型连通</button>
+   <p className="pm-meta">恢复自检只检查临时副本，检查完成后清理临时文件。正式数据不会被恢复自检覆盖。</p>
+  </>}
+ </section>;
+}
+
 function App(){
  const pid=location.pathname.startsWith('/app/pm/projects/')?decodeURIComponent(location.pathname.split('/').pop()!):null;
  const [vm,setVm]=useState<TodayViewModel|ProjectViewModel|null>(null);const [configured,setConfigured]=useState(false);const [version,setVersion]=useState(0);
@@ -83,7 +101,7 @@ function App(){
  async function perform(ids:string[],choice:string,assignments={}){
   const result=await api('/v1/pm/inbox/decide',{ids,choice,assignments});await refresh();
   const failed=result.items.filter((r:any)=>!r.ok);if(failed.length)throw Error(failed.map((r:any)=>r.error).join('；'));
-  notice(choice==='later'?'已记录稍后处理，事项仍保留在列表。':'决定已记录。');
+  notice(result.backup_error||(choice==='later'?'已记录稍后处理，事项仍保留在列表。':'决定已记录。'));
  }
  const cb:PmCallbacks={
   onNavigate:href=>{navigate(href).catch(e=>notice(e.message));},
@@ -105,7 +123,7 @@ function App(){
  };
  if(!vm)return <p className="pm-root pm-page">正在读取本地档案…</p>;
  return <>
-  {pid?<><ProjectDossier vm={vm as ProjectViewModel} cb={cb} backHref="/app/pm/today" modelConfigured={configured}/><LegacyExtras pid={pid} version={version} refresh={refresh}/></>:<TodayCockpit vm={vm as TodayViewModel} cb={cb} modelConfigured={configured}/>}
+  {pid?<><ProjectDossier vm={vm as ProjectViewModel} cb={cb} backHref="/app/pm/today" modelConfigured={configured}/><LegacyExtras pid={pid} version={version} refresh={refresh}/></>:<><TodayCockpit vm={vm as TodayViewModel} cb={cb} modelConfigured={configured}/><Operations refresh={refresh} version={version}/></>}
   {selection&&<AssignmentDialog requests={selection.requests} onCancel={()=>setSelection(null)} onConfirm={async assignments=>{await perform(selection.ids,selection.choice,assignments);setSelection(null);}}/>}
  </>;
 }

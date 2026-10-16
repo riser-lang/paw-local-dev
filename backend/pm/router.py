@@ -13,7 +13,46 @@ router = APIRouter()
 @router.get('/view/today')
 def today_view():
     from .cockpit import today_vm
-    with storage.connect() as conn:return today_vm(conn)
+    with storage.connect() as conn:
+        vm=today_vm(conn)
+        vm['system_status']=local_health_items(conn)
+        return vm
+
+
+def local_health_items(conn):
+    from . import health
+    from backend.core.config import DATA_DIR,settings
+    return health.read(conn,DATA_DIR,health.identity(settings.get_active_credentials()))
+
+
+@router.get('/system/status')
+def system_status():
+    with storage.connect() as conn:return {'items':local_health_items(conn)}
+
+
+@router.get('/backups')
+def backup_status():
+    from . import backups
+    return {'items':backups.listing(),'policy':backups.policy()}
+
+
+class BackupPolicy(BaseModel):
+    max_count: int = Field(ge=1,le=100)
+    max_bytes: int = Field(ge=65536)
+
+
+@router.post('/backups/policy')
+def backup_policy(body: BackupPolicy):
+    from .backups import set_policy
+    try:return set_policy(body.max_count,body.max_bytes)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+
+@router.post('/backups/selfcheck')
+def backup_selfcheck():
+    from .backups import selfcheck
+    try:return selfcheck()
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
 
 
 @router.get('/view/projects/{project_id}')

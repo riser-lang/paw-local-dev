@@ -288,8 +288,12 @@ class PawScanner:
     def _run_scan_thread(self, target_phase: str = "all") -> None:
         try:
             self._run_scan_phases(target_phase)
+            from backend.pm.health import observe
+            if self.status=='completed':observe('scan',self.failed_files==0,'扫描完成' if self.failed_files==0 else '扫描结束但部分文件未能读取')
         except Exception:
             self.status = 'failed'
+            from backend.pm.health import observe
+            observe('scan',False,'扫描失败，保留检查点等待重试')
             self.current_phase = 'failed'
             logger.exception('扫描未完成，保留检查点以便重试')
             self._save_checkpoint()

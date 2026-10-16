@@ -74,9 +74,18 @@ def receipt_vm(row):
 
 def project_vm(conn,pid):
     data=dossier.read(conn,pid);p=data['project'];entries={};changes={};all_sources={}
+    section_titles={s['id']:s['title'] for s in data['sections']}
     current_ids={s['current']['id'] for s in data['sections'] if s['current']}
     for section in data['sections']:
         entries[section['id']]=[]
+        if not section['current']:
+            original='\n'.join(str(p.get(field)) for field in section.get('project_fields',[]) if p.get(field))
+            if original:
+                ref={'id':'project:'+pid,'title':'已有项目记录','kind':'other','href':'/app/projects/'+pid,
+                    'updated_at':stamp(p.get('updated_at')),'excerpt':original[:200]}
+                entries[section['id']]=[{'id':'legacy:'+pid+':'+section['id'],'text':original,'kind':'fact',
+                    'sources':[ref],'updated_at':stamp(p.get('updated_at')),
+                    'tag':{'text':'已有正式记录 · 原审批见旧档案','tone':'neutral'}}]
         for rev in ([section['current']] if section['current'] else [])+section['history']:
             refs=[source(conn,r['source_version_id'],r['text'],r['source_url']) for r in rev['source_refs']]
             refs=[r for r in refs if r] or sources(conn,[rev['source_version_id']])
@@ -88,7 +97,7 @@ def project_vm(conn,pid):
                 related=conn.execute('SELECT id,section_id,text,previous_id,withdrawn FROM pm_section_revision WHERE change_id=?',(cid,)).fetchall()
                 reversible=all(r['id'] in current_ids for r in related) and not undone
                 changes[cid]={'id':cid,'at':stamp(rev['created_at']),'section_key':section['id'],
-                    'title':(refs[0]['title'] if refs else '核准输入')+' → '+section['title'],
+                    'title':(refs[0]['title'] if refs else '核准输入')+' → '+'、'.join(dict.fromkeys(section_titles.get(r['section_id'],r['section_id']) for r in related)),
                     'before':previous[0] if previous else None,'after':rev['text'],'source':refs[0] if refs else None,
                     'revertible':reversible,'reverted':undone}
             if section['current'] and rev['id']==section['current']['id']:
@@ -103,6 +112,7 @@ def project_vm(conn,pid):
         for raw in conn.execute("SELECT * FROM todo WHERE project_id=? AND status NOT IN ('deleted','cancelled') ORDER BY created_at,id",(pid,)):
             t=dict(raw);start=day(t.get('start_at'));end=day(t.get('due_at'));done=t['status'] in ('done','completed')
             ref={'id':'todo:'+t['id'],'title':t['title'],'kind':'todo','href':'/app/todos','updated_at':stamp(t['updated_at']),'excerpt':(t.get('description') or t['title'])[:200]}
+            all_sources[ref['id']]=ref
             milestones.append({'id':t['id'],'title':t['title'],'plan_start':start,'plan_end':end,
                 'actual_start':None,'actual_end':day(t.get('completed_at')) if done else None,
                 'status':'done' if done else 'in_progress' if t['status']=='in_progress' else 'not_started','source':ref,'note':'来自已批准的项目待办'})
@@ -111,6 +121,11 @@ def project_vm(conn,pid):
                 for s in data['sections']:
                     if s.get('view_kind')=='gaps' or s['id']=='gaps':entries[s['id']].append(gap)
     metrics=[]
+    if table(conn,'knowledge_page') and table(conn,'knowledge_project_link'):
+        for k in conn.execute('SELECT k.* FROM knowledge_page k JOIN knowledge_project_link l ON l.knowledge_id=k.id WHERE l.project_id=?',(pid,)):
+            ref={'id':'knowledge:'+k['id'],'title':k['title'],'kind':'knowledge','href':'/app/knowledge/'+k['id'],
+                'updated_at':stamp(k['updated_at']),'excerpt':k['one_line_summary'][:200]}
+            all_sources[ref['id']]=ref
     if table(conn,'metric_definition') and table(conn,'metric_observation'):
         for raw in conn.execute("SELECT * FROM metric_definition WHERE project_id=? AND status!='deprecated'",(pid,)):
             m=dict(raw);observations=[dict(o) for o in conn.execute('SELECT * FROM metric_observation WHERE metric_definition_id=? ORDER BY observed_at DESC LIMIT 12',(m['id'],))]
@@ -132,8 +147,8 @@ def project_vm(conn,pid):
     view_kinds=json.loads(Path(__file__).with_name('dossier_views.json').read_text(encoding='utf-8'))
     configured={s['id']:view_kinds.get(s['id'],'list') for s in storage.config()['sections']}
     return {'schema':'paw.pm.project/1','generated_at':stamp(storage.now()),'today':day(storage.now()),
-        'project':{'id':pid,'name':p['name'],'status':project_status(p,bool(current_ids or milestones),any(not c['resolved'] for c in conflicts)),
-            'one_liner':next((s['current']['text'] for s in data['sections'] if s['id']=='status' and s['current']),None),
+        'project':{'id':pid,'name':p['name'],'status':project_status(p,bool(any(entries.values()) or milestones or all_sources),any(not c['resolved'] for c in conflicts)),
+            'one_liner':next((e['text'] for s in data['sections'] if s['id']=='status' for e in entries[s['id']]),None),
             'updated_at':stamp(p.get('updated_at'))},
         'sections':[{'key':s['id'],'title':s['title'],'kind':configured[s['id']],'empty_text':None} for s in data['sections']],
         'entries':entries,'metrics':metrics,'milestones':milestones,'changes':sorted(changes.values(),key=lambda c:c['at'],reverse=True),
@@ -163,6 +178,8 @@ def decide(ids,choice,selections,provider):
     if choice not in ('yes','no','later') or not ids or len(ids)!=len(set(ids)):raise ValueError('请选择待决事项及有效操作')
     with storage.connect() as conn:live={r['id'] for r in inbox(conn)}
     if any(i not in live for i in ids):raise ValueError('待决列表已经变化，请刷新后再处理')
+    from . import backups
+    if choice!='later':backups.create('pre_batch_commit')
     results=[]
     for full in ids:
         kind,ident=full.split(':',1)
@@ -185,4 +202,8 @@ def decide(ids,choice,selections,provider):
                     if result['result']!='success':raise ValueError(result.get('error','写入失败'))
             results.append({'id':full,'ok':True,'result':result})
         except (ValueError,KeyError,RuntimeError) as exc:results.append({'id':full,'ok':False,'error':str(exc)})
-    return {'items':results}
+    backup_error=None
+    if choice!='later' and any(r['ok'] for r in results):
+        try:backups.create('post_batch_commit')
+        except Exception:backup_error='决定已提交，但完成后备份失败，请检查系统状态'
+    return {'items':results,'backup_error':backup_error}
