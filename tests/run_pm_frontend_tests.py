@@ -171,6 +171,7 @@ def run_c06(report,installer):
                             stable_page(page,project_url)
                             c.check('mobile_milestones_vertical',page.locator('.pm-vt').count()>0,True)
                             c.check('mobile_project_no_gantt',page.locator('.pm-gantt').count(),0)
+                            c.check('mobile_conclusions_not_clipped',page.locator('.pm-entry-main p,.pm-entry-main .pm-tag').evaluate_all('(nodes)=>nodes.length>0 && nodes.every(n=>{const r=n.getBoundingClientRect();return r.left>=8 && r.right<=document.documentElement.clientWidth-8 && n.scrollWidth<=n.clientWidth+1})'),True)
                             capture(c,page,390,'_project')
                     finally:browser.close()
 
