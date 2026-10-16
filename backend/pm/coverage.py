@@ -27,9 +27,29 @@ def evidence_body(evidence):
     sem=evidence.get('structured_semantics') or {}
     for sheet in sem.get('sheets',[]):
         parts.append('工作表：'+str(sheet.get('title','')))
+        header_map = {}
+        rows_dict = {}
         for cell in sheet.get('cells',[]):
+            r = cell.get('row')
+            c = cell.get('col') or cell.get('column')
+            val = str(cell.get('display_value', cell.get('raw_value', ''))).strip()
+            if r == 1 and val:
+                header_map[c] = val
+            if r is not None and val:
+                rows_dict.setdefault(r, []).append((c, val))
             parts.append(str(cell.get('coordinate',''))+'：'+str(cell.get('display_value',cell.get('raw_value',''))))
             if cell.get('formula'):parts.append('公式：'+str(cell['formula']))
+        for r in sorted(rows_dict.keys()):
+            if r == 1:
+                vals = [v for _, v in rows_dict[r]]
+                if vals:
+                    parts.append('表头：' + '，'.join(vals))
+            else:
+                pairs = []
+                for c, v in rows_dict[r]:
+                    h = header_map.get(c)
+                    pairs.append(f"{h}：{v}" if h else v)
+                parts.append('行数据：' + '，'.join(pairs))
     def texts(value):
         if isinstance(value,dict):
             own=value.get('text') or value.get('body')
@@ -40,6 +60,22 @@ def evidence_body(evidence):
     for key,label in [('headers_footers','页眉页脚'),('footnotes','脚注'),('endnotes','尾注'),('comments','批注')]:
         for text in dict.fromkeys(texts(sem.get(key))):parts.append(label+'：'+text)
     for slide in sem.get('slides',[]):
+        stitle = ""
+        for shape in slide.get('shapes', []):
+            if 'title' in shape.get('name', '').lower() or shape.get('shape_type') == 'TITLE':
+                eid = shape.get('element_id')
+                t_blocks = [b.get('text', '') for b in slide.get('text_blocks', []) if b.get('element_id') == eid]
+                if t_blocks:
+                    stitle = ' '.join(t_blocks).strip()
+                    break
+        if not stitle:
+            b0 = (slide.get('text_blocks') or [{}])[0].get('text', '')
+            if len(b0) < 30:
+                stitle = b0.strip()
+        for b in slide.get('text_blocks', []):
+            txt = str(b.get('text', '')).strip()
+            if txt and txt != stitle:
+                parts.append(f"幻灯片【{stitle}】：{txt}" if stitle else txt)
         notes=slide.get('notes')
         for text in ([notes] if isinstance(notes,str) and notes.strip() else texts(notes)):
             parts.append('幻灯片备注：'+text)

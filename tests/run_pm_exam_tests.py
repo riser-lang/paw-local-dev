@@ -51,7 +51,7 @@ def run_c10(report, installer):
 
             # 1. Without model key: suggestions indicate needs_key, but other sections work
             api("POST", "/v1/local/settings", {
-                "provider": "custom",
+                "provider": "deepseek",
                 "custom_api_key": "",
                 "custom_base_url": "",
                 "custom_model": ""

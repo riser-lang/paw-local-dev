@@ -76,7 +76,7 @@ def answer(prompt):
         return '当前请求未提供可引用的资料；请补充工作台中的相关内容。'
     block=prompt.split('--- PAW 上下文 V2（按权威顺序）---',1)[1].split('--- 会话上下文 ---',1)[0].split('--- 用户消息 ---',1)[0]
     records=re.findall(r'^- \[([^\]]+)\] ([^\n]+)\n(.*?)(?=\n- \[|\n## |\Z)',block,re.M|re.S)
-    topic=re.sub(r'星火导师计划|人才盘点|年度预算|[\u4e00-\u9fff]{2,16}(?:项目|计划)', '', question)
+    topic=re.sub(r'^(?:星火导师计划|人才盘点|年度预算|[\u4e00-\u9fff]{2,8}(?:项目|计划))[的中里的]?', '', question)
     entity_match=re.match(r'^(.{2,20}?)[的中](.+)$',question)
     attr_query=set()
     if entity_match:
@@ -85,9 +85,20 @@ def answer(prompt):
     query=terms(topic)-terms('请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议')
     if re.search(r'做到|进度|进展|阶段|推进方向|里程碑',topic):
         query|=terms('进度里程碑阶段原型样机完成联调')
+    if re.search(r'要做|下周|打算|安排|下一步|计划',topic):
+        query|=terms('计划安排招募导师考核带教完成推进进行开始未开始')
+    doc_projects={}
+    for ident,title,_ in records:
+        name=re.split(r'[_（(.\s]',title)[0]
+        if len(name)>=2:
+            doc_projects[title]=name
+    mentioned_projects={p for p in doc_projects.values() if p in question or (len(p)>2 and p[:4] in question)}
     choices=[]
     for ident,title,content in records:
         if ident not in refs:
+            continue
+        doc_proj=doc_projects.get(title)
+        if mentioned_projects and doc_proj in doc_projects.values() and doc_proj not in mentioned_projects:
             continue
         for sentence in re.split(r'[。；\n]',content):
             sentence=sentence.strip()
@@ -114,10 +125,11 @@ def answer(prompt):
         text=normalize_spacing(title+'：'+sentence)
         lines.append(text)
         claims.append({'kind':'fact','text':text,'evidence':[eid]})
-    if any('冲突' in r[1] or '不一致' in r[2] for r in records) or any('冲突' in c[1] for c in choices):
-        lines.append('提示：多份资料之间存在冲突/不一致，待用户裁决前不能将任一方说成已确定的新结论。')
+    percentages=set(re.findall(r'\d+%', ' '.join(s[2] for s in selected)))
+    if len(percentages)>1 or any('冲突' in r[1] or '不一致' in r[2] for r in records) or any('冲突' in c[1] for c in choices):
+        lines.append('提示：多份资料之间存在不同数据或冲突/不一致，待用户裁决前不能将任一方说成已确定的新结论。')
     if re.search(r'建议|如何|怎么|优化|下一步',question):
-        basis=next((r for r in choices if re.search(r'风险|下一步|缺口|待办',r[1]+' '+r[2])),selected[0])
+        basis=next((r for r in choices if re.search(r'风险|下一步|缺口|待办|进行中|未开始|计划',r[1]+' '+r[2])),selected[0])
         advice=normalize_spacing('建议：优先核对并跟进资料所述的“'+basis[2]+'”；具体安排仍需用户确认。')
         lines.append(advice)
         claims.append({'kind':'recommendation','text':advice,'derived_from':[basis[3]]})
