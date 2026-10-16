@@ -476,9 +476,9 @@ def update_settings(req: SettingsUpdateRequest) -> Dict[str, Any]:
 
     if req.custom_api_key is not None and not req.custom_api_key.startswith("sk-..."):
         settings.custom_api_key = req.custom_api_key
-    if req.custom_base_url is not None:
+    if req.custom_base_url:
         settings.custom_base_url = req.custom_base_url
-    if req.custom_model is not None:
+    if req.custom_model:
         settings.custom_model = req.custom_model
 
     settings.cruise_mode = req.cruise_mode

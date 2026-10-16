@@ -152,11 +152,21 @@ def build_project_weekly_report(conn=None, project_id: str | None = None, provid
         # Format existing grounded suggestions
         sug_items = []
         for s in stored_sug:
+            clean_basis = []
+            for b in s.get("basis", []):
+                clean_basis.append({
+                    "id": b.get("id") or b.get("source_version_id", ""),
+                    "title": b.get("title", ""),
+                    "kind": b.get("kind", "other"),
+                    "href": b.get("href"),
+                    "updated_at": b.get("updated_at") or datetime.now(timezone.utc).isoformat(),
+                    "excerpt": b.get("excerpt"),
+                })
             sug_items.append({
                 "id": s["id"],
                 "text": s["text"],
                 "category": s.get("category", "next"),
-                "basis": s.get("basis", []),
+                "basis": clean_basis,
                 "state": s.get("state", "open"),
             })
         suggestion_section = {

@@ -77,11 +77,6 @@ def answer(prompt):
     block=prompt.split('--- PAW 上下文 V2（按权威顺序）---',1)[1].split('--- 会话上下文 ---',1)[0].split('--- 用户消息 ---',1)[0]
     records=re.findall(r'^- \[([^\]]+)\] ([^\n]+)\n(.*?)(?=\n- \[|\n## |\Z)',block,re.M|re.S)
     topic=re.sub(r'^(?:星火导师计划|人才盘点|年度预算|[\u4e00-\u9fff]{2,8}(?:项目|计划))[的中里的]?', '', question)
-    entity_match=re.match(r'^(.{2,20}?)[的中](.+)$',question)
-    attr_query=set()
-    if entity_match:
-        _,attr_part=entity_match.groups()
-        attr_query=terms(attr_part)-terms('请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议')
     query=terms(topic)-terms('请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议')
     if re.search(r'做到|进度|进展|阶段|推进方向|里程碑',topic):
         query|=terms('进度里程碑阶段原型样机完成联调')
@@ -104,10 +99,7 @@ def answer(prompt):
             sentence=sentence.strip()
             if sentence:
                 st=title+' '+sentence
-                if attr_query and not (attr_query & terms(st)):
-                    score=0
-                else:
-                    score=len(query & terms(st))
+                score=len(query & terms(st))
                 choices.append((score,title,sentence,refs[ident]))
     choices.sort(key=lambda row:row[0],reverse=True)
     if choices and choices[0][0]==0 and not re.search(r'建议|如何|怎么|优化|下一步',question):
