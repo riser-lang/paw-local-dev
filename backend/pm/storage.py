@@ -11,6 +11,11 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def runtime_paths():
+    from backend.core.config import DB_PATH,BACKUPS_DIR
+    return Path(DB_PATH),Path(BACKUPS_DIR)
+
+
 def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
@@ -32,6 +37,8 @@ def connect(db_path=None):
 
 def migrate(conn):
     # Called only by the existing migration entry point, outside business transactions.
+    from . import health,backups
+    health.migrate(conn);backups.migrate(conn)
     conn.executescript('''
     CREATE TABLE IF NOT EXISTS pm_source (
       source_version_id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL,

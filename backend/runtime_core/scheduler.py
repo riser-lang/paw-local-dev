@@ -248,8 +248,14 @@ class PawScheduler:
             }
 
             self.latest_cruise_result = result
+            from backend.pm.health import observe
+            observe('patrol',True,'巡航已完成；检查文件 '+str(total_files_in_dir)+' 份')
             event_bus.publish(EventType.CRUISE_COMPLETED, payload=result, source="scheduler")
             return result
+        except Exception:
+            from backend.pm.health import observe
+            observe('patrol',False,'巡航未完成，请查看本地运行记录并重试')
+            raise
         finally:
             with self._lock:
                 self.cruise_status = "idle"

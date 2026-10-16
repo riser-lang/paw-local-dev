@@ -423,8 +423,12 @@ def install():
                 (already if result['status']=='already_processed' else accepted).append(cid)
             except Exception as exc:
                 failed.append({'id':cid,'error':str(exc)})
+        backup_error=None
+        if accepted:
+            try:scanner_module.create_db_backup(tag='post_batch_commit')
+            except Exception:backup_error='核准已提交，但完成后备份失败，请检查系统状态'
         return {'ok':not failed,'accepted_count':len(accepted),'commit_records_created':len(accepted),
-                'failed_count':len(failed),'accepted_ids':accepted,'already_processed_ids':already,'failed_details':failed}
+                'failed_count':len(failed),'accepted_ids':accepted,'already_processed_ids':already,'failed_details':failed,'backup_error':backup_error}
     scanner_class.batch_accept = batch_accept
     from backend.main import app
     from fastapi.responses import RedirectResponse

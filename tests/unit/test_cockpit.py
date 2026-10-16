@@ -1,7 +1,13 @@
 from types import SimpleNamespace
+import pytest
 from backend.pm import storage,cockpit,updates
 from tests.unit.test_versions import database,ingest
 from tests.unit.test_routing import intake
+
+
+@pytest.fixture(autouse=True)
+def isolated_backups(database,monkeypatch,tmp_path):
+    monkeypatch.setattr(storage,'runtime_paths',lambda:(database,tmp_path/'backups'))
 
 
 def prepare(conn):

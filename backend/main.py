@@ -523,7 +523,11 @@ def api_test_provider_connection(req: TestConnectionRequest) -> Dict[str, Any]:
             "error_code": "NO_API_KEY",
             "error_message": "未输入 API Key，且当前未保存任何密钥。请先输入并保存 API Key 后再测试。",
         }
-    return test_provider_connection(base_url=base_url, api_key=api_key, model=model)
+    result=test_provider_connection(base_url=base_url, api_key=api_key, model=model)
+    from backend.pm import health
+    health.observe('model',bool(result.get('ok')),'模型连接测试成功' if result.get('ok') else '模型连接测试失败，请检查配置和网络',
+        health.identity({'base_url':base_url,'api_key':api_key,'model':model}))
+    return result
 
 
 # ── Advanced Scanner Endpoints (Requirements 3.2, 3.3) ───────────────────────
@@ -654,7 +658,7 @@ def api_backup_list() -> Dict[str, Any]:
 @app.post("/v1/local/backup/create")
 def api_backup_create(req: Optional[BackupCreateRequest] = None) -> Dict[str, Any]:
     tag = req.tag if req and req.tag else "manual"
-    return create_db_backup(tag=tag)
+    return create_db_backup(tag=tag,automatic=False)
 
 
 @app.post("/v1/local/backup/restore")

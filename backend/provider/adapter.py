@@ -542,6 +542,8 @@ class UniversalOpenAIProvider(BaseProvider):
 
                     choice = data.get("choices", [{}])[0]
                     content = choice.get("message", {}).get("content", "")
+                    from backend.pm.health import observe,identity
+                    observe('model',True,'模型已成功响应',identity({'base_url':self.base_url,'api_key':self.api_key,'model':self.model}))
 
                     # Extract search info if provider returned any web search results
                     raw_search = (
