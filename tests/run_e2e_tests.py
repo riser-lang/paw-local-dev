@@ -1282,6 +1282,9 @@ def main():
     elif block == "PM05":
         from tests.run_pm_routing_tests import run_c05
         run_c05(report, inst_path)
+    elif block == "PM06":
+        from tests.run_pm_frontend_tests import run_c06
+        run_c06(report, inst_path)
     elif block == "NEGATIVE-CONTROL":
         base_path = Path(args.baseline_exe)
         if base_path.is_dir():

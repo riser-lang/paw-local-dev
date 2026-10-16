@@ -18,7 +18,7 @@ def pending(conn):
     return [{**dict(r),'kind':'assignment' if r['project_id'] is None else 'version',
              'question':'确认归属：这份输入应归入哪个已有项目？' if r['project_id'] is None else '确认文档族与版本',
              'projects':projects,'source_url':'/v1/pm/sources/'+r['source_version_id']}
-            for r in conn.execute("SELECT d.*,s.title FROM pm_family_decision d JOIN pm_source s ON s.source_version_id=d.source_version_id WHERE d.status='pending' ORDER BY d.created_at,d.id")]
+            for r in conn.execute("SELECT d.*,s.title,i.family_key FROM pm_family_decision d JOIN pm_source s ON s.source_version_id=d.source_version_id JOIN pm_document_intake i ON i.source_version_id=d.source_version_id WHERE d.status='pending' ORDER BY d.created_at,d.id")]
 
 
 def resolve(decision_id,project_id,provider,family_id=None,family_title=None):

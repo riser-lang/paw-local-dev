@@ -20,6 +20,7 @@ datas = [
     (str(project_root / 'backend' / 'runtime' / '__init__.py'), 'backend/runtime'),
     (str(project_root / 'backend' / 'repair_v238.py'), 'backend'),
     (str(project_root / 'backend' / 'pm' / 'dossier_sections.json'), 'backend/pm'),
+    (str(project_root / 'backend' / 'pm' / 'dossier_views.json'), 'backend/pm'),
     (str(project_root / 'backend' / 'pm' / 'contracts'), 'backend/pm/contracts'),
 ]
 
