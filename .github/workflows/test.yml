@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06]
+        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -108,6 +108,15 @@ jobs:
         with:
           name: built-installer-exe
           path: installer_artifact
+
+      - name: Download Baseline for Overlay Upgrade
+        if: matrix.block == 'PM07'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path baseline_pm -Force | Out-Null
+          gh release download v2.3.9-baseline --repo ${{ github.repository }} --pattern '*.exe' --dir baseline_pm
 
       - name: Start Mock Model Server
         shell: pwsh

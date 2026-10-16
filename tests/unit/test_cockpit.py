@@ -23,7 +23,10 @@ def test_empty_views_do_not_guess_dates_progress_or_ai(database):
         assert vm['ai_suggestions']==[] and vm['decisions']==[]
         row=vm['portfolio']['projects'][0]
         assert row['start'] is None and row['end'] is None and row['progress'] is None
-        assert row['one_liner'] is None
+        assert row['one_liner']=='原始身份'
+        dossier=cockpit.project_vm(conn,'p')
+        assert dossier['entries']['status'][0]['text']=='原始身份'
+        assert dossier['entries']['status'][0]['sources'][0]['href']=='/app/projects/p'
         assert len(vm['system_status'])==5
         assert cockpit.stamp('2026-10-15T20:00:00Z')=='2026-10-16T04:00:00+08:00'
         assert cockpit.day('not a date') is None

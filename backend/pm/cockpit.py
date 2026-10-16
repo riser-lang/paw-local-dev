@@ -146,8 +146,8 @@ def project_vm(conn,pid):
     view_kinds=json.loads(Path(__file__).with_name('dossier_views.json').read_text(encoding='utf-8'))
     configured={s['id']:view_kinds.get(s['id'],'list') for s in storage.config()['sections']}
     return {'schema':'paw.pm.project/1','generated_at':stamp(storage.now()),'today':day(storage.now()),
-        'project':{'id':pid,'name':p['name'],'status':project_status(p,bool(current_ids or milestones),any(not c['resolved'] for c in conflicts)),
-            'one_liner':next((s['current']['text'] for s in data['sections'] if s['id']=='status' and s['current']),None),
+        'project':{'id':pid,'name':p['name'],'status':project_status(p,bool(any(entries.values()) or milestones or all_sources),any(not c['resolved'] for c in conflicts)),
+            'one_liner':next((e['text'] for s in data['sections'] if s['id']=='status' for e in entries[s['id']]),None),
             'updated_at':stamp(p.get('updated_at'))},
         'sections':[{'key':s['id'],'title':s['title'],'kind':configured[s['id']],'empty_text':None} for s in data['sections']],
         'entries':entries,'metrics':metrics,'milestones':milestones,'changes':sorted(changes.values(),key=lambda c:c['at'],reverse=True),
