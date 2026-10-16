@@ -15,7 +15,8 @@ def migrate(conn):
 
 def identity(credentials):
     if not credentials.get('api_key'):return None
-    return hashlib.sha256('\0'.join(str(credentials.get(k) or '') for k in ('base_url','model','api_key')).encode()).hexdigest()
+    values=[str(credentials.get(k) or '') for k in ('base_url','model','api_key')];values[0]=values[0].rstrip('/')
+    return hashlib.sha256('\0'.join(values).encode()).hexdigest()
 
 
 def record(key,success,summary,context=None):

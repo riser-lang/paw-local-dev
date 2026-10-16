@@ -249,7 +249,7 @@ class PawScheduler:
 
             self.latest_cruise_result = result
             from backend.pm.health import observe
-            observe('patrol',True,'巡航已完成；检查文件 '+str(total_files_in_dir)+' 份')
+            observe('patrol',files_attempted==files_processed,'巡航已完成；检查文件 '+str(total_files_in_dir)+' 份' if files_attempted==files_processed else '巡航结束但部分文件处理失败，请检查运行记录')
             event_bus.publish(EventType.CRUISE_COMPLETED, payload=result, source="scheduler")
             return result
         except Exception:

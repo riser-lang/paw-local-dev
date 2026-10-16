@@ -513,6 +513,10 @@ class UniversalOpenAIProvider(BaseProvider):
         if do_search and search_supported:
             body["enable_search"] = True
 
+        def observed_failure(message):
+            from backend.pm.health import observe,identity
+            observe('model',False,message,identity({'base_url':self.base_url,'api_key':self.api_key,'model':self.model}))
+
         try:
             # Grounded answers (structured sections + evidence map) can take well over
             # 45 s on slower models; allow 120 s for the response, 10 s to connect.
@@ -563,14 +567,19 @@ class UniversalOpenAIProvider(BaseProvider):
                     usage["search_info"] = search_info
                     return ChatCompletionResult(content, usage, None, search_info)
                 elif resp.status_code in (401, 403):
+                    observed_failure('模型认证失败，请检查 Key 和账户状态')
                     return ChatCompletionResult(None, {}, f"API_KEY_INVALID: HTTP {resp.status_code}", {"used": False})
                 elif resp.status_code == 429:
+                    observed_failure('模型请求被限流，请稍后重试')
                     return ChatCompletionResult(None, {}, "RATE_LIMIT_EXCEEDED", {"used": False})
                 else:
+                    observed_failure('模型请求失败，HTTP '+str(resp.status_code))
                     return ChatCompletionResult(None, {}, f"HTTP_{resp.status_code}: {resp.text[:100]}", {"used": False})
         except httpx.TimeoutException:
+            observed_failure('模型请求超时，请检查网络或稍后重试')
             return ChatCompletionResult(None, {}, "TIMEOUT", {"used": False})
         except Exception as e:
+            observed_failure('模型请求未完成，请检查本地连接配置')
             return ChatCompletionResult(None, {}, f"NETWORK_ERROR: {str(e)[:80]}", {"used": False})
 
 

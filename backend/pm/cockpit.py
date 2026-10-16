@@ -74,6 +74,7 @@ def receipt_vm(row):
 
 def project_vm(conn,pid):
     data=dossier.read(conn,pid);p=data['project'];entries={};changes={};all_sources={}
+    section_titles={s['id']:s['title'] for s in data['sections']}
     current_ids={s['current']['id'] for s in data['sections'] if s['current']}
     for section in data['sections']:
         entries[section['id']]=[]
@@ -96,7 +97,7 @@ def project_vm(conn,pid):
                 related=conn.execute('SELECT id,section_id,text,previous_id,withdrawn FROM pm_section_revision WHERE change_id=?',(cid,)).fetchall()
                 reversible=all(r['id'] in current_ids for r in related) and not undone
                 changes[cid]={'id':cid,'at':stamp(rev['created_at']),'section_key':section['id'],
-                    'title':(refs[0]['title'] if refs else '核准输入')+' → '+section['title'],
+                    'title':(refs[0]['title'] if refs else '核准输入')+' → '+'、'.join(dict.fromkeys(section_titles.get(r['section_id'],r['section_id']) for r in related)),
                     'before':previous[0] if previous else None,'after':rev['text'],'source':refs[0] if refs else None,
                     'revertible':reversible,'reverted':undone}
             if section['current'] and rev['id']==section['current']['id']:
