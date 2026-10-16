@@ -64,7 +64,7 @@ def test_corrupt_backup_selfcheck_fails_without_touching_formal_data(database):
 
 def test_over_quota_snapshot_preserves_latest_verified_copy(database):
     original=backups.create('post_batch_commit')
-    backups.set_policy(2,original['size_bytes'])
+    backups.set_policy(2,original['quota_bytes'])
     with storage.connect() as conn:
         conn.execute('CREATE TABLE quota_fixture(value BLOB)')
         conn.execute('INSERT INTO quota_fixture VALUES(?)',(b'x'*500000,))
@@ -115,3 +115,14 @@ def test_optional_health_observation_does_not_block_answer_on_a_busy_writer(data
             assert started.wait(timeout=1)
             future.result(timeout=1)
         finally:writer.rollback()
+
+
+def test_automatic_byte_quota_includes_sidecar_metadata(database):
+    first=backups.create('post_batch_commit')
+    sidecar=Path(first['backup_path']).with_suffix('.json').stat().st_size
+    limit=first['size_bytes']*2+sidecar
+    backups.set_policy(20,limit)
+    for _ in range(3):backups.create('post_batch_commit')
+    automatic=[r for r in backups.listing() if r['automatic']]
+    actual=sum(Path(r['path']).stat().st_size+Path(r['path']).with_suffix('.json').stat().st_size for r in automatic)
+    assert actual<=limit

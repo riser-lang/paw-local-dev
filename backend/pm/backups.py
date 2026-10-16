@@ -33,7 +33,7 @@ def set_policy(max_count,max_bytes):
     if not 1<=max_count<=100 or max_bytes<65536:raise ValueError('自动备份数量须为 1–100，容量至少 64 KiB')
     with _lock:
         latest=next((b for b in listing() if b['automatic'] and readable(Path(b['path']))),None)
-        if latest and latest['size_bytes']>max_bytes:raise ValueError('容量不足以保留最新备份，请提高上限')
+        if latest and latest['quota_bytes']>max_bytes:raise ValueError('容量不足以保留最新备份，请提高上限')
         with storage.connect() as conn:conn.execute('UPDATE pm_backup_policy SET max_count=?,max_bytes=? WHERE id=1',(max_count,max_bytes))
         rotate()
     return policy()
@@ -67,9 +67,10 @@ def listing():
         # Legacy tagged automatic snapshots are included; unclassified files are preserved.
         tag=meta.get('tag') or next((t for t in AUTO_TAGS if file.stem.endswith('_'+t)),'unknown')
         automatic=meta.get('automatic',tag in AUTO_TAGS)
-        stat=file.stat()
+        stat=file.stat();sidecar=file.with_suffix('.json')
+        quota_bytes=stat.st_size+(sidecar.stat().st_size if sidecar.is_file() and not sidecar.is_symlink() else 0)
         items.append({'filename':file.name,'path':str(file),'tag':tag,'automatic':bool(automatic),
-            'size_bytes':stat.st_size,'size_mb':round(stat.st_size/1024**2,2),'mtime':stat.st_mtime,
+            'size_bytes':stat.st_size,'quota_bytes':quota_bytes,'size_mb':round(stat.st_size/1024**2,2),'mtime':stat.st_mtime,
             'formatted_time':datetime.fromtimestamp(stat.st_mtime,timezone.utc).isoformat(),
             'created_at':meta.get('created_at'),'counts':meta.get('counts'),'integrity':meta.get('integrity')})
     return sorted(items,key=lambda b:(b['mtime'],b['filename']),reverse=True)
@@ -88,8 +89,8 @@ def rotate(max_keep=None):
         if latest:automatic=[latest]+[b for b in automatic if b['filename']!=latest['filename']]
         _,root=paths()
         for backup in automatic:
-            if verified[backup['filename']] and (retained==0 or retained<keep and total+backup['size_bytes']<=limits['max_bytes']):
-                total+=backup['size_bytes'];retained+=1;continue
+            if verified[backup['filename']] and (retained==0 or retained<keep and total+backup['quota_bytes']<=limits['max_bytes']):
+                total+=backup['quota_bytes'];retained+=1;continue
             file=confined(Path(backup['path']),root)
             file.unlink();removed+=1
             meta=confined(file.with_suffix('.json'),root)
@@ -114,13 +115,15 @@ def create(tag='manual',automatic=None):
                 if integrity!='ok':raise RuntimeError('新备份完整性校验失败')
                 snapshot_counts=counts(copied);table_count=copied.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
             size=staging.stat().st_size
-            if automatic and size>policy()['max_bytes']:raise ValueError('自动备份超出容量上限，保留之前已验证的备份')
-            staging.replace(file)
             meta={'tag':tag,'automatic':automatic,'created_at':storage.now(),'counts':snapshot_counts,'integrity':integrity,'table_count':table_count}
-            file.with_suffix('.json').write_text(json.dumps(meta,ensure_ascii=False),encoding='utf-8')
+            metadata=json.dumps(meta,ensure_ascii=False)
+            quota_bytes=size+len(metadata.encode('utf-8'))
+            if automatic and quota_bytes>policy()['max_bytes']:raise ValueError('自动备份超出容量上限，保留之前已验证的备份')
+            staging.replace(file)
+            file.with_suffix('.json').write_text(metadata,encoding='utf-8')
             rotate()
             health.observe('backup',True,'备份已完成并通过 SQLite 完整性检查')
-            return {'ok':True,'backup_filename':name,'backup_path':str(file),**meta,'size_bytes':size,'size_mb':round(size/1024**2,2)}
+            return {'ok':True,'backup_filename':name,'backup_path':str(file),**meta,'size_bytes':size,'quota_bytes':quota_bytes,'size_mb':round(size/1024**2,2)}
         except Exception:
             if staging.is_file():confined(staging,root).unlink()
             health.observe('backup',False,'备份失败，请检查磁盘和自动备份容量上限')
