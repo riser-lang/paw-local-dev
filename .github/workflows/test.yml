@@ -159,7 +159,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.block }}
-          path: reports/
+          path: reports/report_${{ matrix.block }}.json
           retention-days: 5
 
       - name: Upload Exam Results
