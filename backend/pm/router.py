@@ -10,6 +10,34 @@ from .budget import bounded_context
 router = APIRouter()
 
 
+@router.get('/view/today')
+def today_view():
+    from .cockpit import today_vm
+    with storage.connect() as conn:return today_vm(conn)
+
+
+@router.get('/view/projects/{project_id}')
+def project_view(project_id: str):
+    from .cockpit import project_vm
+    try:
+        with storage.connect() as conn:return project_vm(conn,project_id)
+    except ValueError as exc:raise HTTPException(404,str(exc)) from exc
+
+
+class InboxChoice(BaseModel):
+    ids: list[str] = Field(min_length=1,max_length=100)
+    choice: str
+    assignments: dict = Field(default_factory=dict)
+
+
+@router.post('/inbox/decide')
+def decide_inbox(body: InboxChoice):
+    from .cockpit import decide
+    from backend.provider.adapter import get_active_provider
+    try:return decide(body.ids,body.choice,body.assignments,get_active_provider())
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+
 @router.get('/receipts')
 def input_receipts():
     from .receipts import read

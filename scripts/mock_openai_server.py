@@ -196,6 +196,10 @@ def generate_structured_analysis(all_text: str) -> Dict[str, Any]:
     return envelope
 
 
+_request_count=0
+_count_lock=threading.Lock()
+
+
 class MockOpenAIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         logger.info(f"[mock_server] {self.address_string()} - {format % args}")
@@ -211,7 +215,10 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def do_GET(self):
-        if self.path in ("/health", "/"):
+        if self.path=='/stats':
+            with _count_lock:count=_request_count
+            self._send_json(200,{'chat_requests':count})
+        elif self.path in ("/health", "/"):
             self._send_json(200, {"status": "ok", "service": "mock_openai_server"})
         elif self.path.startswith("/v1/models"):
             self._send_json(200, {
@@ -226,11 +233,17 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Not Found"})
 
     def do_POST(self):
+        global _request_count
+        if self.path=='/stats/reset':
+            with _count_lock:_request_count=0
+            self._send_json(200,{'chat_requests':0})
+            return
         if not self.path.startswith("/v1/chat/completions"):
             self._send_json(404, {"error": "Not Found"})
             return
 
         content_len = int(self.headers.get("Content-Length", 0))
+        with _count_lock:_request_count+=1
         raw_body = self.rfile.read(content_len).decode("utf-8", errors="replace")
 
         try:

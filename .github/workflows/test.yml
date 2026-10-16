@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05]
+        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -100,7 +100,7 @@ jobs:
       - name: Install Test Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt httpx python-docx openpyxl python-pptx pypdf pillow playwright
+          pip install -r requirements.txt httpx python-docx openpyxl python-pptx pypdf pillow playwright jsonschema==4.23.0
           playwright install chromium
 
       - name: Download Built Installer
@@ -194,7 +194,7 @@ jobs:
       - name: Install Test Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt httpx python-docx openpyxl python-pptx pypdf pillow playwright
+          pip install -r requirements.txt httpx python-docx openpyxl python-pptx pypdf pillow playwright jsonschema==4.23.0
           playwright install chromium
 
       - name: Download Baseline v2.3.7 Installer from Release
@@ -255,6 +255,12 @@ jobs:
         run: |
           $baselinePm = (Get-ChildItem -Path baseline_pm\*.exe)[0].FullName
           python tests/run_pm_tests.py --version-negative --installer-exe $baselinePm --commit-sha ${{ github.sha }} --output-report reports/report_negative_pm_version.json
+
+      - name: Execute PM Cockpit Negative Control
+        shell: pwsh
+        run: |
+          $baselinePm = (Get-ChildItem -Path baseline_pm\*.exe)[0].FullName
+          python tests/run_pm_tests.py --cockpit-negative --installer-exe $baselinePm --commit-sha ${{ github.sha }} --output-report reports/report_negative_pm_cockpit.json
 
       - name: Scan Artifacts for Credential Leaks
         if: always()

@@ -1,13 +1,60 @@
 {
   "context_budget_bytes": 16384,
   "sections": [
-    {"id": "status", "title": "一句话现状", "project_fields": ["description"]},
-    {"id": "goals", "title": "目标与指标", "project_fields": []},
-    {"id": "progress", "title": "进度与里程碑", "project_fields": ["latest_progress_summary", "stage"]},
-    {"id": "gaps", "title": "缺口", "project_fields": []},
-    {"id": "next", "title": "下一步", "project_fields": ["next_action_summary"]},
-    {"id": "risks", "title": "风险与冲突", "project_fields": []},
-    {"id": "changes", "title": "最近变化", "project_fields": []},
-    {"id": "sources", "title": "来源", "project_fields": []}
+    {
+      "id": "status",
+      "title": "一句话现状",
+      "project_fields": [
+        "description"
+      ],
+      "view_kind": "summary"
+    },
+    {
+      "id": "goals",
+      "title": "目标与指标",
+      "project_fields": [],
+      "view_kind": "metrics"
+    },
+    {
+      "id": "progress",
+      "title": "进度与里程碑",
+      "project_fields": [
+        "latest_progress_summary",
+        "stage"
+      ],
+      "view_kind": "milestones"
+    },
+    {
+      "id": "gaps",
+      "title": "缺口",
+      "project_fields": [],
+      "view_kind": "gaps"
+    },
+    {
+      "id": "next",
+      "title": "下一步",
+      "project_fields": [
+        "next_action_summary"
+      ],
+      "view_kind": "next_steps"
+    },
+    {
+      "id": "risks",
+      "title": "风险与冲突",
+      "project_fields": [],
+      "view_kind": "risks"
+    },
+    {
+      "id": "changes",
+      "title": "最近变化",
+      "project_fields": [],
+      "view_kind": "changes"
+    },
+    {
+      "id": "sources",
+      "title": "来源",
+      "project_fields": [],
+      "view_kind": "sources"
+    }
   ]
 }

@@ -1,7 +1,10 @@
 import { build } from 'esbuild';
-import { mkdir, copyFile } from 'node:fs/promises';
+import { mkdir, copyFile, cp } from 'node:fs/promises';
 const out = new URL('../dist/pm/', import.meta.url);
 await mkdir(out, { recursive: true });
-await build({entryPoints:[new URL('app.js', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/,'$1')], bundle:true, outdir:out.pathname.replace(/^\/([A-Za-z]:)/,'$1'), minify:false, target:'es2020'});
+await build({entryPoints:{app:new URL('app.tsx', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/,'$1')}, bundle:true, outdir:out.pathname.replace(/^\/([A-Za-z]:)/,'$1'), minify:true, target:'es2020',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'},loader:{'.woff2':'file'},assetNames:'fonts/[name]-[hash]'});
 await copyFile(new URL('index.html', import.meta.url), new URL('index.html', out));
 await copyFile(new URL('style.css', import.meta.url), new URL('style.css', out));
+await copyFile(new URL('nav.js', import.meta.url), new URL('nav.js', out));
+await copyFile(new URL('THIRD_PARTY.md', import.meta.url), new URL('THIRD_PARTY.md', out));
+await cp(new URL('licenses/', import.meta.url), new URL('licenses/', out), {recursive:true});
