@@ -4,9 +4,9 @@ import { shortDateTime } from "../time";
 import { EmptyState, SourceDetail } from "./common";
 
 const IMPACT: Record<Impact, { rank: number; label: string }> = {
-  high: { rank: 0, label: "影响大" },
-  medium: { rank: 1, label: "影响中" },
-  low: { rank: 2, label: "影响小" },
+  high: { rank: 0, label: "影响：大" },
+  medium: { rank: 1, label: "影响：中" },
+  low: { rank: 2, label: "影响：小" },
 };
 
 /** Sorted by impact (high → low), then by due date, then oldest first. */
@@ -22,7 +22,7 @@ export function DecisionCard({ item, selected, onSelect, cb, busy }: {
 }) {
   const [showSources, setShowSources] = useState(false);
   return (
-    <article className={`pm-decision pm-impact-${item.impact}`} aria-label={item.question}>
+    <article className={`pm-decision pm-impact-${item.impact}`} aria-label={item.question} data-decision-id={item.id}>
       <div className="pm-decision-head">
         <label className="pm-check">
           <input type="checkbox" checked={selected} onChange={(e) => onSelect(e.target.checked)} />
@@ -37,6 +37,7 @@ export function DecisionCard({ item, selected, onSelect, cb, busy }: {
           {IMPACT[item.impact]?.label ?? item.impact}
         </span>
       </div>
+      {item.excerpt ? <p className="pm-decision-excerpt">原文：{item.excerpt}</p> : null}
       <dl className="pm-decision-outcomes">
         <div>
           <dt>选「{item.yes_label || "是"}」</dt>

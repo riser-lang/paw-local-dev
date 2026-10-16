@@ -1,4 +1,4 @@
-"""PAW Personal Work OS v2.3.9 - Packager and Inno Setup Builder.
+"""PAW Personal Work OS v2.4.0 - Packager and Inno Setup Builder.
 
 1. Preflight checks
 2. Runs PyInstaller with paw_desktop.spec
@@ -35,7 +35,7 @@ def sha256_file(path: Path) -> str:
 
 def main():
     print("=" * 70)
-    print("PAW Personal Work OS v2.3.9 - 打包构建流程")
+    print("PAW Personal Work OS v2.4.0 - 打包构建流程")
     print(f"项目根目录: {ROOT_DIR}")
     print("=" * 70)
 
@@ -71,10 +71,10 @@ def main():
     # 3. Post-build auxiliary files
     print("\n[INFO] 配置分发目录辅助启动脚本与说明...")
     bat_content = """@echo off
-title PAW Personal Work OS v2.3.9 (本地独立版)
+title PAW Personal Work OS v2.4.0 (本地独立版)
 cd /d "%~dp0"
 echo =================================================================
-echo       正在启动 PAW Personal Work OS v2.3.9 (参赛版本)
+echo       正在启动 PAW Personal Work OS v2.4.0 (参赛版本)
 echo       请稍候，系统将自动在默认浏览器中打开个人工作台...
 echo =================================================================
 start "" "PAW_Personal_Work_OS.exe"
@@ -82,7 +82,7 @@ start "" "PAW_Personal_Work_OS.exe"
     with open(DIST_DIR / "启动PAW.bat", "w", encoding="gbk") as f:
         f.write(bat_content)
 
-    readme_content = """PAW Personal Work OS v2.3.9 (Windows 参赛版本)
+    readme_content = """PAW Personal Work OS v2.4.0 (Windows 参赛版本)
 =================================================================
 
 面向普通员工的个人 AI 工作系统（严肃资产化平台）。
@@ -132,7 +132,7 @@ start "" "PAW_Personal_Work_OS.exe"
     # 5. Output Verification
     dist_dir = ROOT_DIR / "dist"
     possible_exes = [
-        dist_dir / "PAW_Personal_Work_OS_Setup_v2.3.9.exe",
+        dist_dir / "PAW_Personal_Work_OS_Setup_v2.4.0.exe",
         dist_dir / "PAW_Personal_Work_OS_Setup.exe",
     ]
     target_exe = None
@@ -145,8 +145,8 @@ start "" "PAW_Personal_Work_OS.exe"
         print(f"[FAIL] Inno Setup 编译后未找到安装包 EXE 文件！")
         sys.exit(1)
 
-    # Standardize to PAW_Personal_Work_OS_Setup_v2.3.9.exe if needed
-    final_exe = dist_dir / "PAW_Personal_Work_OS_Setup_v2.3.9.exe"
+    # Standardize to PAW_Personal_Work_OS_Setup_v2.4.0.exe if needed
+    final_exe = dist_dir / "PAW_Personal_Work_OS_Setup_v2.4.0.exe"
     if target_exe != final_exe:
         shutil.copy2(target_exe, final_exe)
 

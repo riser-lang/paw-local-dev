@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {TodayCockpit} from './design/pages/TodayCockpit';
 import {ProjectDossier} from './design/pages/ProjectDossier';
 import type {TodayViewModel,ProjectViewModel,PmCallbacks} from './design/types';
+import {shortDateTime} from './design/time';
 import {renderVersions} from './versions.js';
 import {renderUpdates} from './updates.js';
 import {renderReceipts} from './receipts.js';
@@ -79,7 +80,7 @@ function Operations({refresh,version}:{refresh:()=>Promise<void>,version:number}
  useEffect(()=>{Promise.all([api('/v1/pm/backups'),api('/v1/pm/system/status')]).then(([b,s])=>{setData(b);setCount(b.policy.max_count);setMb(b.policy.max_bytes/1024**2);setStatuses(s.items);}).catch(e=>notice(e.message));},[version]);
  async function run(fn:()=>Promise<any>){setBusy(true);try{const result=await fn();await refresh();notice(result.ok===false?'操作未成功，请查看系统状态。':'本地维护操作完成。');}catch(e){notice((e as Error).message);}finally{setBusy(false);}}
  return <section className="pm-root pm-page pm-maintenance" aria-label="本地维护"><h2>本地维护</h2>
-  <ul>{statuses.map(s=><li key={s.key}><strong>{s.label} · {{ok:'● 正常',warn:'▲ 注意',error:'✕ 异常',unknown:'○ 未知'}[s.state]}</strong>：{s.summary}；最后成功：{s.last_success_at||'暂无记录'}{s.detail&&<span>；{s.detail}</span>}</li>)}</ul>
+  <ul>{statuses.map(s=><li key={s.key}><strong>{s.label} · {{ok:'● 正常',warn:'▲ 注意',error:'✕ 异常',unknown:'○ 未知'}[s.state]}</strong>：{s.summary}；最后成功：{s.last_success_at?shortDateTime(s.last_success_at):'暂无记录'}{s.detail&&<span>；{s.detail.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g,shortDateTime)}</span>}</li>)}</ul>
   {data&&<><p>自动备份 {data.items.filter((b:any)=>b.automatic).length} 份；手动及其他保留备份 {data.items.filter((b:any)=>!b.automatic).length} 份。手动备份不参与自动轮转。</p>
    <div className="pm-policy"><label>自动备份最多份数<input type="number" min="1" max="100" value={count} onChange={e=>setCount(Number(e.target.value))}/></label>
    <label>自动备份容量上限（MB）<input type="number" min="1" value={mb} onChange={e=>setMb(Number(e.target.value))}/></label></div>

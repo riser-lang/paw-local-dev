@@ -42,6 +42,8 @@ export interface DecisionItem {
   id: string;
   /** 要决定什么（一句话，问句） */
   question: string;
+  /** 原文摘录，与决定标题分开呈现。 */
+  excerpt?: string | null;
   /** 选“是”会怎样 */
   if_yes: string;
   /** 选“否”会怎样 */

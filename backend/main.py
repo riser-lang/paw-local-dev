@@ -1,4 +1,4 @@
-"""PAW Personal Work OS v2.3.9 - Unified FastAPI Local Gateway.
+"""PAW Personal Work OS v2.4.0 - Unified FastAPI Local Gateway.
 
 Serves:
 - React 18 Workbench Frontend
@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="PAW Personal Work OS",
-    version="2.3.9",
+    version="2.4.0",
     description="Evidence-First + Human-Governed Personal AI Work Operating System",
     lifespan=lifespan,
 )
@@ -1070,4 +1070,4 @@ def web_app(path: str = ""):
 from backend.repair_v238 import install as _paw_install
 
 _paw_install()
-app.version = "2.3.9"
+app.version = "2.4.0"

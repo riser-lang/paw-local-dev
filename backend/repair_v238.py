@@ -53,15 +53,7 @@ def _resolve_id(conn, table, payload, candidate=None):
     return matches[0][0]
 
 
-_PROJECT_UPDATE_ALIASES = {
-    'new_summary': 'latest_progress_summary', 'update_summary': 'latest_progress_summary',
-    'progress': 'latest_progress_summary', 'statement': 'latest_progress_summary',
-    'current_stage': 'stage', 'next_action': 'next_action_summary', 'next_step': 'next_action_summary',
-}
-
-
-_PROJECT_FIELDS = ('name', 'description', 'status', 'stage', 'priority', 'due_date',
-                   'next_action_summary', 'latest_progress_summary', 'project_handbook')
+from backend.pm.project_payload import normalize_aliases, with_excerpt, REVIEW_ALIASES
 
 
 def _flat_project_update(conn, candidate, payload, allow_create=True):
@@ -74,9 +66,7 @@ def _flat_project_update(conn, candidate, payload, allow_create=True):
     only for flat drafts (allow_create); an explicit update never does.
     """
     from backend.runtime_core.project_convergence import INACTIVE_STATUSES, normalize_project_name
-    for source, dest in _PROJECT_UPDATE_ALIASES.items():
-        if payload.get(source) not in (None, '') and payload.get(dest) in (None, ''):
-            payload[dest] = payload[source]
+    payload = normalize_aliases(payload)
     excerpt = candidate.get('raw_excerpt')
     ident = payload.get('id') or payload.get('project_id') or payload.get('target_id')
     if ident:
@@ -106,9 +96,7 @@ def _flat_project_update(conn, candidate, payload, allow_create=True):
     payload['id'] = str(ident)
     # An update that names a project but carries no field records the quoted
     # source text as progress, so approving it is never a silent no-op.
-    if excerpt and not any(payload.get(f) not in (None, '') for f in _PROJECT_FIELDS if f != 'name'):
-        payload['latest_progress_summary'] = str(excerpt)
-    return 'update', payload
+    return 'update', with_excerpt(payload, excerpt)
 
 
 def _normalize(conn, candidate, change, edited, reviewer):
@@ -128,7 +116,7 @@ def _normalize(conn, candidate, change, edited, reviewer):
     if target == 'project' and ((flat and candidate['candidate_type'] == 'project_update') or operation == 'update'):
         operation, payload = _flat_project_update(conn, candidate, payload, allow_create=flat)
     aliases = {
-        'project': {'current_stage': 'stage', 'next_action': 'next_action_summary', 'summary': 'description', 'progress': 'latest_progress_summary'},
+        'project': REVIEW_ALIASES,
         'knowledge': {'summary': 'one_line_summary', 'body': 'content'},
         'todo': {'due_date': 'due_at'},
     }

@@ -1,5 +1,6 @@
 """Installed C-07 acceptance, including real baseline overlay upgrade."""
 import sqlite3
+import re
 from contextlib import closing
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
@@ -106,6 +107,7 @@ def run_c07(report,installer):
                         page.get_by_role('heading',name='本地维护',exact=True).wait_for()
                         area=page.get_by_role('region',name='本地维护',exact=True)
                         expect(area).to_contain_text('手动备份不参与自动轮转')
+                        c.check('maintenance_short_local_time',not re.search(r'\d{4}-\d{2}-\d{2}T\d{2}:',area.inner_text()) and bool(re.search(r'\d{1,2}/\d{1,2} \d{2}:\d{2}',area.inner_text())),True)
                         if case=='PM-A2-01':c.check('selfcheck_visible_on_page','恢复自检通过' in area.inner_text(),True)
                         if case=='PM-A4-01':c.check('all_statuses_and_times_visible',all(t in area.inner_text() for t in ['巡航 · ✕ 异常','扫描','备份','模型连通','最后成功：']),True)
                         capture(c,page,1440);page.set_viewport_size({'width':390,'height':900});capture(c,page,390)

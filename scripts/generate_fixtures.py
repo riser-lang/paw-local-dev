@@ -41,7 +41,7 @@ prs = Presentation()
 slide = prs.slides.add_slide(prs.slide_layouts[0])
 title = slide.shapes.title
 subtitle = slide.placeholders[1]
-title.text = "PAW 2.3.9 架构演进与自动化验收汇报"
+title.text = "PAW 2.4.0 架构演进与自动化验收汇报"
 subtitle.text = "基于真实证据链的严肃个人工作操作系统\n汇报人：系统测试架构组"
 
 slide2 = prs.slides.add_slide(prs.slide_layouts[1])

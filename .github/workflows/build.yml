@@ -48,16 +48,16 @@ jobs:
       - name: Generate Installer SHA256 Text File
         shell: pwsh
         run: |
-          $exe = "dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe"
+          $exe = "dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe"
           $hash = (Get-FileHash -Path $exe -Algorithm SHA256).Hash
-          "$hash  PAW_Personal_Work_OS_Setup_v2.3.9.exe" | Out-File -FilePath "dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe.sha256" -Encoding ascii
-          Get-Content "dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe.sha256"
+          "$hash  PAW_Personal_Work_OS_Setup_v2.4.0.exe" | Out-File -FilePath "dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe.sha256" -Encoding ascii
+          Get-Content "dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe.sha256"
 
       - name: Upload Built Installer Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PAW_Personal_Work_OS_Setup_v2.3.9
+          name: PAW_Personal_Work_OS_Setup_v2.4.0
           path: |
-            dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe
-            dist/PAW_Personal_Work_OS_Setup_v2.3.9.exe.sha256
+            dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe
+            dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe.sha256
           if-no-files-found: error

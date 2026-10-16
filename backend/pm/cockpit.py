@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 from datetime import datetime,timedelta,timezone
-from . import storage,dossier,receipts,updates
+from . import storage,dossier,receipts,updates,decision_copy
 
 TZ=timezone(timedelta(hours=8))
 
@@ -35,17 +35,16 @@ def sources(conn,refs):return [s for sid in refs if isinstance(sid,str) and (s:=
 def inbox(conn):
     projects={r['id']:r['name'] for r in conn.execute('SELECT id,name FROM project')}
     result=[]
-    def add(kind,row,question,yes,no,pid,refs,impact='medium'):
+    def add(kind,row,question,yes,no,pid,refs,impact='medium',excerpt=None):
         result.append({'id':kind+':'+row['id'],'question':question,'if_yes':yes,'if_no':no,
             'impact':impact,'project_id':pid,'project_name':projects.get(pid),'created_at':stamp(row['created_at']),
-            'due_at':None,'sources':sources(conn,refs)})
+            'due_at':None,'sources':sources(conn,refs),'excerpt':excerpt})
     # No arbitrary page limit: count and list represent the same full pending set.
     for raw in conn.execute("SELECT * FROM candidate WHERE status='pending' ORDER BY created_at,id"):
         row=dict(raw);proposal=json.loads(row['proposed_change'] or '{}');payload=proposal.get('payload',{})
-        title=payload.get('title') or payload.get('name') or row.get('raw_excerpt') or proposal.get('target_type','条目')
-        add('candidate',row,'是否批准：'+str(title)[:160]+'？',
-            '按所列提议的内容和操作写入正式工作区；来源和审核会保留。','拒绝这条提议，正式记录保持不变。',
-            payload.get('project_id') or payload.get('id'),json.loads(row['source_refs'] or '[]'))
+        copy=decision_copy.candidate(proposal,projects,row.get('raw_excerpt'))
+        add('candidate',row,copy['question'],copy['if_yes'],copy['if_no'],copy['project_id'],
+            json.loads(row['source_refs'] or '[]'),excerpt=row.get('raw_excerpt') or copy['excerpt'])
     for raw in conn.execute("SELECT d.*,s.title FROM pm_family_decision d JOIN pm_source s ON s.source_version_id=d.source_version_id WHERE d.status='pending'"):
         row=dict(raw);kind='assignment' if row['project_id'] is None else 'version'
         add(kind,row,('确认归属：' if kind=='assignment' else '确认文档族与版本：')+row['title']+'？',
@@ -55,9 +54,11 @@ def inbox(conn):
         row=dict(raw)
         if row['status']=='conflict' and row['id'] not in conflicts:continue
         conflict=conflicts.get(row['id'])
-        add('assessment',row,('裁决冲突：' if conflict else '确认栏目结论：')+row['text'][:140]+'？',
-            '采纳新资料，替换该栏目的当前结论。','保留当前结论，拒绝这条新结论。',row['project_id'],
-            [conflict['left_source_id'],row['source_version_id']] if conflict else [row['source_version_id']],'high' if conflict else 'medium')
+        section=next((s['title'] for s in storage.config()['sections'] if s['id']==row['section_id']),row['section_id'])
+        target='【'+projects.get(row['project_id'],'所选项目')+'】的「'+section+'」'
+        add('assessment',row,('用新资料解决' if conflict else '更新')+target+('的冲突？' if conflict else '？'),
+            target+'改为「'+row['text']+'」。','拒绝这条新结论；'+target+'保持现状。',row['project_id'],
+            [conflict['left_source_id'],row['source_version_id']] if conflict else [row['source_version_id']],'high' if conflict else 'medium',excerpt=row['text'])
     return result
 
 

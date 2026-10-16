@@ -46,6 +46,7 @@
       "properties": {
         "id": { "type": "string" },
         "question": { "type": "string" },
+          "excerpt": { "$ref": "#/$defs/NullableString" },
         "if_yes": { "type": "string" },
         "if_no": { "type": "string" },
         "impact": { "enum": ["high", "medium", "low"] },

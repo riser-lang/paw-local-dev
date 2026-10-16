@@ -129,7 +129,7 @@ def main():
         settings.port = actual_port
 
     print("=" * 65)
-    print("       PAW Personal Work OS v2.3.9 (Windows 本地化版)")
+    print("       PAW Personal Work OS v2.4.0 (Windows 本地化版)")
     print("       Evidence-First + Human-Governed Personal AI Workspace")
     print("=" * 65)
     print(f"Server URL:   http://{settings.host}:{settings.port}/app")

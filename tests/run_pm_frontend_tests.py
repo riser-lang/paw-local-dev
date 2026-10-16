@@ -83,6 +83,13 @@ def run_c06(report,installer):
                             c.check('rendered_card_count',page.locator('.pm-decision').count(),expected)
                             c.check('decision_consequences_complete',all(i['question'] and i['if_yes'] and i['if_no'] for i in items),True)
                             c.check('no_duplicate_decision_ids',len({i['id'] for i in items}),expected)
+                            c.check('decision_titles_explain_action',all(not i['question'].startswith('是否批准：') and '。？' not in i['question'] for i in items),True)
+                            c.check('candidate_outcomes_are_specific',all('按所列提议的内容和操作' not in i['if_yes'] for i in items),True)
+                            for item in items:
+                                card=page.locator('[data-decision-id='+json.dumps(item['id'])+']')
+                                expect(card.locator('h3')).to_have_text(item['question'])
+                                if item.get('excerpt'):expect(card.locator('.pm-decision-excerpt')).to_have_text('原文：'+item['excerpt'])
+                            c.check('impact_label_is_readable','影响中' not in page.inner_text('body'),True)
                             capture(c,page,1440)
                         elif case=='PM-C1-03':
                             candidates=api('GET','/v1/web/brain/review/candidates')['items']
@@ -90,7 +97,7 @@ def run_c06(report,installer):
                             c.check('two_real_generated_candidates',len(chosen),2)
                             ids={'candidate:'+i['id'] for i in chosen};items=[i for i in view()['decisions'] if i['id'] in ids]
                             before=read_rows('SELECT COUNT(*) AS n FROM approved_change')[0]['n']
-                            for item in items:page.get_by_role('article',name=item['question'],exact=True).get_by_role('checkbox').check()
+                            for item in items:page.locator('[data-decision-id='+json.dumps(item['id'])+']').get_by_role('checkbox').check()
                             started=time.monotonic()
                             with page.expect_response(lambda r:r.request.method=='GET' and r.url.endswith('/v1/pm/view/today')) as refreshed:
                                 with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/v1/pm/inbox/decide')) as decided:
@@ -98,7 +105,7 @@ def run_c06(report,installer):
                             result=decided.value.json();refreshed.value.finished()
                             print('PM inbox batch evidence',json.dumps({'elapsed_seconds':round(time.monotonic()-started,3),'response':result},ensure_ascii=False))
                             c.check('batch_api_committed_each_selected_item',all(r['ok'] for r in result['items']) and len(result['items'])==2,True)
-                            for item in items:expect(page.get_by_role('article',name=item['question'],exact=True)).to_have_count(0)
+                            for item in items:expect(page.locator('[data-decision-id='+json.dumps(item['id'])+']')).to_have_count(0)
                             c.check('batch_items_disappear',ids.intersection(i['id'] for i in view()['decisions']),set())
                             c.check('batch_created_approved_changes',read_rows('SELECT COUNT(*) AS n FROM approved_change')[0]['n']-before,2)
                             committed=read_rows('SELECT a.status,c.result FROM approved_change a JOIN review_decision r ON r.id=a.approval_ref JOIN commit_record c ON c.change_id=a.change_id WHERE r.candidate_id IN (?,?)',tuple(i['id'] for i in chosen))
