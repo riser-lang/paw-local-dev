@@ -95,7 +95,7 @@ def _ensure_governance_schema(conn: sqlite3.Connection) -> None:
             reviewer TEXT NOT NULL,
             review_channel TEXT NOT NULL DEFAULT 'chatgpt_explicit_user',
             approval_source TEXT NOT NULL DEFAULT 'candidate_review'
-                CHECK (approval_source IN ('candidate_review', 'direct_user')),
+                CHECK (approval_source IN ('candidate_review', 'direct_user', 'standing_user_rule')),
             original_payload TEXT,
             reviewed_payload TEXT,
             authorization_payload_hash TEXT,
@@ -143,6 +143,8 @@ def _ensure_governance_schema(conn: sqlite3.Connection) -> None:
         columns = {r[1] for r in conn.execute('PRAGMA table_info(analyzed_source)')}
         if 'completion_state' not in columns:
             conn.execute("ALTER TABLE analyzed_source ADD COLUMN completion_state TEXT NOT NULL DEFAULT 'complete'")
+        from backend.pm.authorization import migrate as migrate_authorization
+        migrate_authorization(conn)
 
 
 _DECIDED_STATUSES = ("accepted", "applied", "rejected")

@@ -13,6 +13,8 @@ def read(conn, project_id):
         rows = conn.execute('SELECT * FROM pm_section_revision WHERE project_id=? AND section_id=? ORDER BY created_at DESC,id DESC', (project_id, section['id'])).fetchall()
         revisions = [{**dict(r), 'source_url': '/v1/pm/sources/' + r['source_version_id']} for r in rows]
         for revision in revisions:
+            from .authorization import for_change
+            revision['authorization']=for_change(conn,revision['change_id'])
             revision['source_refs']=[{**dict(r),'source_url':'/v1/pm/sources/'+r['source_version_id']+'?extraction='+r['extraction_id']} for r in conn.execute('SELECT source_version_id,text,extraction_id FROM pm_revision_source WHERE revision_id=?',(revision['id'],))]
             primary=next((r for r in revision['source_refs'] if r['source_version_id']==revision['source_version_id']),None)
             if primary:revision['source_url']=primary['source_url']

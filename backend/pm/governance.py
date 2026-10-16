@@ -61,6 +61,8 @@ def record_project_change(conn, change, payload, ident, before):
 
 
 def execute(conn, change, payload):
+    from . import routing
+    if change['target_type']=='pm_input_decision':return routing.reject(conn,change,payload)
     from . import versions
     if change['target_type'] == 'pm_version':
         return versions.execute(conn,change,payload)
@@ -76,6 +78,8 @@ def execute(conn, change, payload):
     if change['target_type'] != 'pm_undo':
         raise ValueError('未知项目管理写入类型')
     original = payload['change_id']
+    input_target=routing.undo_rejection(conn,change,original)
+    if input_target is not None:return input_target
     version_project = versions.undo(conn,change,original)
     if version_project is not None:
         updates.undo_metadata(conn,original)

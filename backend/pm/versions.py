@@ -58,15 +58,24 @@ def rank(row):
     return (row['effective_date'] or '', tuple(json.loads(row['version_json'])), row['observed_at'])
 
 
+def source_metadata(source):
+    value=metadata(source['title'],source['body'])
+    if source['kind']=='capture':
+        value={'family_key':'随手记-'+source['source_version_id'],'version':[],
+               'effective_date':None,'ambiguous_date':False}
+    return value
+
+
 def process_source(source_id):
     """Called by normal Planner intake. Never writes family/current pointers directly."""
     with storage.connect() as conn:
         s = storage.source(conn, source_id)
-        if s['kind'] != 'document':
+        if s['kind'] not in ('document','capture'):
             return
-        meta = metadata(s['title'], s['body'])
+        meta = source_metadata(s)
         projects = [dict(r) for r in conn.execute("SELECT id,name FROM project WHERE status NOT IN ('merged','archived','deleted')")]
-        hits = [p for p in projects if p['name'] and p['name'] in s['body']]
+        from .routing import explicit_projects
+        hits = explicit_projects(projects,s['body'])
         pid = hits[0]['id'] if len(hits) == 1 else None
         conn.execute('INSERT OR IGNORE INTO pm_document_intake VALUES(?,?,?,?,?,?)',
                      (source_id, pid, meta['family_key'], storage.encoded(meta['version']), meta['effective_date'], s['created_at']))
@@ -74,7 +83,7 @@ def process_source(source_id):
             return
         families = [dict(r) for r in conn.execute('SELECT * FROM pm_family WHERE project_id=?', (pid,))]
         exact = next((f for f in families if f['title'] == meta['family_key']), None)
-        similar = [f for f in families if difflib.SequenceMatcher(None, f['title'], meta['family_key']).ratio() >= .55]
+        similar = [f for f in families if difflib.SequenceMatcher(None, f['title'], meta['family_key']).ratio() >= .55] if s['kind']=='document' else []
         if not pid or meta['ambiguous_date'] or (not exact and similar):
             conn.execute('INSERT OR IGNORE INTO pm_family_decision(id,source_version_id,project_id,options_json,prompt,created_at) VALUES(?,?,?,?,?,?)',
                          (str(uuid.uuid4()),source_id,pid,storage.encoded([f['id'] for f in similar]),
@@ -103,9 +112,9 @@ def execute(conn, change, payload):
     elif intake['project_id'] != pid or intake['family_key'] != payload['family_title']:
         raise ValueError('R2：归属或文档族必须由用户确认')
     if not user_decision:
-        meta=metadata(storage.source(conn,sid)['title'],storage.source(conn,sid)['body'])
+        meta=source_metadata(storage.source(conn,sid))
         similar=conn.execute('SELECT title FROM pm_family WHERE project_id=? AND title<>?',(pid,intake['family_key'])).fetchall()
-        if meta['ambiguous_date'] or (not family and any(difflib.SequenceMatcher(None,r[0],intake['family_key']).ratio()>=.55 for r in similar)):
+        if meta['ambiguous_date'] or (storage.source(conn,sid)['kind']=='document' and not family and any(difflib.SequenceMatcher(None,r[0],intake['family_key']).ratio()>=.55 for r in similar)):
             raise ValueError('R2：不确定的文档族需要用户确认')
     if family and (family['project_id'] != pid or (not user_decision and family['title'] != intake['family_key'])):
         raise ValueError('R2：不能自动归入不确定的文档族')
@@ -114,14 +123,19 @@ def execute(conn, change, payload):
     if not family:
         conn.execute('INSERT INTO pm_family VALUES(?,?,?,NULL)', (fid,pid,payload['family_title']))
     member = conn.execute('SELECT family_id FROM pm_family_member WHERE source_version_id=?',(sid,)).fetchone()
+    member_before=member[0] if member else None
     if member:
-        if member[0] != fid:
-            raise ValueError('资料已属于其他文档族')
-        raise ValueError('资料版本已裁定')
-    conn.execute('INSERT INTO pm_family_member VALUES(?,?)',(sid,fid))
+        withdrawn=conn.execute('SELECT 1 FROM pm_version_ruling WHERE change_id=? AND undone_by IS NOT NULL',(card['change_id'],)).fetchone() if user_decision and card['change_id'] else None
+        if not withdrawn:raise ValueError('资料版本已裁定')
+        if member[0]!=fid:
+            if conn.execute('SELECT 1 FROM pm_section_current c JOIN pm_revision_source rs ON rs.revision_id=c.revision_id WHERE rs.source_version_id=?',(sid,)).fetchone():raise ValueError('原归属仍有当前结论，请先撤销')
+            conn.execute('UPDATE pm_family_member SET family_id=? WHERE source_version_id=?',(fid,sid))
+    else:conn.execute('INSERT INTO pm_family_member VALUES(?,?)',(sid,fid))
     candidates = conn.execute('SELECT i.* FROM pm_document_intake i JOIN pm_family_member m ON m.source_version_id=i.source_version_id WHERE m.family_id=?',(fid,)).fetchall()
     winner = max(candidates, key=rank)['source_version_id']
-    snapshot = {'sections': [], 'project_before': {}, 'project_after': {}, 'legacy': []}
+    snapshot = {'sections': [], 'project_before': {}, 'project_after': {}, 'legacy': [],
+                'intake_project_before':intake['project_id'],'decision_before':dict(card) if user_decision else None,
+                'member_family_before':member_before}
     legacy_exists=conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_version_governance'").fetchone()
     if legacy_exists:
         legacy_id='pm-'+fid
@@ -202,6 +216,17 @@ def undo(conn, change, original):
             (row['logical_document_id'],row['governance_status'],row['effective_from'],row['authority_rank'],row['authority_reason'],storage.now(),row['source_version_id']))
     conn.execute('UPDATE pm_family SET current_source_id=? WHERE id=?',(ruling['previous_source_id'],family['id']))
     conn.execute('UPDATE pm_version_ruling SET undone_by=? WHERE change_id=?',(change['change_id'],original))
+    if snap.get('member_family_before'):
+        sid=json.loads(conn.execute('SELECT payload FROM approved_change WHERE change_id=?',(original,)).fetchone()[0])['source_version_id']
+        conn.execute('UPDATE pm_family_member SET family_id=? WHERE source_version_id=?',(snap['member_family_before'],sid))
+    before=snap.get('decision_before')
+    if before:
+        conn.execute('UPDATE pm_family_decision SET status=?,change_id=? WHERE id=?',(before['status'],original,before['id']))
+        conn.execute('UPDATE pm_document_intake SET project_id=? WHERE source_version_id=?',(snap.get('intake_project_before'),before['source_version_id']))
+    elif ruling['previous_source_id'] is None:
+        sid=ruling['current_source_id']
+        conn.execute("INSERT OR IGNORE INTO pm_family_decision(id,source_version_id,project_id,options_json,prompt,change_id,created_at) VALUES(?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()),sid,family['project_id'],'[]','需要你决定：归属裁定已撤销，请重新确认。',original,storage.now()))
     conn.execute("UPDATE pm_resynthesis SET status='undone' WHERE change_id=?",(original,))
     conn.execute('INSERT INTO pm_undo VALUES(?,?,?,?)',(change['change_id'],original,family['project_id'],storage.now()))
     return family['project_id']
@@ -218,5 +243,7 @@ def read(conn, pid):
         members=[{**dict(r),'status':'current' if r['source_version_id']==row['current_source_id'] else 'superseded', 'source_url':'/v1/pm/sources/'+r['source_version_id']}
                  for r in conn.execute('SELECT s.source_version_id,s.title FROM pm_family_member m JOIN pm_source s ON s.source_version_id=m.source_version_id WHERE m.family_id=? ORDER BY s.created_at',(row['id'],))]
         rulings=[dict(r) for r in conn.execute('SELECT * FROM pm_version_ruling WHERE family_id=? ORDER BY created_at DESC',(row['id'],))]
+        from .authorization import for_change
+        for ruling in rulings:ruling['authorization']=for_change(conn,ruling['change_id'])
         families.append({**dict(row),'versions':members,'rulings':rulings})
     return families

@@ -18,9 +18,13 @@ def import_doc(case,title,body,baseline=False):
     directory=Path(os.environ['TEMP'])/('PAW_PM_VERSION_'+case)
     directory.mkdir(parents=True,exist_ok=True)
     document=Document();document.add_paragraph(body)
+    # Distinct office documents must not accidentally become byte-identical when
+    # ZIP timestamps share a two-second tick; the conclusion body stays unchanged.
+    document.core_properties.title=title
     path=directory/title
     document.save(path)
     sid=hashlib.sha256(path.read_bytes()).hexdigest()
+    logger.info('PM input identity: %s sha256=%s',title,sid)
     configure_mock_settings(directory)
     api('POST','/v1/local/scanner/start',{'directory':str(directory),'force_restart':True})
     candidates=poll_candidates_from_scanner()

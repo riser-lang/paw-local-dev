@@ -1004,8 +1004,9 @@ if pm_dist.is_dir():
     app.mount('/pm-assets', StaticFiles(directory=str(pm_dist)), name='pm-assets')
 
 
+@app.get('/app/pm/receipts', include_in_schema=False)
 @app.get('/app/pm/projects/{project_id}', include_in_schema=False)
-def pm_project_page(project_id: str):
+def pm_project_page(project_id: str = ''):
     return FileResponse(str(pm_dist / 'index.html'), headers={'Cache-Control': 'no-store'})
 
 assets_dir = FRONTEND_DIST / "assets"
