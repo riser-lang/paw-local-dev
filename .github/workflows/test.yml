@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09]
+        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09, PM10]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -161,6 +161,15 @@ jobs:
           name: report-${{ matrix.block }}
           path: reports/
           retention-days: 5
+
+      - name: Upload Exam Results
+        if: always() && matrix.block == 'PM10'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exam-results
+          path: reports/exam_result.json
+          if-no-files-found: ignore
+          retention-days: 10
 
       - name: Upload Block Screenshots
         if: always()

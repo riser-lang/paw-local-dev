@@ -356,3 +356,58 @@ def synthesize(project_id: str):
             conn.execute('INSERT INTO pm_semantic_draft VALUES(?,?,?,?,?)',
                          (str(uuid.uuid4()), project_id, 'dossier_synthesis', storage.encoded(result['output']), storage.now()))
         return result
+
+
+@router.get('/weekly-reports')
+def get_weekly_reports(project_id: str | None = None):
+    from . import weekly
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        if project_id:
+            try:
+                return weekly.build_project_weekly_report(conn, project_id, get_active_provider())
+            except ValueError as exc:
+                raise HTTPException(404, str(exc)) from exc
+        else:
+            projects = conn.execute("SELECT id FROM project WHERE status NOT IN ('merged','archived','deleted') ORDER BY name").fetchall()
+            return {'items': [weekly.build_project_weekly_report(conn, r['id'], get_active_provider()) for r in projects]}
+
+
+@router.get('/weekly-reports/cross-project')
+def get_cross_project_report():
+    from . import weekly
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        return weekly.build_cross_project_comparison(conn, get_active_provider())
+
+
+class WeeklyGenerateRequest(BaseModel):
+    project_id: str | None = None
+
+
+@router.post('/weekly-reports/generate')
+def generate_weekly_reports(body: WeeklyGenerateRequest):
+    from . import weekly
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        if body.project_id:
+            try:
+                return weekly.build_project_weekly_report(conn, body.project_id, get_active_provider())
+            except ValueError as exc:
+                raise HTTPException(404, str(exc)) from exc
+        return weekly.build_cross_project_comparison(conn, get_active_provider())
+
+
+@router.get('/evolution-metrics')
+def get_evolution_metrics():
+    from . import evolution
+    with storage.connect() as conn:
+        return {'items': evolution.read_trends(conn)}
+
+
+@router.post('/evolution-metrics/snapshot')
+def snapshot_evolution_metrics():
+    from . import evolution
+    with storage.connect() as conn:
+        return {'items': evolution.record_snapshot(conn)}
+

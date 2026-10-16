@@ -411,7 +411,7 @@ def build_project_context_pack(conn: sqlite3.Connection, *,
         items += _layer_raw_source(conn, pid, lim["raw_source"])
 
     from backend.pm.assistant_context import augment
-    items = augment(conn, items, pid)
+    items = augment(conn, items, pid, include_historical=include_historical)
     items = C.order_items(items)
     summary = C.summarise(items)
 
@@ -515,7 +515,7 @@ def build_global_workspace_context_pack(
         ))
 
     from backend.pm.assistant_context import augment
-    items = augment(conn, items)
+    items = augment(conn, items, include_historical=include_historical)
     items = C.order_items(items)
     summary = C.summarise(items)
 

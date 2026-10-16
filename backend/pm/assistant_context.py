@@ -4,7 +4,7 @@ import sqlite3
 from .versions import is_current
 
 
-def augment(conn, items, project_id=None):
+def augment(conn, items, project_id=None, include_historical=False):
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='pm_family'").fetchone():
         return items
     # Remove legacy derivations whose audited origin is a superseded source.
@@ -20,7 +20,7 @@ def augment(conn, items, project_id=None):
         if any(isinstance(ref,str) and not is_current(conn,ref) for ref in refs):
             blocked.add(ident)
     items=[i for i in items if i.get('item_id') not in blocked|blocked_changes and i.get('target_type') not in ('pm_version','pm_undo') and
-           (not i.get('source_version_id') or is_current(conn,i['source_version_id']))]
+           (not i.get('source_version_id') or is_current(conn,i['source_version_id']) or include_historical)]
     sections=conn.execute('''SELECT r.*,s.title FROM pm_section_current c JOIN pm_section_revision r ON r.id=c.revision_id
       JOIN pm_source s ON s.source_version_id=r.source_version_id
       WHERE (? IS NULL OR r.project_id=?) ORDER BY r.created_at DESC LIMIT 16''',(project_id,project_id)).fetchall()
@@ -45,16 +45,21 @@ def augment(conn, items, project_id=None):
       WHERE s.kind='document' ORDER BY s.created_at DESC,s.source_version_id LIMIT 100''').fetchall()
     from backend.brain.context import agy_context_v2 as C
     for row in rows:
-        if row['family_id'] and row['current_source_id'] != row['source_version_id']:
+        is_superseded = bool(row['family_id'] and row['current_source_id'] != row['source_version_id'])
+        if is_superseded and not include_historical:
             continue
         if project_id and row['project_id'] != project_id:
             continue
         pending=conn.execute("SELECT 1 FROM pm_family_decision WHERE source_version_id=? AND project_id IS NOT NULL AND status='pending'",(row['source_version_id'],)).fetchone()
         if pending:
             continue
+        body = row['body']
+        if row['project_id'] is None:
+            body = '归属项目：尚未归入任何项目，无法确定归属，需要你决定确认。\n' + body
+        title_suffix = '（旧版已被替代，仅供历史参考）' if is_superseded else '（资料证据，非正式结论）'
         items.append(C.make_item(layer='CONFIRMED_KNOWLEDGE',item_id='pm-source-'+row['source_version_id'],
-            title=row['title']+'（资料证据，非正式结论）', content=row['body'][:2600],
-            authority=C.A_EVIDENCE,temporal_state='current',source_ref='/v1/pm/sources/'+row['source_version_id'],
+            title=row['title']+title_suffix, content=body[:2600],
+            authority=C.A_EVIDENCE,temporal_state='superseded' if is_superseded else 'current',source_ref='/v1/pm/sources/'+row['source_version_id'],
             extra={'source_version_id':row['source_version_id'],'knowledge_status':'evidence'}))
         if sum(i.get('item_id','').startswith('pm-source-') for i in items)>=8:
             break

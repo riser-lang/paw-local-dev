@@ -12,6 +12,7 @@ import { PortfolioTimeline } from "../components/VerticalTimeline";
 import { AiSuggestionList, ReceiptList } from "../components/AiSuggestions";
 import { EmptyState } from "../components/common";
 import { ProjectHealth } from "../components/ProjectHealth";
+import { EvolutionMetricsView, WeeklyReportsView } from "../components/EvolutionAndReports";
 
 const WEEKDAY = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
@@ -69,6 +70,8 @@ export function TodayCockpit({ vm, cb, initialUnit = "week", title = "今日驾�
       </div>
 
       <ProjectHealth checks={vm.health_checks??[]} gaps={vm.knowledge_gaps??[]} cb={cb}/>
+      <EvolutionMetricsView metrics={vm.evolution_metrics} />
+      <WeeklyReportsView crossReport={vm.cross_project_report} reports={vm.weekly_reports} cb={cb} />
       <footer className="pm-page-foot">数据生成于 {shortDateTime(vm.generated_at)}</footer>
     </div>
   );

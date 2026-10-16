@@ -1271,6 +1271,17 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     search_meta = usage.get("search_info") or {}
     web_search_used = bool(search_meta.get("used"))
 
+    evidence_idx = {e["evidence_id"]: e for e in turn["contract"].get("evidence_index", [])}
+    returned_sources = []
+    if grounded and isinstance(answer_map, dict):
+        for claim in answer_map.get("claims", []):
+            for ref in (claim.get("evidence") or claim.get("derived_from") or []):
+                if ref in evidence_idx:
+                    returned_sources.append(evidence_idx[ref]["title"])
+    if not returned_sources and not turn.get("fail_closed"):
+        returned_sources = [e["title"] for e in turn["contract"].get("evidence_index", [])]
+    returned_sources = list(dict.fromkeys(returned_sources))
+
     return {
         "session_id": session_id,
         "response": final_visible,
@@ -1281,6 +1292,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         "intent": intent_name,
         "usage": usage or {},
         "evidence": agy_v2_answer.build_evidence_footer(turn["contract"]),
+        "sources": returned_sources,
         "authority_notes": turn["contract"].get("authority_notes", []),
         "clarification": turn["contract"].get("clarification"),
         "grounding": grounding_metadata(turn, grounded=grounded, gate=gate_reason),
