@@ -239,13 +239,17 @@ def families(project_id: str):
 @router.get('/decisions')
 def family_decisions():
     with storage.connect() as conn:
-        return {'items':[dict(r) for r in conn.execute("SELECT * FROM pm_family_decision WHERE status='pending' ORDER BY created_at")]}
+        return {'items':[dict(r) for r in conn.execute('''SELECT d.*,s.title,i.family_key
+          FROM pm_family_decision d
+          JOIN pm_source s ON s.source_version_id=d.source_version_id
+          JOIN pm_document_intake i ON i.source_version_id=d.source_version_id
+          WHERE d.status='pending' ORDER BY d.created_at''')]}
 
 
 class FamilyChoice(BaseModel):
     project_id: str
     family_id: str | None = None
-    family_title: str = Field(min_length=1,max_length=300)
+    family_title: str | None = None
 
 
 @router.post('/decisions/{decision_id}/resolve')
@@ -392,10 +396,12 @@ def generate_weekly_reports(body: WeeklyGenerateRequest):
     with storage.connect() as conn:
         if body.project_id:
             try:
-                return weekly.build_project_weekly_report(conn, body.project_id, get_active_provider())
+                rep = weekly.build_project_weekly_report(conn, body.project_id, get_active_provider())
+                return {'report': rep, **rep}
             except ValueError as exc:
                 raise HTTPException(404, str(exc)) from exc
-        return weekly.build_cross_project_comparison(conn, get_active_provider())
+        rep = weekly.build_cross_project_comparison(conn, get_active_provider())
+        return {'report': rep, **rep}
 
 
 @router.get('/evolution-metrics')

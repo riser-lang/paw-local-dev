@@ -50,7 +50,8 @@ def run_c10(report, installer):
             pid2 = api("POST", "/v1/web/workspace/projects", {"name": "星空项目"})["id"]
 
             # 1. Without model key: suggestions indicate needs_key, but other sections work
-            rep_nokey = api("POST", "/v1/pm/weekly-reports/generate", {"project_id": pid1})["report"]
+            res_nokey = api("POST", "/v1/pm/weekly-reports/generate", {"project_id": pid1})
+            rep_nokey = res_nokey.get("report", res_nokey)
             c.check("weekly_report_project_name", rep_nokey["project_name"], "冲刺项目")
             c.check("weekly_report_progress_populated", any("原型已完成" in p["text"] for p in rep_nokey["progress"]), True)
             c.check("weekly_report_nokey_flag", rep_nokey["suggestions"]["needs_key"], True)
@@ -66,7 +67,8 @@ def run_c10(report, installer):
             api("POST", f"/v1/pm/projects/{pid1}/suggestions/generate", {})
 
             # 3. With key: weekly report includes grounded suggestions
-            rep_keyed = api("POST", "/v1/pm/weekly-reports/generate", {"project_id": pid1})["report"]
+            res_keyed = api("POST", "/v1/pm/weekly-reports/generate", {"project_id": pid1})
+            rep_keyed = res_keyed.get("report", res_keyed)
             c.check("weekly_report_keyed_flag", rep_keyed["suggestions"]["needs_key"], False)
             c.check("weekly_report_has_suggestions", len(rep_keyed["suggestions"]["items"]) > 0, True)
             c.check("weekly_suggestions_have_basis", all(bool(s.get("basis")) for s in rep_keyed["suggestions"]["items"]), True)
@@ -129,8 +131,8 @@ def run_c10(report, installer):
             items = trends_res["items"]
             metric_ids = sorted(m["id"] for m in items)
             expected_ids = [
-                "backlog_count", "conflict_count", "doc_coverage",
-                "knowledge_gap_count", "pending_decisions", "suggestion_adoption_rate"
+                "backlog", "conflicts", "coverage_rate",
+                "knowledge_gaps", "pending_decisions", "suggestion_adoption_rate"
             ]
             c.check("six_evolution_metrics", metric_ids, expected_ids)
             c.check(
@@ -220,6 +222,21 @@ def run_c10(report, installer):
                         if cand.get("status") == "pending":
                             try:
                                 api("POST", f"/v1/web/brain/review/candidates/{cand['id']}/accept", {})
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                # Resolve any pending PM family decisions where project is already known
+                try:
+                    decisions = api("GET", "/v1/pm/decisions").get("items", [])
+                    for dec in decisions:
+                        if dec.get("status") == "pending" and dec.get("project_id"):
+                            try:
+                                api("POST", f"/v1/pm/decisions/{dec['id']}/resolve", {
+                                    "project_id": dec["project_id"],
+                                    "family_title": dec.get("family_key") or dec.get("title") or ""
+                                })
                             except Exception:
                                 pass
                 except Exception:

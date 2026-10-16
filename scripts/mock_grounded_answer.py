@@ -42,7 +42,7 @@ def section_updates(value):
         # A general progress note has no invented KPI/risk or next-step sections.
         progress=next((s for s in sections if '进度' in s['title']),None)
         sentences=[s.strip() for s in re.split('[。\n]',body) if s.strip() and not s.strip().endswith('项目')
-                   and re.search(r'完成|启动|联调|原型|里程碑|开发|上线|交付',s)
+                   and re.search(r'完成|启动|联调|原型|里程碑|开发|上线|交付|结论|覆盖率|进展|进行中|推进|比例|现状',s)
                    and not re.match(r'headers_footers|footnotes|endnotes|comments|[\[{]',s.strip())]
         if progress and sentences:labelled=[(progress,sentences[0][:2000])]
     def normalize(text):return re.sub(r'[\s。；：:，,]','',text)
@@ -63,6 +63,12 @@ def section_updates(value):
     return {'sections':output}
 
 
+def normalize_spacing(text):
+    text = re.sub(r'(\d+)\s+([\u4e00-\u9fa5])', r'\1\2', text)
+    text = re.sub(r'([\u4e00-\u9fa5])\s+(\d+)', r'\1\2', text)
+    return text
+
+
 def answer(prompt):
     question=prompt.rsplit('--- 用户消息 ---',1)[-1].split('【严格修复')[0].strip()
     refs={ident.split(':',1)[1]:ident for ident in re.findall(r'^- ([A-Z_]+:[^\s]+)\s+\[',prompt,re.M)}
@@ -71,6 +77,11 @@ def answer(prompt):
     block=prompt.split('--- PAW 上下文 V2（按权威顺序）---',1)[1].split('--- 会话上下文 ---',1)[0].split('--- 用户消息 ---',1)[0]
     records=re.findall(r'^- \[([^\]]+)\] ([^\n]+)\n(.*?)(?=\n- \[|\n## |\Z)',block,re.M|re.S)
     topic=re.sub(r'[\u4e00-\u9fff]{2,16}项目','',question)
+    entity_match=re.match(r'^(.{2,20}?)[的中](.+)$',question)
+    attr_query=set()
+    if entity_match:
+        _,attr_part=entity_match.groups()
+        attr_query=terms(attr_part)-terms('请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议')
     query=terms(topic)-terms('请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议')
     if re.search(r'做到|进度|进展|阶段|推进方向|里程碑',topic):
         query|=terms('进度里程碑阶段原型样机完成联调')
@@ -81,7 +92,11 @@ def answer(prompt):
         for sentence in re.split(r'[。；\n]',content):
             sentence=sentence.strip()
             if sentence:
-                score=len(query & terms(title+' '+sentence))
+                st=title+' '+sentence
+                if attr_query and not (attr_query & terms(st)):
+                    score=0
+                else:
+                    score=len(query & terms(st))
                 choices.append((score,title,sentence,refs[ident]))
     choices.sort(key=lambda row:row[0],reverse=True)
     if choices and choices[0][0]==0 and not re.search(r'建议|如何|怎么|优化|下一步',question):
@@ -96,12 +111,12 @@ def answer(prompt):
         return '请求上下文没有可摘取的资料正文。'
     lines=[];claims=[]
     for _,title,sentence,eid in selected:
-        text=title+'：'+sentence
+        text=normalize_spacing(title+'：'+sentence)
         lines.append(text)
         claims.append({'kind':'fact','text':text,'evidence':[eid]})
     if re.search(r'建议|如何|怎么|优化|下一步',question):
         basis=next((r for r in choices if re.search(r'风险|下一步|缺口|待办',r[1]+' '+r[2])),selected[0])
-        advice='建议：优先核对并跟进资料所述的“'+basis[2]+'”；具体安排仍需用户确认。'
+        advice=normalize_spacing('建议：优先核对并跟进资料所述的“'+basis[2]+'”；具体安排仍需用户确认。')
         lines.append(advice)
         claims.append({'kind':'recommendation','text':advice,'derived_from':[basis[3]]})
     return '资料摘录（非正式资料保留待确认属性）：\n'+'\n'.join(lines)+'\n<<<EVIDENCE_MAP\n'+json.dumps({'claims':claims},ensure_ascii=False)+'\nEVIDENCE_MAP>>>'
