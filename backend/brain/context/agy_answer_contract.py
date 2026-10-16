@@ -440,10 +440,19 @@ def validate_answer(answer: str, contract: dict[str, Any]) -> tuple[bool, str, d
     # 1. the evidence map must be present whenever there is anything to cite
     if valid_ids and evmap is None:
         return False, "missing_evidence_map", {}
+    if evmap is not None and not isinstance(evmap,dict):
+        return False,"malformed_evidence_map",{}
 
     claims = (evmap or {}).get("claims") or []
     if not isinstance(claims, list):
         return False, "malformed_evidence_map", {}
+    if any(not isinstance(c,dict) or not isinstance(c.get('text'),str) for c in claims):
+        return False, "malformed_claim", {}
+    for claim in claims:
+        for field in ('evidence','derived_from'):
+            refs=claim.get(field) or []
+            if not isinstance(refs,list) or any(not isinstance(r,str) for r in refs):
+                return False,"malformed_evidence_refs",{}
 
     # 2. every referenced evidence id must exist (both the fact citation and
     #    the ``derived_from`` citation of a model-derived claim)
@@ -466,6 +475,8 @@ def validate_answer(answer: str, contract: dict[str, Any]) -> tuple[bool, str, d
             if _asserts_existing_decision(txt):
                 return False, "recommendation_as_fact", {"claim": txt[:80]}
         elif valid_ids:
+            if contract.get('advice_allowed') and not c.get('evidence'):
+                return False,"uncited_fact",{"claim":txt[:80]}
             if _PAW_CLAIM_RE.search(txt) and not (c.get("evidence") or []):
                 return False, "uncited_paw_claim", {"claim": txt[:80]}
 

@@ -78,6 +78,8 @@ def migrate(conn):
     migrate_authorization(conn)
     from .receipts import migrate as migrate_receipts
     migrate_receipts(conn)
+    from .suggestions import migrate as migrate_suggestions
+    migrate_suggestions(conn)
 
 
 def config(path=None):

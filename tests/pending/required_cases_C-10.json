@@ -1,0 +1,9 @@
+{
+  "_note": "Reviewer-owned. Split by task when activating: PM-E1/E2 in C-08, PM-E3/E4 in C-09, PM-F in C-10 (git mv/copy without changing case text). Reviewer may refine before activation.",
+  "cases": {
+    "PM-F1-01": "为一个项目生成周报（进展、变化、风险、建议），以及一份跨项目对比；内容只来自已有记录和带依据的建议",
+    "PM-F2-01": "进化指标（待决数、资料覆盖率、冲突数、知识缺口数、建议采纳率、积压量）按周记录，驾驶舱上能看到趋势",
+    "PM-F3-01": "标准考题集（20–30 题，审核人审定）在当前版本上运行，结果可查；答对率低于上一版时，发布流程判红"
+  },
+  "negative_controls": {}
+}

@@ -105,6 +105,8 @@ function App(){
   notice(result.backup_error||(choice==='later'?'已记录稍后处理，事项仍保留在列表。':'决定已记录。'));
  }
  const cb:PmCallbacks={
+  onGenerateSuggestions:async id=>{try{const result=await api('/v1/pm/projects/'+encodeURIComponent(id)+'/suggestions/generate',{});await refresh();notice(result.message||'建议已更新，依据可逐条查看。');}catch(e){notice((e as Error).message);}},
+  onAdoptSuggestion:async id=>{try{await api('/v1/pm/suggestions/'+encodeURIComponent(id)+'/adopt',{});await refresh();notice('已生成待办候选，请到需要你决定中核准。');}catch(e){notice((e as Error).message);}},
   onNavigate:href=>{navigate(href).catch(e=>notice(e.message));},
   onDecide:async(ids,choice)=>{try{
    if(choice==='yes'&&ids.some(id=>/^(assignment|version):/.test(id))){

@@ -8,6 +8,28 @@ def terms(text):
     return {t for word in words for t in ([word] if not re.search('[\u4e00-\u9fff]',word) else [word[i:i+2] for i in range(len(word)-1)])}
 
 
+def project_advice(value):
+    """Only source excerpts from the request; no corpus or question awareness."""
+    choices=[(s,line.strip()) for s in value['sources'] for line in re.split('[。；\n]',s['body']) if line.strip()]
+    items=[]
+    for kind,keywords,action in [('gaps','缺口|未明确|待补|缺少','核对缺失信息并向用户确认'),
+            ('risks','风险|阻碍|延期|尚未','复核风险并确认应对安排'),
+            ('next','下一步|计划|待办|验收','跟进资料中的后续事项')]:
+        src,quote=max(choices,key=lambda pair:(bool(re.match({'gaps':r'缺口','risks':r'风险','next':r'下一步|计划|待办'}[kind],pair[1])),
+            bool(re.search(keywords,pair[1]))))
+        items.append({'category':kind,'text':'建议'+action+'；依据为“'+quote[:400]+'”，具体安排由用户确认。',
+            'basis':[{'source_version_id':src['source_version_id'],'quote':quote[:400]}]})
+    return {'items':items}
+
+
+def inject_unbacked_advice(raw):
+    visible,block=raw.split('<<<EVIDENCE_MAP',1)
+    mapping=json.loads(block.split('EVIDENCE_MAP>>>',1)[0]);refs=next((c.get('evidence') for c in mapping['claims'] if c.get('evidence')),[])
+    bad=['建议在987654321天内完成复核。','建议由顾时安负责跟进。']
+    mapping['claims'] += [{'kind':'recommendation','text':text,'derived_from':refs} for text in bad]
+    return visible+'\n'+'\n'.join(bad)+'\n<<<EVIDENCE_MAP\n'+json.dumps(mapping,ensure_ascii=False)+'\nEVIDENCE_MAP>>>'
+
+
 def section_updates(value):
     """Generic extractive contract implementation, driven by supplied configuration."""
     body=value['body'];sections=value['sections'];output=[]

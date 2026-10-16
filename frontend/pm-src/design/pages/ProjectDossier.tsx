@@ -6,7 +6,7 @@ import { EmptyState, ProjectStatusMark, usePhone } from "../components/common";
 import { MilestoneGantt } from "../components/Gantt";
 import { MilestoneTimeline } from "../components/VerticalTimeline";
 import { ChangeList, ConflictList, EntryList, EntryItem, MetricList, SectionCard, SourceList } from "../components/Sections";
-import { ReceiptList } from "../components/AiSuggestions";
+import { ReceiptList, AiSuggestionList } from "../components/AiSuggestions";
 
 export const DEFAULT_EMPTY: Record<SectionKind, string> = {
   summary: "还没有现状说明，系统会从新资料中提取。",
@@ -96,6 +96,11 @@ export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLab
       ) : null}
 
       {!modelConfigured ? <p className="pm-notice">需要填写 Key 才能生成新结论；已有正式记录和来源可直接查看。</p> : null}
+      <section className="pm-block" aria-label="AI 建议">
+        <h2>AI 建议</h2><p className="pm-meta">基于资料的推断；转为候选并核准后，才会成为正式待办。</p>
+        {cb?.onGenerateSuggestions ? <button className="pm-btn" disabled={!modelConfigured} onClick={() => cb.onGenerateSuggestions?.(p.id)}>重新生成建议</button> : null}
+        <AiSuggestionList items={vm.ai_suggestions ?? []} cb={cb}/>
+      </section>
       <div className="pm-sections">
         {vm.sections.map((s) => {
           const span = s.span ?? (HALF.includes(s.kind) ? "half" : "full");

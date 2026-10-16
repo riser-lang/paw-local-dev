@@ -89,7 +89,7 @@ export function DetailPopover({ trigger, children, label, className }: {
       onMouseLeave={hover ? () => setOpen(false) : undefined}
     >
       <button type="button" className="pm-pop-trigger" aria-expanded={open} aria-controls={id}
-        aria-label={label} onClick={() => setOpen((v) => !v)}>
+        aria-label={label} onClick={() => setOpen((v) => hover ? true : !v)}>
         {trigger}
       </button>
       {open && (

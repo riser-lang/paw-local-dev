@@ -1198,6 +1198,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         }
 
     # 6. Apply Evidence Validation Gate (Requirement 3.2, 3.4.1 & A26)
+    from backend.pm import answer_advice
+    response_text,advice_filter=answer_advice.clean(response_text,turn['contract'],agy_v2_answer._claim_kind)
     ok, gate_reason, gate_detail = agy_v2_answer.validate_answer(response_text, turn["contract"])
     grounded = False
 
@@ -1218,9 +1220,11 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         retry_text, retry_usage, retry_err = provider.chat_completion(messages=retry_messages, temperature=0.1)
 
         if retry_text:
+            retry_text,retry_filter=answer_advice.clean(retry_text,turn['contract'],agy_v2_answer._claim_kind)
             ok2, gate_reason2, gate_detail2 = agy_v2_answer.validate_answer(retry_text, turn["contract"])
             if ok2:
                 response_text = retry_text
+                advice_filter=retry_filter
                 gate_reason = gate_reason2
                 grounded = True
                 if retry_usage:
@@ -1238,7 +1242,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         grounded = True
 
     # 7. Extract visible response (strip machine-only EVIDENCE_MAP block)
-    visible, _ = agy_v2_answer.extract_evidence_map(response_text)
+    visible, answer_map = agy_v2_answer.extract_evidence_map(response_text)
+    if grounded:visible=answer_advice.display(response_text,turn['contract'])
     final_visible = _plain(visible if grounded else response_text)
     final_visible = _conflict_preface(turn,final_visible)
 
@@ -1275,6 +1280,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         "authority_notes": turn["contract"].get("authority_notes", []),
         "clarification": turn["contract"].get("clarification"),
         "grounding": grounding_metadata(turn, grounded=grounded, gate=gate_reason),
+        "advice_filter": advice_filter,
+        "evidence_map": answer_map if grounded else None,
         "web_search_used": web_search_used,
         "web_search_note": "以下内容来自网络搜索，非工作台依据" if web_search_used else None,
         "web_search_sources": search_meta.get("sources", []),
