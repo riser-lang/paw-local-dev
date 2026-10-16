@@ -105,7 +105,7 @@ function App(){
  };
  if(!vm)return <p className="pm-root pm-page">正在读取本地档案…</p>;
  return <>
-  {pid?<><ProjectDossier vm={vm as ProjectViewModel} cb={cb} backHref="/app/pm/today"/><LegacyExtras pid={pid} version={version} refresh={refresh}/></>:<TodayCockpit vm={vm as TodayViewModel} cb={cb} modelConfigured={configured}/>}
+  {pid?<><ProjectDossier vm={vm as ProjectViewModel} cb={cb} backHref="/app/pm/today" modelConfigured={configured}/><LegacyExtras pid={pid} version={version} refresh={refresh}/></>:<TodayCockpit vm={vm as TodayViewModel} cb={cb} modelConfigured={configured}/>}
   {selection&&<AssignmentDialog requests={selection.requests} onCancel={()=>setSelection(null)} onConfirm={async assignments=>{await perform(selection.ids,selection.choice,assignments);setSelection(null);}}/>}
  </>;
 }

@@ -10,7 +10,7 @@ import { ReceiptList } from "../components/AiSuggestions";
 
 export const DEFAULT_EMPTY: Record<SectionKind, string> = {
   summary: "还没有现状说明，系统会从新资料中提取。",
-  metrics: "还没有指标。资料里写明目标值后，系统会自动建立。",
+  metrics: "还没有已确认指标，目标与指标需要你确认。",
   milestones: "该项目还没有里程碑，系统会从新资料中提取。",
   gaps: "暂未发现缺口。",
   next_steps: "还没有下一步安排。",
@@ -22,8 +22,8 @@ export const DEFAULT_EMPTY: Record<SectionKind, string> = {
 
 const HALF: SectionKind[] = ["gaps", "next_steps", "list", "sources"];
 
-export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLabel = "今日驾驶舱" }: {
-  vm: ProjectViewModel; cb?: PmCallbacks; initialUnit?: TimeUnit; backHref?: string | null; backLabel?: string;
+export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLabel = "今日驾驶舱", modelConfigured = false }: {
+  vm: ProjectViewModel; cb?: PmCallbacks; initialUnit?: TimeUnit; backHref?: string | null; backLabel?: string; modelConfigured?: boolean;
 }) {
   const phone = usePhone();
   const [unit, setUnit] = useState<TimeUnit>(initialUnit);
@@ -95,6 +95,7 @@ export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLab
         <p className="pm-notice">这个项目刚建立，还没有内容。新资料归入后，系统会逐栏补充；补充前不会显示任何推测的日期或进度。</p>
       ) : null}
 
+      {!modelConfigured ? <p className="pm-notice">需要填写 Key 才能生成新结论；已有正式记录和来源可直接查看。</p> : null}
       <div className="pm-sections">
         {vm.sections.map((s) => {
           const span = s.span ?? (HALF.includes(s.kind) ? "half" : "full");
