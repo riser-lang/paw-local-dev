@@ -58,7 +58,7 @@ def run_c06(report,installer):
                     import_doc(case,'未定资料.docx','项目归属待确认。进度与里程碑：等待联调。')
                 elif case=='PM-C1-01':pid=project()
                 else:
-                    pid,_,initial=seed(case)
+                    pid,_,initial=seed(case,'原型已完成；联调已启动')
                     if case in ('PM-C1-04','PM-C2-03','PM-C4-01','PM-C5-01'):milestone(case,pid)
                     if case=='PM-C1-04':api('POST','/v1/web/workspace/projects',{'name':'山川项目'})
                     if case in ('PM-C2-02','PM-C4-01'):
@@ -132,6 +132,8 @@ def run_c06(report,installer):
                         elif case=='PM-C2-02':
                             area=page.locator('[aria-labelledby="pm-sec-progress"]')
                             expect(area.locator('.pm-entry-main p')).to_have_text('联调已启动。')
+                            selected=progress(dossier(pid))['current']
+                            c.check('edited_conclusion_grounded_in_original',selected['text'] in api('GET',selected['source_url'])['body'],True)
                             area.get_by_role('button',name='撤销',exact=True).click()
                             expect(area.locator('.pm-entry-main p')).to_have_text(initial['text'])
                             c.check('ui_undo_restores_current',progress(dossier(pid))['current']['id'],initial['id'])
