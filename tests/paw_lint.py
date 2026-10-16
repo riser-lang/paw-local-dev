@@ -7,10 +7,12 @@ Rejects patterns that let a case pass without testing anything:
   R4 a ">= 0" comparison (always true)
   R5 test code writing AI review records directly (candidate, approved_change, ...)
   R6 a B4/B5/B7 screenshot of the bare /app page instead of the page under test
+  R7 scripts/mock_*.py containing project names or 4-character phrases from the exam corpus
 """
 from __future__ import annotations
 
 import ast
+import json
 import re
 import sys
 from pathlib import Path
@@ -86,7 +88,40 @@ def lint_all() -> list[str]:
     for path in sorted(ROOT.glob("*.py")):
         if not path.name.startswith("paw_"):
             problems += lint_file(path)
-    return problems
+    return problems + lint_mocks()
+
+
+def _exam_phrases() -> set[str]:
+    """Exam corpus text: project names and every 4-char CJK run of the documents."""
+    exam = ROOT / "pending" / "exam"
+    if not exam.is_dir():
+        return set()
+    corpus = json.loads((exam / "corpus.json").read_text(encoding="utf-8"))
+    # Question wording is generic intent ("如何优化"); answers live in the corpus.
+    texts = list(corpus.get("projects", []))
+    for doc in corpus.get("documents", []):
+        texts += doc.get("paragraphs", []) + [doc.get("file", "")]
+        for slide in doc.get("slides", []):
+            texts += [slide.get("title", "")] + slide.get("body", [])
+        for sheet in doc.get("sheets", []):
+            texts += [str(cell) for row in sheet.get("rows", []) for cell in row]
+    phrases = set(corpus.get("projects", []))
+    for text in texts:
+        for run in re.findall(r"[一-鿿]+", text):
+            phrases |= {run[i:i + 4] for i in range(len(run) - 3)}
+    return phrases
+
+
+def lint_mocks() -> list[str]:
+    """R7: the model stand-in must answer from the request, never from knowledge of the exam."""
+    phrases = _exam_phrases()
+    out = []
+    for path in sorted((ROOT.parent / "scripts").glob("mock_*.py")):
+        src = path.read_text(encoding="utf-8")
+        hits = sorted(p for p in phrases if p in src)
+        if hits:
+            out.append(f"{path.name}: R7 model stand-in contains exam text {hits[:6]}")
+    return out
 
 
 if __name__ == "__main__":
