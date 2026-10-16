@@ -278,6 +278,13 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
                     from mock_grounded_answer import project_advice
                 reply_content=json.dumps(project_advice(json.loads(user_prompt)),ensure_ascii=False)
 
+        elif '语义任务契约：section_consistency' in system_prompt:
+            try:
+                from scripts.mock_grounded_answer import section_consistency
+            except ModuleNotFoundError:
+                from mock_grounded_answer import section_consistency
+            reply_content=json.dumps(section_consistency(json.loads(user_prompt)),ensure_ascii=False)
+
         elif '语义任务契约：section_update' in system_prompt:
             try:
                 from scripts.mock_grounded_answer import section_updates

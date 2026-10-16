@@ -97,7 +97,7 @@ function App(){
  const pid=location.pathname.startsWith('/app/pm/projects/')?decodeURIComponent(location.pathname.split('/').pop()!):null;
  const [vm,setVm]=useState<TodayViewModel|ProjectViewModel|null>(null);const [configured,setConfigured]=useState(false);const [version,setVersion]=useState(0);
  const [selection,setSelection]=useState<{requests:any[],ids:string[],choice:string}|null>(null);
- async function refresh(){const [data,receipts]=await Promise.all([api(pid?'/v1/pm/view/projects/'+encodeURIComponent(pid):'/v1/pm/view/today'),api('/v1/pm/receipts')]);setVm(data);setConfigured(receipts.model_configured);setVersion(v=>v+1);}
+ async function refresh(){const run=new URLSearchParams(location.search).get('health_run');const url=(pid?'/v1/pm/view/projects/'+encodeURIComponent(pid):'/v1/pm/view/today')+(run?'?health_run='+encodeURIComponent(run):'');const [data,receipts]=await Promise.all([api(url),api('/v1/pm/receipts')]);setVm(data);setConfigured(receipts.model_configured);setVersion(v=>v+1);}
  useEffect(()=>{refresh().catch(e=>notice(e.message));},[]);
  async function perform(ids:string[],choice:string,assignments={}){
   const result=await api('/v1/pm/inbox/decide',{ids,choice,assignments});await refresh();
@@ -105,6 +105,8 @@ function App(){
   notice(result.backup_error||(choice==='later'?'已记录稍后处理，事项仍保留在列表。':'决定已记录。'));
  }
  const cb:PmCallbacks={
+  onRunHealthCheck:async id=>{try{await api('/v1/pm/health-checks/run',{project_id:id,force:true});await refresh();notice('本轮项目健康检查已记录。');}catch(e){notice((e as Error).message);}},
+  onResolveKnowledgeGap:async id=>{try{await api('/v1/pm/knowledge-gaps/'+encodeURIComponent(id)+'/resolve',{});await refresh();notice('已标为已补充；再次提问仍需核对实际资料。');}catch(e){notice((e as Error).message);}},
   onGenerateSuggestions:async id=>{try{const result=await api('/v1/pm/projects/'+encodeURIComponent(id)+'/suggestions/generate',{});await refresh();notice(result.message||'建议已更新，依据可逐条查看。');}catch(e){notice((e as Error).message);}},
   onAdoptSuggestion:async id=>{try{await api('/v1/pm/suggestions/'+encodeURIComponent(id)+'/adopt',{});await refresh();notice('已生成待办候选，请到需要你决定中核准。');}catch(e){notice((e as Error).message);}},
   onNavigate:href=>{navigate(href).catch(e=>notice(e.message));},

@@ -396,6 +396,8 @@ def render_prompt(contract: dict[str, Any], *, message: str,
                     '{"kind":"recommendation","text":"...",'
                     '"derived_from":["LAYER:item_id"]}]}',
                     EVIDENCE_MAP_CLOSE))
+    parts.append('如果上下文确实不能回答用户问的具体问题，请明确说明依据不足，不要用无关摘录充当回答。'
+                 '此时在EVIDENCE_MAP顶层标记answer_status="insufficient_evidence"；已能核对的事实仍可保留。')
     parts.append("可用的证据 id：\n" + "\n".join(
         "- %s  [%s] %s" % (e["evidence_id"], e["authority"], e["title"])
         for e in contract["evidence_index"]))

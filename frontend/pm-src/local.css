@@ -2,3 +2,5 @@
 .pm-maintenance li{overflow-wrap:anywhere;margin-bottom:12px}.pm-maintenance .pm-btn{margin:4px}.pm-policy{display:flex;flex-wrap:wrap;gap:16px}.pm-policy input{display:block;max-width:100%;width:180px;font:inherit}
 .pm-entry-main{flex-wrap:wrap}.pm-entry-main p{flex:1 1 100%;min-width:0;overflow-wrap:anywhere}.pm-tag{max-width:100%;white-space:normal;overflow-wrap:anywhere}.pm-section-heading,.pm-section-extra,.pm-card-head{flex-wrap:wrap}.pm-section-extra,.pm-card-extra{max-width:100%;min-width:0;overflow-wrap:anywhere}.pm-page-foot{overflow-wrap:anywhere}@media(max-width:640px){.pm-page{overflow-x:visible}.pm-project-card-strip .pm-meta{white-space:normal}.pm-entry-foot{flex-wrap:wrap}}
 .pm-decision-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--paw-text, #302b26); }
+.pm-health-issue {border-left:2px solid var(--pm-clay);padding:8px 12px;margin:12px 0;overflow-wrap:anywhere;}
+.pm-health-report {padding:20px 24px;margin:16px 0;overflow-wrap:anywhere}.pm-health-report h3{margin:0 0 8px}.pm-health-report p{margin:6px 0}.pm-health-report .pm-notice{margin:12px 0}@media(max-width:640px){.pm-health-report{padding:16px}}

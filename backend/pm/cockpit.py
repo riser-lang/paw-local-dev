@@ -82,7 +82,7 @@ def suggestion_vm(conn,pid=None):
         for r in read(conn,pid)]
 
 
-def project_vm(conn,pid):
+def project_vm(conn,pid,health_run=None):
     data=dossier.read(conn,pid);p=data['project'];entries={};changes={};all_sources={}
     section_titles={s['id']:s['title'] for s in data['sections']}
     current_ids={s['current']['id'] for s in data['sections'] if s['current']}
@@ -163,10 +163,19 @@ def project_vm(conn,pid):
         'sections':[{'key':s['id'],'title':s['title'],'kind':configured[s['id']],'empty_text':None} for s in data['sections']],
         'entries':entries,'metrics':metrics,'milestones':milestones,'changes':sorted(changes.values(),key=lambda c:c['at'],reverse=True),
         'conflicts':conflicts,'sources':list(all_sources.values()),'receipts':[receipt_vm(r) for r in receipts.read(conn,pid)],
-        'ai_suggestions':suggestion_vm(conn,pid)}
+        'ai_suggestions':suggestion_vm(conn,pid),**health_vm(conn,pid,health_run)}
 
 
-def today_vm(conn):
+def health_vm(conn,pid=None,health_run=None):
+    from . import daily,knowledge_gaps
+    checks=daily.read(conn,pid,health_run)
+    if not pid:
+        reference=next((r['reference_at'] for r in checks if r['preview']),None)
+        checks+=daily.unassigned(conn,reference)
+    return {'health_checks':checks,'knowledge_gaps':knowledge_gaps.read(conn,pid)}
+
+
+def today_vm(conn,health_run=None):
     pending=inbox(conn);projects=[]
     for raw in conn.execute("SELECT * FROM project WHERE status NOT IN ('merged','archived','deleted') ORDER BY name,id"):
         p=dict(raw);vm=project_vm(conn,p['id']);events=[]
@@ -179,7 +188,7 @@ def today_vm(conn):
         for k,label in [('patrol','巡航'),('scan','扫描'),('backup','备份'),('model','模型连通'),('disk','磁盘')]]
     return {'schema':'paw.pm.today/1','generated_at':stamp(storage.now()),'today':day(storage.now()),
         'system_status':status,'decisions':pending,'portfolio':{'projects':projects},'ai_suggestions':suggestion_vm(conn),
-        'receipts':[receipt_vm(r) for r in receipts.read(conn)]}
+        'receipts':[receipt_vm(r) for r in receipts.read(conn)],**health_vm(conn,health_run=health_run)}
 
 
 def decide(ids,choice,selections,provider):

@@ -11,6 +11,7 @@ import { PortfolioGantt } from "../components/Gantt";
 import { PortfolioTimeline } from "../components/VerticalTimeline";
 import { AiSuggestionList, ReceiptList } from "../components/AiSuggestions";
 import { EmptyState } from "../components/common";
+import { ProjectHealth } from "../components/ProjectHealth";
 
 const WEEKDAY = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
@@ -67,6 +68,7 @@ export function TodayCockpit({ vm, cb, initialUnit = "week", title = "今日驾�
         </section>
       </div>
 
+      <ProjectHealth checks={vm.health_checks??[]} gaps={vm.knowledge_gaps??[]} cb={cb}/>
       <footer className="pm-page-foot">数据生成于 {shortDateTime(vm.generated_at)}</footer>
     </div>
   );

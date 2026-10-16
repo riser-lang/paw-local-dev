@@ -94,6 +94,17 @@ export interface PortfolioRow {
 
 export type TimeUnit = "week" | "month";
 
+export interface HealthCheck {
+  id:string;project_id:string|null;project_name:string;reference_at:ISODateTime;checked_at:ISODateTime;
+  preview:boolean;semantic_status:string;status:string;stale?:boolean;
+  thresholds:{undecided_days:number;no_progress_days:number};
+  items:{kind:string;title:string;detail:string;basis:{title:string;href:string;quote:string}[]}[];
+}
+export interface KnowledgeGap {
+  id:string;project_id:string;project_name:string;question:string;occurrences:number;
+  first_seen_at:ISODateTime;last_seen_at:ISODateTime;state:'open'|'resolved';
+}
+
 /* ------------------------------------------------------------------ AI 建议 */
 export interface AiSuggestion {
   state?: 'open' | 'pending_review' | 'adopted' | 'declined';
@@ -128,6 +139,8 @@ export interface RoutingReceipt {
 
 /* ------------------------------------------------------------------ 首页 */
 export interface TodayViewModel {
+  health_checks?:HealthCheck[];
+  knowledge_gaps?:KnowledgeGap[];
   schema: "paw.pm.today/1";
   generated_at: ISODateTime;
   /** 今天（北京时间日历日）—— 甘特图“今天”标线以此为准 */
@@ -221,6 +234,8 @@ export interface SectionConfig {
 }
 
 export interface ProjectViewModel {
+  health_checks?:HealthCheck[];
+  knowledge_gaps?:KnowledgeGap[];
   ai_suggestions?: AiSuggestion[];
   schema: "paw.pm.project/1";
   generated_at: ISODateTime;
@@ -246,6 +261,8 @@ export interface ProjectViewModel {
 
 /* ------------------------------------------------------------------ 回调（由接入方实现） */
 export interface PmCallbacks {
+  onRunHealthCheck?: (projectId?:string) => void | Promise<void>;
+  onResolveKnowledgeGap?: (gapId:string) => void | Promise<void>;
   onAdoptSuggestion?: (id: string) => void | Promise<void>;
   onGenerateSuggestions?: (projectId: string) => void | Promise<void>;
   /** 打开来源 / 跳转工作台内部地址 */

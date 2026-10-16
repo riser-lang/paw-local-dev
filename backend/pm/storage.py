@@ -80,6 +80,8 @@ def migrate(conn):
     migrate_receipts(conn)
     from .suggestions import migrate as migrate_suggestions
     migrate_suggestions(conn)
+    from . import daily,knowledge_gaps
+    daily.migrate(conn);knowledge_gaps.migrate(conn)
 
 
 def config(path=None):

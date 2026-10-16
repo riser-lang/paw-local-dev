@@ -1,0 +1,8 @@
+{
+  "input": {"type":"object","required":["project_id","sections"],"additionalProperties":false,"properties":{
+    "project_id":{"type":"string"},"sections":{"type":"array","items":{"type":"object"}}}},
+  "output":{"type":"object","required":["findings"],"additionalProperties":false,"properties":{
+    "findings":{"type":"array","maxItems":8,"items":{"type":"object","required":["left_section","right_section","left_quote","right_quote"],"additionalProperties":false,"properties":{
+      "left_section":{"type":"string","minLength":1},"right_section":{"type":"string","minLength":1},
+      "left_quote":{"type":"string","minLength":1,"maxLength":1500},"right_quote":{"type":"string","minLength":1,"maxLength":1500}}}}}}
+}

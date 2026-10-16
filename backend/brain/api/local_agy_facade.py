@@ -1246,6 +1246,10 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     if grounded:visible=answer_advice.display(response_text,turn['contract'])
     final_visible = _plain(visible if grounded else response_text)
     final_visible = _conflict_preface(turn,final_visible)
+    knowledge_gap_id=None
+    from backend.pm.knowledge_gaps import is_insufficient,observe
+    if grounded and resolved_proj_id and is_insufficient(final_visible,answer_map):
+        knowledge_gap_id=observe(resolved_proj_id,req.message)
 
     # 8. Record in chat_history.db (visible transcript only)
     if user_msg_id:
@@ -1281,6 +1285,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         "clarification": turn["contract"].get("clarification"),
         "grounding": grounding_metadata(turn, grounded=grounded, gate=gate_reason),
         "advice_filter": advice_filter,
+        "knowledge_gap_id": knowledge_gap_id,
         "evidence_map": answer_map if grounded else None,
         "web_search_used": web_search_used,
         "web_search_note": "以下内容来自网络搜索，非工作台依据" if web_search_used else None,

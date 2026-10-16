@@ -23,6 +23,10 @@ def invoke(name, value, provider, conn):
                    'basis必须填写输入中的source_version_id和body逐字原文quote。'
                    '这些是带依据的推断，不是已有批准或正式事实；资料中的提议也不代表已批准。'
                    '不得新增依据没有的人名、数字、期限或决定；未知项建议用户核实。')
+    if name=='section_consistency':
+        system += ('比较不同栏目的当前表述，只标出同一对象、同一时点不能同时成立的明确矛盾。'
+                   '没有确定矛盾时findings为空，不把不同阶段或风险推测当成已发生的冲突。'
+                   'left_quote/right_quote必须分别逐字摘自对应栏目text，栏目id必须来自输入；不修改正式记录。')
     try:
         messages = model_messages(system, value, storage.config()['context_budget_bytes'])
     except ValueError:
