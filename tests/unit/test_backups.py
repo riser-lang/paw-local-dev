@@ -91,3 +91,12 @@ def test_health_records_real_success_failure_staleness_and_config_identity(datab
 
 def test_backup_path_cannot_escape_managed_directory(database,tmp_path):
     with pytest.raises(ValueError,match='越界'):backups.confined(tmp_path/'outside.db',tmp_path/'backups')
+
+
+def test_rotation_protects_last_readable_copy_when_newer_auto_file_is_corrupted(database):
+    good=backups.create('post_batch_commit');newer=backups.create('post_batch_commit')
+    Path(newer['backup_path']).write_bytes(b'corrupted later')
+    backups.set_policy(1,8*1024**2)
+    rows=[r for r in backups.listing() if r['automatic']]
+    assert [r['filename'] for r in rows]==[good['backup_filename']]
+    assert backups.readable(Path(good['backup_path']))

@@ -32,7 +32,7 @@ def policy():
 def set_policy(max_count,max_bytes):
     if not 1<=max_count<=100 or max_bytes<65536:raise ValueError('自动备份数量须为 1–100，容量至少 64 KiB')
     with _lock:
-        latest=next((b for b in listing() if b['automatic']),None)
+        latest=next((b for b in listing() if b['automatic'] and readable(Path(b['path']))),None)
         if latest and latest['size_bytes']>max_bytes:raise ValueError('容量不足以保留最新备份，请提高上限')
         with storage.connect() as conn:conn.execute('UPDATE pm_backup_policy SET max_count=?,max_bytes=? WHERE id=1',(max_count,max_bytes))
         rotate()
@@ -48,6 +48,13 @@ def confined(path,root):
 def counts(conn):
     tables={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     return {name:conn.execute('SELECT COUNT(*) FROM '+name).fetchone()[0] for name in KEY_TABLES if name in tables}
+
+
+def readable(file):
+    try:
+        with closing(sqlite3.connect(file.resolve().as_uri()+'?mode=ro',uri=True)) as conn:
+            return conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok' and bool(conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project'").fetchone())
+    except (OSError,sqlite3.Error):return False
 
 
 def listing():
@@ -72,9 +79,16 @@ def rotate(max_keep=None):
     with _lock:
         limits=policy();keep=min(max_keep,limits['max_count']) if max_keep else limits['max_count']
         automatic=[b for b in listing() if b['automatic']];total=0;retained=0;removed=0
+        verified={b['filename']:readable(Path(b['path'])) for b in automatic}
+        latest=next((b for b in automatic if verified[b['filename']]),None)
+        if automatic and latest is None:
+            health.observe('backup',False,'自动备份均未通过完整性检查，已保留文件，请创建新备份')
+            raise ValueError('没有可读的自动备份，停止轮转以保留恢复线索')
+        # Protect the newest readable copy even if a newer file was corrupted later.
+        if latest:automatic=[latest]+[b for b in automatic if b['filename']!=latest['filename']]
         _,root=paths()
         for backup in automatic:
-            if retained==0 or retained<keep and total+backup['size_bytes']<=limits['max_bytes']:
+            if verified[backup['filename']] and (retained==0 or retained<keep and total+backup['size_bytes']<=limits['max_bytes']):
                 total+=backup['size_bytes'];retained+=1;continue
             file=confined(Path(backup['path']),root)
             file.unlink();removed+=1
