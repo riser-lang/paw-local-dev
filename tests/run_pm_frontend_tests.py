@@ -158,6 +158,12 @@ def run_c06(report,installer):
                             capture(c,page,1440)
                             comparison=Path('screenshots/compare_PM_C3_01.html')
                             comparison.write_text('<!doctype html><meta charset="utf-8"><title>真实页面截图对照</title><style>body{background:#F7F3EB;font:14px sans-serif}main{display:grid;grid-template-columns:1fr 1fr;gap:16px}img{width:100%;display:block}figure{margin:0}</style><h1>现有 AI 助手与本地驾驶舱</h1><p>同一次安装验收的两个真实页面截图；原始 PNG 保持不变。</p><main><figure><figcaption>/app/agnes</figcaption><img src="screen_PM_C3_01_1440_legacy_chat.png"></figure><figure><figcaption>/app/pm/today</figcaption><img src="screen_PM_C3_01_1440.png"></figure></main>',encoding='utf-8')
+                            page.goto(BASE+'/app/projects/'+pid,wait_until='networkidle')
+                            page.wait_for_function('document.querySelector("#root").innerText.length > 20')
+                            if page.locator('#paw-modal-overlay').is_visible():page.locator('#paw-close-btn').click()
+                            page.get_by_role('link',name='本项目档案',exact=True).click()
+                            page.get_by_role('heading',name='冲刺项目',exact=True).wait_for()
+                            c.check('legacy_project_links_to_local_dossier',page.url,project_url)
                         elif case=='PM-C4-01':
                             changes=view(pid)['changes'];c.check('two_actual_changes',len(changes),2)
                             for change in changes:
