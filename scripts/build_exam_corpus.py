@@ -8,9 +8,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import docx
-import openpyxl
-from pptx import Presentation
 
 DEFAULT_CORPUS_JSON = Path(__file__).resolve().parent.parent / "tests" / "pending" / "exam" / "corpus.json"
 DEFAULT_QUESTIONS_JSON = Path(__file__).resolve().parent.parent / "tests" / "pending" / "exam" / "questions.json"
@@ -23,6 +20,10 @@ def load_corpus_spec(corpus_json_path: Path | None = None) -> list[dict]:
 
 
 def build_corpus(corpus_json_path: Path | None = None, output_dir: Path | None = None) -> list[Path]:
+    import docx
+    import openpyxl
+    from pptx import Presentation
+
     if output_dir is None:
         output_dir = Path("tests/fixtures/exam")
     output_dir.mkdir(parents=True, exist_ok=True)

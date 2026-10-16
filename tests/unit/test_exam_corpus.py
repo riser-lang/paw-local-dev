@@ -1,8 +1,18 @@
 import json
 from pathlib import Path
+import pytest
 from scripts.build_exam_corpus import build_corpus, load_corpus_spec, evaluate_semantics
 
+try:
+    import docx
+    import openpyxl
+    import pptx
+    HAS_OFFICE_LIBS = True
+except ImportError:
+    HAS_OFFICE_LIBS = False
 
+
+@pytest.mark.skipif(not HAS_OFFICE_LIBS, reason="Requires python-docx, openpyxl, python-pptx")
 def test_build_exam_corpus(tmp_path):
     out_dir = tmp_path / "exam_docs"
     docs = load_corpus_spec()
