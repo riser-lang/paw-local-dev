@@ -32,6 +32,8 @@ class AgentPlanner:
         """Core planning execution when ANALYSIS_READY event occurs."""
         from backend.pm.storage import ingest_evidence
         ingest_evidence(evidence, file_hash)
+        from backend.pm.receipts import register as register_receipt
+        register_receipt(evidence,file_hash)
         from backend.pm.versions import process_source
         process_source(file_hash)
         display_name = evidence.get("display_name") or "untitled"

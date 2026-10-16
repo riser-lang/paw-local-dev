@@ -15,7 +15,7 @@ def apply_rule(target, operation, payload, refs, rule):
         raise ValueError('自动栏目写入必须有语义判定')
     # The Committer rechecks family identity and ranking inside its writer transaction.
     _, cid = create_review_decision_atomic(None,'approve',reviewer='standing_user_rule',
-        review_channel='standing_user_rule',approval_source='direct_user',
+        review_channel='standing_user_rule',approval_source='standing_user_rule',
         original_payload=payload,review_notes=RULE_SOURCE+'；'+rule,
         target_type=target,operation=operation,source_refs=refs)
     result=commit_approved_change(cid)

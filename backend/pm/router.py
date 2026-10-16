@@ -10,6 +10,43 @@ from .budget import bounded_context
 router = APIRouter()
 
 
+@router.get('/receipts')
+def input_receipts():
+    from .receipts import read
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:items=read(conn)
+    return {'items':items,'model_configured':bool(getattr(get_active_provider(),'api_key',None))}
+
+
+@router.get('/input-decisions')
+def input_decisions():
+    from .routing import pending
+    with storage.connect() as conn:return {'items':pending(conn)}
+
+
+class AssignmentChoice(BaseModel):
+    project_id: str
+    family_id: str | None = None
+    family_title: str | None = None
+
+
+@router.post('/input-decisions/{decision_id}/resolve')
+def resolve_assignment(decision_id: str,body: AssignmentChoice):
+    from .routing import resolve
+    from backend.provider.adapter import get_active_provider
+    try:return resolve(decision_id,body.project_id,get_active_provider(),body.family_id,body.family_title)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+
+@router.post('/input-decisions/{decision_id}/reject')
+def reject_assignment(decision_id: str):
+    from backend.governance.committer import create_direct_user_approved_change,commit_approved_change
+    _,change=create_direct_user_approved_change('pm_input_decision','reject',{'decision_id':decision_id})
+    result=commit_approved_change(change)
+    if result['result']!='success':raise HTTPException(409,result.get('error','拒绝失败'))
+    return {**result,'change_id':change}
+
+
 @router.get('/coverage')
 def coverage_report():
     from .coverage import read
@@ -87,18 +124,10 @@ class FamilyChoice(BaseModel):
 
 @router.post('/decisions/{decision_id}/resolve')
 def resolve_family(decision_id: str, body: FamilyChoice):
-    from backend.governance.committer import create_direct_user_approved_change,commit_approved_change
-    with storage.connect() as conn:
-        card=conn.execute("SELECT * FROM pm_family_decision WHERE id=? AND status='pending'",(decision_id,)).fetchone()
-        if not card:
-            raise HTTPException(409,'待决事项已变化')
-        sid=card['source_version_id']
-    _,cid=create_direct_user_approved_change('pm_version','rule',
-        {**body.model_dump(),'source_version_id':sid,'decision_id':decision_id},[sid])
-    result=commit_approved_change(cid)
-    if result['result']!='success':
-        raise HTTPException(409,result.get('error','裁定失败'))
-    return {**result,'change_id':cid}
+    from .routing import resolve
+    from backend.provider.adapter import get_active_provider
+    try:return resolve(decision_id,body.project_id,get_active_provider(),body.family_id,body.family_title)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
 
 
 class SectionProposal(BaseModel):

@@ -273,7 +273,10 @@ class PawScheduler:
             return []
 
         # 1. Fire SOURCE_READY for capture
-        cap_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:16]
+        cap_hash = hashlib.sha256((capture_id+'\0'+raw_text).encode("utf-8")).hexdigest()
+        if not governance.claim_source(cap_hash):
+            if governance.is_source_analyzed(cap_hash):mark_capture_processed(capture_id)
+            return []
         event_bus.publish(
             EventType.SOURCE_READY,
             payload={"type": "capture", "capture_id": capture_id, "text_preview": raw_text[:60]},
@@ -298,20 +301,23 @@ class PawScheduler:
         )
 
         # 4. Agent Planner AI proposal
-        candidate_ids = []
+        candidate_ids = None
         try:
             candidate_ids = agent_planner.plan_document_impact(
                 evidence=evidence,
                 source_file_path=f"capture://{capture_id}",
                 file_hash=cap_hash,
             )
+            mark_capture_processed(capture_id)
         except Exception as exc:
             logger.error(f"Error analyzing capture {capture_id}: {exc}", exc_info=True)
+        finally:
+            governance.release_source(cap_hash,evidence['display_name'],'capture',
+                candidates_created=len(candidate_ids) if candidate_ids is not None else None)
 
         # 5. Mark capture as processed
-        mark_capture_processed(capture_id)
-        logger.info(f"Capture {capture_id} cruise analysis complete. Candidates produced: {len(candidate_ids)}")
-        return candidate_ids
+        logger.info(f"Capture {capture_id} cruise analysis finished. Candidates produced: {len(candidate_ids or [])}")
+        return candidate_ids or []
 
     def process_source_file(self, file_path: Path, file_hash: str) -> List[str]:
         """Full pipeline execution:

@@ -631,7 +631,7 @@ def _ensure_governance_and_runtime_schema(conn: sqlite3.Connection) -> None:
             reviewer TEXT NOT NULL,
             review_channel TEXT NOT NULL DEFAULT 'chatgpt_explicit_user',
             approval_source TEXT NOT NULL DEFAULT 'candidate_review'
-                CHECK (approval_source IN ('candidate_review', 'direct_user')),
+                CHECK (approval_source IN ('candidate_review', 'direct_user', 'standing_user_rule')),
             original_payload TEXT,
             reviewed_payload TEXT,
             authorization_payload_hash TEXT,

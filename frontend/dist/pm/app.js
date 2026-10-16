@@ -1,5 +1,5 @@
 (() => {
-  // versions.js
+  // frontend/pm-src/versions.js
   async function renderVersions({ app: app2, id: id2, node: node2, action: action2, api: api2, reference: reference2, notice: notice2, refresh }) {
     const base = "/v1/pm/projects/" + encodeURIComponent(id2);
     const families = (await api2(base + "/families")).items;
@@ -13,6 +13,7 @@
           card.append(node2("p", version.title + " \xB7 " + (version.status === "current" ? "\u25CF \u5F53\u524D\u7248\u672C" : "\u5386\u53F2 \xB7 \u5DF2\u66FF\u6362")), reference2(version));
         }
         const latest = family.rulings.find((r) => !r.undone_by);
+        if (latest) card.append(node2("p", latest.authorization?.label || "\u5BA1\u6279\u6765\u6E90\u5F85\u8865"));
         if (latest && latest.previous_source_id) card.append(action2("\u64A4\u9500\u7248\u672C\u88C1\u5B9A", async () => {
           await api2("/v1/pm/changes/" + latest.change_id + "/undo", {});
           await refresh();
@@ -51,7 +52,7 @@
     }
   }
 
-  // updates.js
+  // frontend/pm-src/updates.js
   async function renderUpdates({ app: app2, id: id2, node: node2, action: action2, api: api2, reference: reference2, notice: notice2, refresh, sections }) {
     const base = "/v1/pm/projects/" + encodeURIComponent(id2);
     const title = (sectionId) => sections.find((s) => s.id === sectionId)?.title || "\u5F85\u786E\u8BA4\u680F\u76EE";
@@ -118,7 +119,78 @@
     }
   }
 
-  // app.js
+  // frontend/pm-src/receipts.js
+  async function renderReceipts({ app: app2, node: node2, api: api2, action: action2, reference: reference2, notice: notice2, refresh }) {
+    const data = await api2("/v1/pm/receipts");
+    const decisions = (await api2("/v1/pm/input-decisions")).items;
+    app2.replaceChildren(node2("h1", "\u8D44\u6599\u53BB\u5411"));
+    const input = node2("section");
+    input.append(node2("h2", "\u968F\u624B\u8BB0"));
+    const text = node2("textarea");
+    text.setAttribute("aria-label", "\u968F\u624B\u8BB0\u5185\u5BB9");
+    text.rows = 3;
+    input.append(text);
+    input.append(action2("\u4FDD\u5B58\u968F\u624B\u8BB0", async () => {
+      if (!text.value.trim()) throw Error("\u8BF7\u5148\u8F93\u5165\u5185\u5BB9\u3002");
+      await api2("/v1/web/workspace/captures", { raw_text: text.value.trim(), source: "local_pm" });
+      await refresh();
+      notice2("\u5DF2\u4FDD\u5B58\uFF0C\u540E\u53F0\u6B63\u5728\u5904\u7406\u3002\u53EF\u5237\u65B0\u67E5\u770B\u5B9E\u9645\u53BB\u5411\u3002");
+    }), action2("\u5237\u65B0\u56DE\u6267", refresh));
+    app2.append(input);
+    if (!data.model_configured) app2.append(node2("p", "\u9700\u8981\u586B\u5199 Key \u624D\u80FD\u751F\u6210\u680F\u76EE\u7ED3\u8BBA\uFF1B\u5DF2\u5B58\u8F93\u5165\u548C\u6765\u6E90\u4ECD\u53EF\u67E5\u770B\u3002", "empty"));
+    const pending = node2("section");
+    pending.append(node2("h2", "\u9700\u8981\u4F60\u51B3\u5B9A"));
+    for (const decision of decisions) {
+      const card = node2("article", void 0, "ai");
+      card.append(node2("h3", decision.question), node2("p", decision.title), reference2({ source_url: decision.source_url }));
+      const select = node2("select");
+      select.setAttribute("aria-label", "\u5F52\u5C5E\u9879\u76EE");
+      select.append(node2("option", "\u8BF7\u9009\u62E9\u5DF2\u6709\u9879\u76EE"));
+      select.firstChild.value = "";
+      for (const project of decision.projects) {
+        const option = node2("option", project.name);
+        option.value = project.id;
+        select.append(option);
+      }
+      if (decision.project_id) select.value = decision.project_id;
+      card.append(select, node2("p", "\u786E\u8BA4\uFF1A\u8F93\u5165\u5C06\u5F52\u5165\u6240\u9009\u9879\u76EE\uFF0C\u6309\u540C\u540D\u6587\u6863\u65CF\u6267\u884C\u7248\u672C\u89C4\u5219\uFF0C\u5E76\u6309\u680F\u76EE\u66F4\u65B0\u89C4\u5219\u5904\u7406\uFF1B\u6682\u4E0D\u5F52\u5165\uFF1A\u6B63\u5F0F\u8BB0\u5F55\u4FDD\u6301\u4E0D\u53D8\u3002"));
+      card.append(action2("\u786E\u8BA4\u5F52\u5C5E", async () => {
+        if (!select.value) throw Error("\u8BF7\u9009\u62E9\u5DF2\u6709\u9879\u76EE\u3002");
+        await api2("/v1/pm/input-decisions/" + decision.id + "/resolve", { project_id: select.value });
+        await refresh();
+        notice2("\u5F52\u5C5E\u5DF2\u786E\u8BA4\u3002\u680F\u76EE\u7ED3\u679C\u4EE5\u56DE\u6267\u548C\u6863\u6848\u4E3A\u51C6\u3002");
+      }), action2("\u6682\u4E0D\u5F52\u5165", async () => {
+        await api2("/v1/pm/input-decisions/" + decision.id + "/reject", {});
+        await refresh();
+      }));
+      pending.append(card);
+    }
+    if (!decisions.length) pending.append(node2("p", "\u73B0\u5728\u6CA1\u6709\u5F85\u786E\u8BA4\u7684\u8F93\u5165\u5F52\u5C5E\u3002", "empty"));
+    app2.append(pending);
+    const list = node2("section");
+    list.append(node2("h2", "\u8F93\u5165\u56DE\u6267"));
+    for (const receipt of data.items) {
+      const card = node2("article");
+      card.dataset.receipt = receipt.id;
+      card.append(node2("h3", receipt.title), node2("p", receipt.note));
+      if (receipt.project_name) {
+        const link = node2("a", "\u5DF2\u5F52\u5165 " + receipt.project_name);
+        link.href = receipt.href;
+        card.append(link);
+      }
+      card.append(node2("p", receipt.updated_sections.length ? "\u66F4\u65B0\u680F\u76EE\uFF1A" + receipt.updated_sections.join("\u3001") : "\u5C1A\u65E0\u5DF2\u63D0\u4EA4\u7684\u680F\u76EE\u66F4\u65B0"), reference2({ source_url: receipt.source_url }));
+      if (receipt.authorization) card.append(node2("p", receipt.authorization.label));
+      if (receipt.rejection_change_id) card.append(action2("\u64A4\u9500\u62D2\u7EDD", async () => {
+        await api2("/v1/pm/changes/" + receipt.rejection_change_id + "/undo", {});
+        await refresh();
+      }));
+      list.append(card);
+    }
+    if (!data.items.length) list.append(node2("p", "\u8FD8\u6CA1\u6709\u8F93\u5165\u56DE\u6267\u3002\u628A\u8D44\u6599\u653E\u5165\u76D1\u63A7\u6587\u4EF6\u5939\uFF0C\u6216\u4FDD\u5B58\u4E00\u6761\u968F\u624B\u8BB0\u3002", "empty"));
+    app2.append(list);
+  }
+
+  // frontend/pm-src/app.js
   var app = document.querySelector("#app");
   var id = decodeURIComponent(location.pathname.split("/").pop());
   function node(tag, text, cls) {
@@ -192,6 +264,7 @@
     return frag;
   }
   async function render() {
+    if (location.pathname === "/app/pm/receipts") return renderReceipts({ app, node, api, action, reference, notice, refresh: render });
     const data = await api("/v1/pm/projects/" + encodeURIComponent(id));
     app.replaceChildren(node("h1", data.project.name + " \xB7 \u6D3B\u7684\u9879\u76EE\u6863\u6848"));
     const grid = node("div", void 0, "sections");
@@ -201,7 +274,7 @@
       card.dataset.section = section.id;
       card.append(node("h2", section.title));
       if (section.current) {
-        card.append(node("p", section.current.text), references(section.current), node("small", " \xB7 \u5DF2\u6838\u51C6"));
+        card.append(node("p", section.current.text), references(section.current), node("small", " \xB7 " + (section.current.authorization?.label || "\u5BA1\u6279\u6765\u6E90\u5F85\u8865")));
         card.append(action("\u64A4\u9500\u6B64\u6B21\u53D8\u66F4", async () => {
           await api("/v1/pm/changes/" + encodeURIComponent(section.current.change_id) + "/undo", {});
           await render();
@@ -211,7 +284,7 @@
       const history = node("details");
       history.append(node("summary", "\u5386\u53F2\uFF08" + section.history.length + "\uFF09"));
       for (const r of section.history) {
-        history.append(node("p", r.text + (r.withdrawn ? "\uFF08\u5DF2\u64A4\u9500\uFF09" : "")), references(r));
+        history.append(node("p", r.text + (r.withdrawn ? "\uFF08\u5DF2\u64A4\u9500\uFF09" : "")), references(r), node("small", " \xB7 " + (r.authorization?.label || "\u5BA1\u6279\u6765\u6E90\u5F85\u8865")));
       }
       card.append(history);
       grid.append(card);

@@ -4,7 +4,7 @@ export async function renderVersions({app,id,node,action,api,reference,notice,re
  if(families.length){const area=node('section');area.append(node('h2','资料版本'));
  for(const family of families){const card=node('article');card.append(node('h3',family.title));
  for(const version of family.versions){card.append(node('p',version.title+' · '+(version.status==='current'?'● 当前版本':'历史 · 已替换')),reference(version));}
- const latest=family.rulings.find(r=>!r.undone_by);if(latest&&latest.previous_source_id)card.append(action('撤销版本裁定',async()=>{await api('/v1/pm/changes/'+latest.change_id+'/undo',{});await refresh();notice('版本及栏目引用已恢复。');}));area.append(card);}app.append(area);}
+ const latest=family.rulings.find(r=>!r.undone_by);if(latest)card.append(node('p',latest.authorization?.label||'审批来源待补'));if(latest&&latest.previous_source_id)card.append(action('撤销版本裁定',async()=>{await api('/v1/pm/changes/'+latest.change_id+'/undo',{});await refresh();notice('版本及栏目引用已恢复。');}));area.append(card);}app.append(area);}
  const cards=(await api('/v1/pm/decisions')).items.filter(c=>c.project_id===id);
  for(const decision of cards){const card=node('article',undefined,'ai');card.append(node('h2','需要你决定'),node('p',decision.prompt));
  const select=node('select');const fresh=node('option','作为独立文档族');fresh.value='';select.append(fresh);

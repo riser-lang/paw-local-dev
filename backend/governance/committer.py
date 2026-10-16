@@ -21,6 +21,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from backend.pm.authorization import describe as describe_authorization
 
 DB_PATH = os.getenv("PAW_WORKSPACE_DB", str(Path(__file__).resolve().parent.parent.parent / "data" / "workspace.db"))
 
@@ -48,6 +49,7 @@ def _payload_hash(payload: dict) -> str:
 
 # ── Payload schemas ─────────────────────────────────────────────────────────
 PAYLOAD_SCHEMAS: dict[str, dict[str, list[str]]] = {
+    "pm_input_decision": {"reject": ["decision_id"]},
     "pm_update_decision": {"resolve": ["assessment_id", "choice"]},
     "pm_version": {"rule": ["project_id", "source_version_id", "family_title"]},
     "pm_section": {"update": ["project_id", "section_id", "text", "source_version_id"]},
@@ -860,12 +862,12 @@ def commit_approved_change(change_id: str) -> dict:
 
         # ── Transaction: execute payload write ──
         executor = EXECUTORS.get((ac["target_type"], ac["operation"]))
-        if executor is None and ac['target_type'] not in ('pm_section', 'pm_undo', 'pm_version', 'pm_update_decision'):
+        if executor is None and ac['target_type'] not in ('pm_section', 'pm_undo', 'pm_version', 'pm_update_decision', 'pm_input_decision'):
             raise ValueError(f"No executor for {ac['target_type']}.{ac['operation']}")
 
         transaction_id = _uuid()
         from backend.pm import governance as pm_governance
-        if ac['target_type'] in ('pm_section', 'pm_undo', 'pm_version', 'pm_update_decision'):
+        if ac['target_type'] in ('pm_section', 'pm_undo', 'pm_version', 'pm_update_decision', 'pm_input_decision'):
             committed_target_id = pm_governance.execute(conn, ac, payload)
         else:
             from backend.pm.versions import is_current
@@ -889,7 +891,8 @@ def commit_approved_change(change_id: str) -> dict:
             """INSERT INTO audit_event (id, event_type, actor, target_type, target_id, change_id, commit_id, details, created_at)
                VALUES (?, 'commit', 'committer', ?, ?, ?, ?, ?, ?)""",
             (audit_id, ac["target_type"], committed_target_id, change_id, commit_id,
-             json.dumps({"operation": ac["operation"], "transaction_id": transaction_id}), now)
+             json.dumps({"operation": ac["operation"], "transaction_id": transaction_id,
+                         "authorization": describe_authorization(rd)},ensure_ascii=False), now)
         )
 
         conn.commit()
@@ -963,6 +966,11 @@ def create_review_decision_atomic(
             raise ValueError("DIRECTION_ONLY_MODE_REJECTS_TARGET_TYPE_OPERATION")
     conn = _get_conn()
     try:
+        from backend.pm import authorization
+        authorization.migrate(conn)
+        physical_source=authorization.legacy_slot(conn,approval_source)
+        if approval_source=='standing_user_rule' and (reviewer!='standing_user_rule' or review_channel!='standing_user_rule' or not str(review_notes or '').startswith(authorization.RULE_SOURCE)):
+            raise ValueError('常设规则审批必须明确记录规则来源')
         conn.execute("BEGIN IMMEDIATE")
 
         rd_id = _uuid()
@@ -981,12 +989,12 @@ def create_review_decision_atomic(
         conn.execute(
             """INSERT INTO review_decision
                (id, candidate_id, decision, reviewer, review_channel, approval_source,
-                original_payload, reviewed_payload, authorization_payload_hash, review_notes, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (rd_id, candidate_id, decision, reviewer, review_channel, approval_source,
+                original_payload, reviewed_payload, authorization_payload_hash, review_notes, created_at,approval_source_v2)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (rd_id, candidate_id, decision, reviewer, review_channel, physical_source,
              json.dumps(original_payload) if original_payload else None,
              json.dumps(reviewed_payload) if reviewed_payload else None,
-             auth_hash, review_notes, now)
+             auth_hash, review_notes, now,approval_source)
         )
 
         change_id = None

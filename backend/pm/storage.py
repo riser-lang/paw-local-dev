@@ -67,6 +67,10 @@ def migrate(conn):
     from .updates import migrate as migrate_updates
     migrate_coverage(conn)
     migrate_updates(conn)
+    from .authorization import migrate as migrate_authorization
+    migrate_authorization(conn)
+    from .receipts import migrate as migrate_receipts
+    migrate_receipts(conn)
 
 
 def config(path=None):
