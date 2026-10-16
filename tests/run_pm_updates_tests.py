@@ -88,6 +88,7 @@ def run_c04(report,installer):
                     pid,first,initial=seed(case)
                     count=read_rows('SELECT COUNT(*) AS n FROM pm_section_revision')[0]['n']
                     second,_=import_doc(case,'现场记录.docx','冲刺项目。\n进度与里程碑：原型已完成。')
+                    c.check('consistency_compares_distinct_sources',second!=first,True)
                     decision=assessments(pid,second)[0]
                     c.check('relation_consistent',decision['relation'],'consistent')
                     c.check('consistent_kept_current',current(pid)['id'],initial['id'])
