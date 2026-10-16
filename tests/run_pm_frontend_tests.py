@@ -142,16 +142,22 @@ def run_c06(report,installer):
                             m=view(pid)['milestones'][0];c.check('no_guessed_dates',[m[k] for k in ['plan_start','plan_end','actual_start','actual_end']],[None]*4)
                             capture(c,page,1440)
                         elif case=='PM-C3-01':
-                            for route in ['/app/today','/app/projects','/app/review','/app/agy']:
+                            for route in ['/app/today','/app/projects','/app/review','/app/agnes']:
                                 response=page.goto(BASE+route,wait_until='networkidle');page.locator('#root').wait_for()
                                 page.wait_for_function('document.querySelector("#root").innerText.length > 20')
                                 # Dismiss the real first-run setup dialog through its close button.
                                 overlay=page.locator('#paw-modal-overlay')
                                 if overlay.is_visible():page.locator('#paw-close-btn').click()
                                 c.check('legacy_page_usable_'+route,response.status==200 and len(page.locator('#root').inner_text())>20,True)
+                                if route=='/app/agnes':
+                                    c.check('legacy_assistant_heading',page.get_by_role('heading',name='AI助手',exact=True).count(),1)
+                                    c.check('legacy_assistant_input',page.get_by_placeholder('问问 AI助手，例如：今天有哪些待办？').is_visible(),True)
+                                    capture(c,page,1440,'_legacy_chat')
                             page.get_by_role('link',name='驾驶舱',exact=True).click();page.get_by_role('heading',name='今日驾驶舱',exact=True).wait_for()
                             c.check('sidebar_navigates_to_cockpit',page.url,home)
                             capture(c,page,1440)
+                            comparison=Path('screenshots/compare_PM_C3_01.html')
+                            comparison.write_text('<!doctype html><meta charset="utf-8"><title>真实页面截图对照</title><style>body{background:#F7F3EB;font:14px sans-serif}main{display:grid;grid-template-columns:1fr 1fr;gap:16px}img{width:100%;display:block}figure{margin:0}</style><h1>现有 AI 助手与本地驾驶舱</h1><p>同一次安装验收的两个真实页面截图；原始 PNG 保持不变。</p><main><figure><figcaption>/app/agnes</figcaption><img src="screen_PM_C3_01_1440_legacy_chat.png"></figure><figure><figcaption>/app/pm/today</figcaption><img src="screen_PM_C3_01_1440.png"></figure></main>',encoding='utf-8')
                         elif case=='PM-C4-01':
                             changes=view(pid)['changes'];c.check('two_actual_changes',len(changes),2)
                             for change in changes:
