@@ -1,5 +1,6 @@
 """Local view-model assembly. Read-only: page requests never call a model."""
 import json
+from pathlib import Path
 from datetime import datetime,timedelta,timezone
 from . import storage,dossier,receipts,updates
 
@@ -142,7 +143,8 @@ def project_vm(conn,pid):
             'right':{'label':'另一份有效资料','text':c['right_text'],'source':source(conn,c['right_source_id'])},
             'options':[{'key':'current','label':'保留当前'},{'key':'incoming','label':'采纳新资料'},{'key':'later','label':'稍后'}],
             'resolved':{'choice':resolution['decision'],'at':stamp(resolution['created_at'])} if resolution else None})
-    configured={s['id']:s.get('view_kind','list') for s in storage.config()['sections']}
+    view_kinds=json.loads(Path(__file__).with_name('dossier_views.json').read_text(encoding='utf-8'))
+    configured={s['id']:view_kinds.get(s['id'],'list') for s in storage.config()['sections']}
     return {'schema':'paw.pm.project/1','generated_at':stamp(storage.now()),'today':day(storage.now()),
         'project':{'id':pid,'name':p['name'],'status':project_status(p,bool(current_ids or milestones),any(not c['resolved'] for c in conflicts)),
             'one_liner':next((s['current']['text'] for s in data['sections'] if s['id']=='status' and s['current']),None),

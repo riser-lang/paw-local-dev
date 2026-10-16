@@ -45,7 +45,7 @@ function LegacyExtras({pid,version,refresh}:{pid:string,version:number,refresh:(
     card.append(action('采纳',async()=>{await api('/v1/pm/projects/'+pid+'/derived/'+draft.id+'/adopt',{});notice('已生成候选，请到需要你决定中批准。');}));fragment.append(card);
    }
    const args={app:fragment,id:pid,node,action,api,reference,notice,refresh};
-   await renderVersions(args);await renderUpdates({...args,sections:data.sections});
+   await renderVersions(args);await renderUpdates({...args,sections:data.sections,readonlyConflicts:true});
    if(active)ref.current?.replaceChildren(fragment);
   })().catch(e=>notice(e.message));
   return()=>{active=false;};
