@@ -310,15 +310,4 @@ def run_c10(report, installer):
             c.check("exam_pass_rate_ge_90_percent", pass_rate >= 0.9, True)
             c.check("exam_min_passed_count", pass_count >= 22, True)
 
-            # Screenshot cockpit
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=False)
-                try:
-                    page = browser.new_page(viewport={"width": 1440, "height": 1000})
-                    stable_page(page, BASE + "/app/pm/today")
-                    page.set_viewport_size({"width": 1440, "height": 1000})
-                    capture(c, page, 1440, "_exam")
-                    page.set_viewport_size({"width": 390, "height": 900})
-                    capture(c, page, 390, "_exam")
-                finally:
-                    browser.close()
+
