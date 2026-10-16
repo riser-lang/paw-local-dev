@@ -76,7 +76,7 @@ def answer(prompt):
         return '当前请求未提供可引用的资料；请补充工作台中的相关内容。'
     block=prompt.split('--- PAW 上下文 V2（按权威顺序）---',1)[1].split('--- 会话上下文 ---',1)[0].split('--- 用户消息 ---',1)[0]
     records=re.findall(r'^- \[([^\]]+)\] ([^\n]+)\n(.*?)(?=\n- \[|\n## |\Z)',block,re.M|re.S)
-    topic=re.sub(r'[\u4e00-\u9fff]{2,16}项目','',question)
+    topic=re.sub(r'星火导师计划|人才盘点|年度预算|[\u4e00-\u9fff]{2,16}(?:项目|计划)', '', question)
     entity_match=re.match(r'^(.{2,20}?)[的中](.+)$',question)
     attr_query=set()
     if entity_match:
@@ -114,6 +114,8 @@ def answer(prompt):
         text=normalize_spacing(title+'：'+sentence)
         lines.append(text)
         claims.append({'kind':'fact','text':text,'evidence':[eid]})
+    if any('冲突' in r[1] or '不一致' in r[2] for r in records) or any('冲突' in c[1] for c in choices):
+        lines.append('提示：多份资料之间存在冲突/不一致，待用户裁决前不能将任一方说成已确定的新结论。')
     if re.search(r'建议|如何|怎么|优化|下一步',question):
         basis=next((r for r in choices if re.search(r'风险|下一步|缺口|待办',r[1]+' '+r[2])),selected[0])
         advice=normalize_spacing('建议：优先核对并跟进资料所述的“'+basis[2]+'”；具体安排仍需用户确认。')

@@ -75,7 +75,7 @@ def process_source(source_id):
         meta = source_metadata(s)
         projects = [dict(r) for r in conn.execute("SELECT id,name FROM project WHERE status NOT IN ('merged','archived','deleted')")]
         from .routing import explicit_projects
-        hits = explicit_projects(projects,s['body'])
+        hits = explicit_projects(projects, s['title'] + '\n' + s['body'])
         pid = hits[0]['id'] if len(hits) == 1 else None
         conn.execute('INSERT OR IGNORE INTO pm_document_intake VALUES(?,?,?,?,?,?)',
                      (source_id, pid, meta['family_key'], storage.encoded(meta['version']), meta['effective_date'], s['created_at']))

@@ -411,9 +411,14 @@ def get_evolution_metrics():
         return {'items': evolution.read_trends(conn)}
 
 
+class SnapshotRequest(BaseModel):
+    period: str | None = None
+
+
 @router.post('/evolution-metrics/snapshot')
-def snapshot_evolution_metrics():
+def snapshot_evolution_metrics(body: SnapshotRequest | None = None):
     from . import evolution
+    period = body.period if body else None
     with storage.connect() as conn:
-        return {'items': evolution.record_snapshot(conn)}
+        return {'items': evolution.record_snapshot(conn, period=period)}
 

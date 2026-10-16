@@ -50,6 +50,12 @@ def run_c10(report, installer):
             pid2 = api("POST", "/v1/web/workspace/projects", {"name": "星空项目"})["id"]
 
             # 1. Without model key: suggestions indicate needs_key, but other sections work
+            api("POST", "/v1/local/settings", {
+                "provider": "custom",
+                "custom_api_key": "",
+                "custom_base_url": "",
+                "custom_model": ""
+            })
             res_nokey = api("POST", "/v1/pm/weekly-reports/generate", {"project_id": pid1})
             rep_nokey = res_nokey.get("report", res_nokey)
             c.check("weekly_report_project_name", rep_nokey["project_name"], "冲刺项目")
