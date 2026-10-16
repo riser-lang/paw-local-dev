@@ -578,6 +578,162 @@ Required cases: 55 | PASS 55 | FAIL 0 | NOT RUN 0
 VERDICT: GREEN
 ```
 
+### 报告提交 abaf89a 的独立复跑（补充）
+
+- push [38837087712](https://github.com/riser-lang/paw-local-dev/actions/runs/38837087712)：54/55，RED，PM-B3-05 的 running() 报 Installed application did not start；还未创建该例项目或执行功能断言。
+- PR [38837092582](https://github.com/riser-lang/paw-local-dev/actions/runs/38837092582)：55/55 GREEN。两次 unit [38837087754](https://github.com/riser-lang/paw-local-dev/actions/runs/38837087754)、[38837092606](https://github.com/riser-lang/paw-local-dev/actions/runs/38837092606) 均88项通过；Build [38837092588](https://github.com/riser-lang/paw-local-dev/actions/runs/38837092588)通过。
+- abaf89a 相比功能提交465c6c3仅改本报告。PM04 job 日志显示前四次启动约1.6秒成功，失败这次没有请求就绪或提前退出日志，随后下一例启动3.1秒成功。启动器仍用原40秒就绪轮询，没有提高超时、自动重试或跳过失败。没有当次应用内部堆栈，根因未确认，不能称为已修复，也不能把安装启动失败计作该功能PASS。
+- 本次提交仅补齐上述必需报告；不修改产品/断言，不取消或重新触发已有工作流。后续报告提交的自动双运行另在PR描述列明。
+
+### abaf89a push 38837087712 summary.md 全文（原样）
+
+```text
+# Pipeline verdict for abaf89a0b2149d436a69a6c1ddd442f4bf746bfe
+
+Required cases: 55 | PASS 54 | FAIL 1 | NOT RUN 0
+
+| Block | Case | Status | Failed check | Model |
+|---|---|---|---|---|
+| B1 | B1-01 | PASS |  | mock-llm |
+| B1 | B1-02 | PASS |  | mock-llm |
+| B1 | B1-03 | PASS |  | mock-llm |
+| B2 | B2-01 | PASS |  | mock-llm |
+| B2 | B2-02 | PASS |  | mock-llm |
+| B2 | B2-03 | PASS |  | mock-llm |
+| B3 | B3-01 | PASS |  | mock-llm |
+| B3 | B3-02 | PASS |  | mock-llm |
+| B3 | B3-03 | PASS |  | mock-llm |
+| B3 | B3-04 | PASS |  | mock-llm |
+| B4 | B4-01 | PASS |  | mock-llm |
+| B4 | B4-02 | PASS |  | mock-llm |
+| B4 | B4-03 | PASS |  | mock-llm |
+| B4 | B4-04 | PASS |  | mock-llm |
+| B4 | B4-05 | PASS |  | mock-llm |
+| B4 | B4-06 | PASS |  | mock-llm |
+| B4 | B4-07 | PASS |  | mock-llm |
+| B5 | B5-01 | PASS |  | mock-llm |
+| B5 | B5-02 | PASS |  | mock-llm |
+| B5 | B5-03 | PASS |  | mock-llm |
+| B6 | B6-01 | PASS |  | mock-llm |
+| B6 | B6-02 | PASS |  | mock-llm |
+| B7 | B7-01 | PASS |  | mock-llm |
+| B7 | B7-02 | PASS |  | mock-llm |
+| B7 | B7-03 | PASS |  | mock-llm |
+| B8 | B8-01 | PASS |  | mock-llm |
+| B8 | B8-02 | PASS |  | mock-llm |
+| B8 | B8-03 | PASS |  | mock-llm |
+| NEGATIVE-CONTROL | NC-01 | FAIL | project_update_committed | mock-llm |
+| NEGATIVE-CONTROL | NC-02 | FAIL | explainer_fields_filled | mock-llm |
+| NEGATIVE-CONTROL | NC-03 | FAIL | environment_clean | mock-llm |
+| NEGATIVE-CONTROL | NC-PM-GOV | FAIL | formal_fields_unchanged_after_cruise | mock-llm |
+| NEGATIVE-CONTROL | NC-PM-B2 | FAIL | old_version_superseded | mock-llm |
+| PM02 | PM-B1-01 | PASS |  | mock-llm |
+| PM02 | PM-B1-02 | PASS |  | mock-llm |
+| PM02 | PM-B1-03 | PASS |  | mock-llm |
+| PM02 | PM-B1-04 | PASS |  | mock-llm |
+| PM02 | PM-B1-05 | PASS |  | mock-llm |
+| PM02 | PM-B5-01 | PASS |  | mock-llm |
+| PM02 | PM-GOV-01 | PASS |  | mock-llm |
+| PM02 | PM-GOV-02 | PASS |  | mock-llm |
+| PM02 | PM-GOV-03 | PASS |  | mock-llm |
+| PM03 | PM-B2-01 | PASS |  | mock-llm |
+| PM03 | PM-B2-02 | PASS |  | mock-llm |
+| PM03 | PM-B2-03 | PASS |  | mock-llm |
+| PM03 | PM-B2-04 | PASS |  | mock-llm |
+| PM03 | PM-B2-05 | PASS |  | mock-llm |
+| PM04 | PM-B3-01 | PASS |  | mock-llm |
+| PM04 | PM-B3-02 | PASS |  | mock-llm |
+| PM04 | PM-B3-03 | PASS |  | mock-llm |
+| PM04 | PM-B3-04 | PASS |  | mock-llm |
+| PM04 | PM-B3-05 | FAIL | exception | mock-llm |
+| PM04 | PM-B3-06 | PASS |  | mock-llm |
+| PM04 | PM-B4-01 | PASS |  | mock-llm |
+| PM04 | PM-B4-02 | PASS |  | mock-llm |
+| PM05 | PM-D1-01 | PASS |  | mock-llm |
+| PM05 | PM-D1-02 | PASS |  | mock-llm |
+| PM05 | PM-D1-03 | PASS |  | mock-llm |
+| PM05 | PM-D2-01 | PASS |  | mock-llm |
+| PM05 | PM-D2-02 | PASS |  | mock-llm |
+
+## Problems
+- PM-B3-05: FAIL (exception)
+
+VERDICT: RED```
+
+### abaf89a PR 38837092582 summary.md 全文（原样）
+
+```text
+# Pipeline verdict for 11c71837a54978e780c6fda83b5c59adf2fc128d
+
+Required cases: 55 | PASS 55 | FAIL 0 | NOT RUN 0
+
+| Block | Case | Status | Failed check | Model |
+|---|---|---|---|---|
+| B1 | B1-01 | PASS |  | mock-llm |
+| B1 | B1-02 | PASS |  | mock-llm |
+| B1 | B1-03 | PASS |  | mock-llm |
+| B2 | B2-01 | PASS |  | mock-llm |
+| B2 | B2-02 | PASS |  | mock-llm |
+| B2 | B2-03 | PASS |  | mock-llm |
+| B3 | B3-01 | PASS |  | mock-llm |
+| B3 | B3-02 | PASS |  | mock-llm |
+| B3 | B3-03 | PASS |  | mock-llm |
+| B3 | B3-04 | PASS |  | mock-llm |
+| B4 | B4-01 | PASS |  | mock-llm |
+| B4 | B4-02 | PASS |  | mock-llm |
+| B4 | B4-03 | PASS |  | mock-llm |
+| B4 | B4-04 | PASS |  | mock-llm |
+| B4 | B4-05 | PASS |  | mock-llm |
+| B4 | B4-06 | PASS |  | mock-llm |
+| B4 | B4-07 | PASS |  | mock-llm |
+| B5 | B5-01 | PASS |  | mock-llm |
+| B5 | B5-02 | PASS |  | mock-llm |
+| B5 | B5-03 | PASS |  | mock-llm |
+| B6 | B6-01 | PASS |  | mock-llm |
+| B6 | B6-02 | PASS |  | mock-llm |
+| B7 | B7-01 | PASS |  | mock-llm |
+| B7 | B7-02 | PASS |  | mock-llm |
+| B7 | B7-03 | PASS |  | mock-llm |
+| B8 | B8-01 | PASS |  | mock-llm |
+| B8 | B8-02 | PASS |  | mock-llm |
+| B8 | B8-03 | PASS |  | mock-llm |
+| NEGATIVE-CONTROL | NC-01 | FAIL | project_update_committed | mock-llm |
+| NEGATIVE-CONTROL | NC-02 | FAIL | explainer_fields_filled | mock-llm |
+| NEGATIVE-CONTROL | NC-03 | FAIL | environment_clean | mock-llm |
+| NEGATIVE-CONTROL | NC-PM-GOV | FAIL | formal_fields_unchanged_after_cruise | mock-llm |
+| NEGATIVE-CONTROL | NC-PM-B2 | FAIL | old_version_superseded | mock-llm |
+| PM02 | PM-B1-01 | PASS |  | mock-llm |
+| PM02 | PM-B1-02 | PASS |  | mock-llm |
+| PM02 | PM-B1-03 | PASS |  | mock-llm |
+| PM02 | PM-B1-04 | PASS |  | mock-llm |
+| PM02 | PM-B1-05 | PASS |  | mock-llm |
+| PM02 | PM-B5-01 | PASS |  | mock-llm |
+| PM02 | PM-GOV-01 | PASS |  | mock-llm |
+| PM02 | PM-GOV-02 | PASS |  | mock-llm |
+| PM02 | PM-GOV-03 | PASS |  | mock-llm |
+| PM03 | PM-B2-01 | PASS |  | mock-llm |
+| PM03 | PM-B2-02 | PASS |  | mock-llm |
+| PM03 | PM-B2-03 | PASS |  | mock-llm |
+| PM03 | PM-B2-04 | PASS |  | mock-llm |
+| PM03 | PM-B2-05 | PASS |  | mock-llm |
+| PM04 | PM-B3-01 | PASS |  | mock-llm |
+| PM04 | PM-B3-02 | PASS |  | mock-llm |
+| PM04 | PM-B3-03 | PASS |  | mock-llm |
+| PM04 | PM-B3-04 | PASS |  | mock-llm |
+| PM04 | PM-B3-05 | PASS |  | mock-llm |
+| PM04 | PM-B3-06 | PASS |  | mock-llm |
+| PM04 | PM-B4-01 | PASS |  | mock-llm |
+| PM04 | PM-B4-02 | PASS |  | mock-llm |
+| PM05 | PM-D1-01 | PASS |  | mock-llm |
+| PM05 | PM-D1-02 | PASS |  | mock-llm |
+| PM05 | PM-D1-03 | PASS |  | mock-llm |
+| PM05 | PM-D2-01 | PASS |  | mock-llm |
+| PM05 | PM-D2-02 | PASS |  | mock-llm |
+
+## No problems
+
+VERDICT: GREEN```
+
 ## 4. 截图
 最终 PR 运行 38832918040 的 screens-PM05：screen_PM_D1_01_1440.png、screen_PM_D1_01_390.png、screen_PM_D1_02_1440.png、screen_PM_D2_01_1440.png、screen_PM_D2_01_390.png。有界面 Chromium，真实 /app/pm/receipts；1440/390 无整页横滚检查通过。已人工查看去向页桌面与手机图，实际文件名、项目、栏目及两类批准标签可见。之前各次截图产物也保留。
 
