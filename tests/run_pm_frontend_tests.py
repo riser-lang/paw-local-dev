@@ -1,5 +1,6 @@
 """C-06 real installed pages and local view models. No fabricated AI records."""
 import json
+import time
 from pathlib import Path
 import httpx
 from jsonschema import Draft202012Validator
@@ -90,7 +91,13 @@ def run_c06(report,installer):
                             ids={'candidate:'+i['id'] for i in chosen};items=[i for i in view()['decisions'] if i['id'] in ids]
                             before=read_rows('SELECT COUNT(*) AS n FROM approved_change')[0]['n']
                             for item in items:page.get_by_role('article',name=item['question'],exact=True).get_by_role('checkbox').check()
-                            page.get_by_role('button',name='全部选「是」',exact=True).click()
+                            started=time.monotonic()
+                            with page.expect_response(lambda r:r.request.method=='GET' and r.url.endswith('/v1/pm/view/today')) as refreshed:
+                                with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/v1/pm/inbox/decide')) as decided:
+                                    page.get_by_role('button',name='全部选「是」',exact=True).click()
+                            result=decided.value.json();refreshed.value.finished()
+                            print('PM inbox batch evidence',json.dumps({'elapsed_seconds':round(time.monotonic()-started,3),'response':result},ensure_ascii=False))
+                            c.check('batch_api_committed_each_selected_item',all(r['ok'] for r in result['items']) and len(result['items'])==2,True)
                             for item in items:expect(page.get_by_role('article',name=item['question'],exact=True)).to_have_count(0)
                             c.check('batch_items_disappear',ids.intersection(i['id'] for i in view()['decisions']),set())
                             c.check('batch_created_approved_changes',read_rows('SELECT COUNT(*) AS n FROM approved_change')[0]['n']-before,2)
@@ -138,6 +145,9 @@ def run_c06(report,installer):
                             for route in ['/app/today','/app/projects','/app/review','/app/agy']:
                                 response=page.goto(BASE+route,wait_until='networkidle');page.locator('#root').wait_for()
                                 page.wait_for_function('document.querySelector("#root").innerText.length > 20')
+                                # Dismiss the real first-run setup dialog through its close button.
+                                overlay=page.locator('#paw-modal-overlay')
+                                if overlay.is_visible():page.locator('#paw-close-btn').click()
                                 c.check('legacy_page_usable_'+route,response.status==200 and len(page.locator('#root').inner_text())>20,True)
                             page.get_by_role('link',name='驾驶舱',exact=True).click();page.get_by_role('heading',name='今日驾驶舱',exact=True).wait_for()
                             c.check('sidebar_navigates_to_cockpit',page.url,home)
