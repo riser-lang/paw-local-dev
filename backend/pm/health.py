@@ -22,6 +22,7 @@ def identity(credentials):
 def record(key,success,summary,context=None):
     if key not in LABELS:raise ValueError('未知本地状态项')
     with storage.connect() as conn:
+        conn.execute('PRAGMA busy_timeout=100')
         conn.execute('''INSERT INTO pm_system_health VALUES(?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
           last_success_at=CASE WHEN excluded.state='ok' THEN excluded.last_success_at ELSE pm_system_health.last_success_at END,
           last_attempt_at=excluded.last_attempt_at,state=excluded.state,summary=excluded.summary,

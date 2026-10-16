@@ -100,3 +100,18 @@ def test_rotation_protects_last_readable_copy_when_newer_auto_file_is_corrupted(
     rows=[r for r in backups.listing() if r['automatic']]
     assert [r['filename'] for r in rows]==[good['backup_filename']]
     assert backups.readable(Path(good['backup_path']))
+
+
+def test_optional_health_observation_does_not_block_answer_on_a_busy_writer(database):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    started=Event()
+    def observed():
+        started.set();health.observe('model',True,'已成功响应','fake-profile')
+    with storage.connect() as writer,ThreadPoolExecutor(max_workers=1) as pool:
+        writer.execute('BEGIN IMMEDIATE')
+        future=pool.submit(observed)
+        try:
+            assert started.wait(timeout=1)
+            future.result(timeout=1)
+        finally:writer.rollback()
