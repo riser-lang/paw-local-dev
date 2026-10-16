@@ -1,6 +1,7 @@
 """Local HTTP boundary; the portable core does not import FastAPI."""
 import json
 import uuid
+from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -37,10 +38,10 @@ def adopt_advice(suggestion_id: str):
 
 
 @router.get('/view/today')
-def today_view():
+def today_view(health_run: str | None = None):
     from .cockpit import today_vm
     with storage.connect() as conn:
-        vm=today_vm(conn)
+        vm=today_vm(conn,health_run)
         vm['system_status']=local_health_items(conn)
         return vm
 
@@ -82,10 +83,10 @@ def backup_selfcheck():
 
 
 @router.get('/view/projects/{project_id}')
-def project_view(project_id: str):
+def project_view(project_id: str,health_run: str | None = None):
     from .cockpit import project_vm
     try:
-        with storage.connect() as conn:return project_vm(conn,project_id)
+        with storage.connect() as conn:return project_vm(conn,project_id,health_run)
     except ValueError as exc:raise HTTPException(404,str(exc)) from exc
 
 
@@ -93,6 +94,38 @@ class InboxChoice(BaseModel):
     ids: list[str] = Field(min_length=1,max_length=100)
     choice: str
     assignments: dict = Field(default_factory=dict)
+
+
+class HealthRequest(BaseModel):
+    project_id: str | None = None
+    reference_at: datetime | None = None
+    force: bool = False
+
+
+@router.post('/health-checks/run')
+def run_health_checks(body: HealthRequest):
+    from . import daily
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        ids=[body.project_id] if body.project_id else [r['id'] for r in conn.execute('''SELECT p.id FROM project p
+          LEFT JOIN (SELECT project_id,MAX(created_at) AS checked FROM pm_daily_check WHERE preview=0 GROUP BY project_id) c ON c.project_id=p.id
+          WHERE p.status NOT IN ('merged','archived','deleted') ORDER BY c.checked,p.id LIMIT 10''')]
+    try:return {'items':[daily.run(pid,get_active_provider(),body.reference_at,body.force) for pid in ids],'limit':10}
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+
+@router.get('/knowledge-gaps')
+def knowledge_gap_list(project_id: str | None = None):
+    from .knowledge_gaps import read
+    with storage.connect() as conn:return {'items':read(conn,project_id)}
+
+
+@router.post('/knowledge-gaps/{gap_id}/resolve')
+def resolve_knowledge_gap(gap_id: str):
+    with storage.connect() as conn:
+        if not conn.execute('SELECT 1 FROM pm_knowledge_gap WHERE id=?',(gap_id,)).fetchone():raise HTTPException(404,'知识缺口不存在')
+        conn.execute("UPDATE pm_knowledge_gap SET state='resolved' WHERE id=?",(gap_id,))
+    return {'id':gap_id,'state':'resolved'}
 
 
 @router.post('/inbox/decide')

@@ -1313,6 +1313,9 @@ def main():
     elif block == "PM08":
         from tests.run_pm_advice_tests import run_c08
         run_c08(report, inst_path)
+    elif block == "PM09":
+        from tests.run_pm_health_tests import run_c09
+        run_c09(report, inst_path)
     elif block == "NEGATIVE-CONTROL":
         base_path = Path(args.baseline_exe)
         if base_path.is_dir():

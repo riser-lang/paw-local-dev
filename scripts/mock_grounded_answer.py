@@ -70,7 +70,10 @@ def answer(prompt):
         return '当前请求未提供可引用的资料；请补充工作台中的相关内容。'
     block=prompt.split('--- PAW 上下文 V2（按权威顺序）---',1)[1].split('--- 会话上下文 ---',1)[0].split('--- 用户消息 ---',1)[0]
     records=re.findall(r'^- \[([^\]]+)\] ([^\n]+)\n(.*?)(?=\n- \[|\n## |\Z)',block,re.M|re.S)
-    query=terms(question)
+    topic=re.sub(r'[\u4e00-\u9fff]{2,16}项目','',question)
+    query=terms(topic)-terms('请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议')
+    if re.search(r'做到|进度|进展|阶段|推进方向|里程碑',topic):
+        query|=terms('进度里程碑阶段原型样机完成联调')
     choices=[]
     for ident,title,content in records:
         if ident not in refs:
@@ -81,6 +84,8 @@ def answer(prompt):
                 score=len(query & terms(title+' '+sentence))
                 choices.append((score,title,sentence,refs[ident]))
     choices.sort(key=lambda row:row[0],reverse=True)
+    if choices and choices[0][0]==0 and not re.search(r'建议|如何|怎么|优化|下一步',question):
+        return '依据不足：当前请求上下文没有能回答该问题的相关资料，请补充对应记录。\n<<<EVIDENCE_MAP\n'+json.dumps({'claims':[],'answer_status':'insufficient_evidence'})+'\nEVIDENCE_MAP>>>'
     selected=[]
     for row in choices:
         if row[2] not in {r[2] for r in selected}:
@@ -100,3 +105,18 @@ def answer(prompt):
         lines.append(advice)
         claims.append({'kind':'recommendation','text':advice,'derived_from':[basis[3]]})
     return '资料摘录（非正式资料保留待确认属性）：\n'+'\n'.join(lines)+'\n<<<EVIDENCE_MAP\n'+json.dumps({'claims':claims},ensure_ascii=False)+'\nEVIDENCE_MAP>>>'
+def section_consistency(value):
+    """Compare explicit opposite predicates, only in supplied section excerpts."""
+    sections=value['sections'];pairs=[]
+    opposites=[('已完成','尚未完成'),('已完成','未完成'),('可用','不可用'),('已批准','未批准'),('已通过','未通过')]
+    def excerpts(section):
+        labelled=re.findall(re.escape(section['title'])+r'\s*[:：]([^。\n]+)',section['text'])
+        return labelled or re.split('[。\n]',section['text'])
+    for i,left in enumerate(sections):
+        for right in sections[i+1:]:
+            for a in excerpts(left):
+                for b in excerpts(right):
+                    for positive,negative in opposites:
+                        if positive in a and negative in b and a.replace(positive,'').strip()==b.replace(negative,'').strip() or negative in a and positive in b and a.replace(negative,'').strip()==b.replace(positive,'').strip():
+                            pairs.append({'left_section':left['section_id'],'right_section':right['section_id'],'left_quote':a.strip(),'right_quote':b.strip()})
+    return {'findings':pairs[:8]}

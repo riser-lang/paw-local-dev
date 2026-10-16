@@ -7,6 +7,7 @@ import { MilestoneGantt } from "../components/Gantt";
 import { MilestoneTimeline } from "../components/VerticalTimeline";
 import { ChangeList, ConflictList, EntryList, EntryItem, MetricList, SectionCard, SourceList } from "../components/Sections";
 import { ReceiptList, AiSuggestionList } from "../components/AiSuggestions";
+import { ProjectHealth } from "../components/ProjectHealth";
 
 export const DEFAULT_EMPTY: Record<SectionKind, string> = {
   summary: "还没有现状说明，系统会从新资料中提取。",
@@ -101,6 +102,7 @@ export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLab
         {cb?.onGenerateSuggestions ? <button className="pm-btn" disabled={!modelConfigured} onClick={() => cb.onGenerateSuggestions?.(p.id)}>重新生成建议</button> : null}
         <AiSuggestionList items={vm.ai_suggestions ?? []} cb={cb}/>
       </section>
+      <ProjectHealth checks={vm.health_checks??[]} gaps={vm.knowledge_gaps??[]} cb={cb} projectId={p.id}/>
       <div className="pm-sections">
         {vm.sections.map((s) => {
           const span = s.span ?? (HALF.includes(s.kind) ? "half" : "full");
