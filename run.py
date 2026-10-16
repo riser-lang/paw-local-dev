@@ -55,9 +55,12 @@ if __name__ == '__main__':
         from backend.reader.subprocess_worker import main as _reader_worker_main
         sys.exit(_reader_worker_main(_worker_args))
 
+from backend.core.startup_trace import event as trace_startup
+trace_startup('runtime_import')
 import uvicorn
 from backend.core.config import settings
 from backend.tray.tray_app import PawSystemTray
+trace_startup('runtime_loaded')
 
 MUTEX_NAME = "PAW_Personal_Work_OS_SingleInstance_Mutex_v2"
 ERROR_ALREADY_EXISTS = 183
@@ -93,6 +96,7 @@ def acquire_single_instance_mutex():
         mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
         last_error = kernel32.GetLastError()
         if last_error == ERROR_ALREADY_EXISTS:
+            trace_startup('existing_instance')
             print("\n" + "=" * 65)
             print(" [PAW Desktop 提示] PAW Personal Work OS 已在后台运行中。")
             print(" 正在为您自动唤起现有工作台界面...")
@@ -120,10 +124,13 @@ def main():
         from backend.reader.subprocess_worker import main as worker_main
         sys.exit(worker_main(sys.argv[3:]))
 
+    trace_startup('mutex_acquire')
     mutex_handle = acquire_single_instance_mutex()
+    trace_startup('mutex_acquired')
 
     # Detect port availability and auto-shift if occupied
     actual_port = find_available_port(settings.host, settings.port)
+    trace_startup('port_selected',port=actual_port,requested_port=settings.port)
     if actual_port != settings.port:
         print(f"\n[PAW Desktop 提示] 端口 {settings.port} 已被占用，已自动顺延切换至可用端口: {actual_port}\n")
         settings.port = actual_port
@@ -153,15 +160,22 @@ def main():
         server.should_exit = True
 
     try:
+        trace_startup('backend_load')
         from backend.main import scanner
+        trace_startup('backend_loaded')
         tray = PawSystemTray(port=settings.port, on_exit=_on_tray_exit, scanner=scanner)
+        trace_startup('tray_start')
         tray.start()
+        trace_startup('tray_started')
     except Exception as exc:
+        trace_startup('tray_error',error_type=type(exc).__name__)
         tray = None
 
     try:
+        trace_startup('server_run')
         server.run()
     finally:
+        trace_startup('server_stopped')
         if tray:
             tray.stop()
         if mutex_handle and sys.platform == "win32":

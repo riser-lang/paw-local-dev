@@ -117,6 +117,25 @@ def start_paw(port: int = 8800) -> Optional[subprocess.Popen]:
         return None
 
     env = os.environ.copy()
+    import uuid
+    boot_trace=Path('reports')/('startup_'+uuid.uuid4().hex+'.jsonl')
+    boot_trace.parent.mkdir(parents=True,exist_ok=True)
+    env['PAW_BOOT_TRACE']=str(boot_trace.resolve())
+
+    def boot_evidence(outcome):
+        stages=[]
+        if boot_trace.is_file():
+            for line in boot_trace.read_text(encoding='utf-8',errors='replace').splitlines():
+                try:stages.append(json.loads(line))
+                except ValueError:pass
+        listeners=[]
+        if outcome!='ready':
+            import socket
+            for probe_port in range(port,port+30):
+                with socket.socket() as probe:
+                    probe.settimeout(.05)
+                    if probe.connect_ex(('127.0.0.1',probe_port))==0:listeners.append(probe_port)
+        logger.info('PAW startup evidence: %s',json.dumps({'outcome':outcome,'stages':stages,'listening_loopback_ports':listeners},ensure_ascii=True))
     env["PAW_NO_BROWSER"] = "1"
     env["PAW_PORT"] = str(port)
     env["PYTHONIOENCODING"] = "utf-8"
@@ -133,15 +152,18 @@ def start_paw(port: int = 8800) -> Optional[subprocess.Popen]:
     while time.time() - start_t < 40:
         if proc.poll() is not None:
             logger.error(f"PAW process exited prematurely with code {proc.returncode}")
+            boot_evidence('exited')
             return None
         try:
             r = httpx.get(f"http://127.0.0.1:{port}/app", timeout=2.0)
             if r.status_code in (200, 307):
                 logger.info(f"PAW Desktop app responding at port {port} ({time.time() - start_t:.1f}s)")
+                boot_evidence('ready')
                 return proc
         except Exception:
             pass
         time.sleep(1.0)
+    boot_evidence('timeout_40_seconds')
     stop_paw(proc)
     return None
 

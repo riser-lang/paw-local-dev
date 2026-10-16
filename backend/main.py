@@ -57,6 +57,8 @@ evolution_engine = EvolutionEngine()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from backend.core.startup_trace import event as trace_startup
+    trace_startup('lifespan_migration')
     # Startup: widen legacy CHECK constraints so project merges can be proposed
     # and committed (backs up workspace.db first; no-op once migrated).
     try:
@@ -67,6 +69,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[Migration] Warning: schema migration failed: {e}")
 
+    trace_startup('lifespan_directories')
     # Startup: sync monitored directories from settings (multi-directory support)
     try:
         _dirs = [Path(p) for p in get_work_dirs()]
@@ -82,14 +85,18 @@ async def lifespan(app: FastAPI):
     # Startup: Start local file watcher if enabled
     if settings.watch_enabled:
         try:
+            trace_startup('watcher_start')
             watcher.start()
+            trace_startup('watcher_started')
         except Exception as e:
             print(f"[Watcher] Warning: failed to start watcher: {e}")
             
     # Start Runtime Scheduler
     try:
+        trace_startup('scheduler_start')
         scheduler.set_schedule_mode(settings.cruise_mode, settings.cruise_interval)
         scheduler.start()
+        trace_startup('scheduler_started')
     except Exception as e:
         print(f"[Scheduler] Warning: failed to start scheduler: {e}")
 
@@ -105,6 +112,7 @@ async def lifespan(app: FastAPI):
 
     threading.Thread(target=_startup_convergence, name="StartupConvergence", daemon=True).start()
 
+    trace_startup('lifespan_ready')
     yield
 
     # Shutdown: Stop watcher and scheduler
