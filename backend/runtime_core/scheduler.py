@@ -199,14 +199,17 @@ class PawScheduler:
 
             # Built-in AI Project Explainer & 30-Second Summary Analysis
             analyzed_projects = []
+            projects_attempted = 0
             if analyze_projects:
                 try:
                     analyzed_projects = project_analyzer.analyze_projects(max_projects=max(0,item_budget-files_attempted-captures_processed), force=force_rescan)
                 except Exception as exc:
                     logger.warning(f"ProjectAnalyzer during cruise warning: {exc}")
+                finally:
+                    projects_attempted = getattr(project_analyzer,'last_attempted',len(analyzed_projects))
 
             from backend.pm.reread import run as run_targeted_reread
-            remaining=item_budget-files_attempted-captures_processed-len(analyzed_projects)
+            remaining=item_budget-files_attempted-captures_processed-projects_attempted
             reread=run_targeted_reread(remaining) if remaining>0 else {'processed':0,'items':[]}
 
             # Run Evolution Engine health check and background self-diagnosis

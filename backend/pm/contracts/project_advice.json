@@ -1,0 +1,144 @@
+{
+  "input": {
+    "type": "object",
+    "required": [
+      "project",
+      "sources",
+      "facts"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "sources": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 12,
+        "items": {
+          "type": "object",
+          "required": [
+            "source_version_id",
+            "title",
+            "body",
+            "source_url"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "source_version_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_url": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "facts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "section_id",
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "section_id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "items"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 9,
+        "items": {
+          "type": "object",
+          "required": [
+            "category",
+            "text",
+            "basis"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "type": "string",
+              "enum": [
+                "gaps",
+                "risks",
+                "next"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500
+            },
+            "basis": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "required": [
+                  "source_version_id",
+                  "quote"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "source_version_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "quote": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 600
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

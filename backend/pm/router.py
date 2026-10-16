@@ -10,6 +10,32 @@ from .budget import bounded_context
 router = APIRouter()
 
 
+@router.get('/suggestions')
+def suggestion_list(project_id: str | None = None):
+    from .suggestions import read
+    with storage.connect() as conn:return {'items':read(conn,project_id)}
+
+
+class GenerateAdvice(BaseModel):
+    force: bool = True
+
+
+@router.post('/projects/{project_id}/suggestions/generate')
+def generate_advice(project_id: str,body: GenerateAdvice):
+    from .suggestions import generate
+    from backend.provider.adapter import get_active_provider
+    try:return generate(project_id,get_active_provider(),body.force)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+
+@router.post('/suggestions/{suggestion_id}/adopt')
+def adopt_advice(suggestion_id: str):
+    from .suggestions import adopt
+    from backend.governance.service import governance
+    try:return adopt(suggestion_id,governance.create_candidate)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+
 @router.get('/view/today')
 def today_view():
     from .cockpit import today_vm

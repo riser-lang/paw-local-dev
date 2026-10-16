@@ -96,6 +96,9 @@ export type TimeUnit = "week" | "month";
 
 /* ------------------------------------------------------------------ AI 建议 */
 export interface AiSuggestion {
+  state?: 'open' | 'pending_review' | 'adopted' | 'declined';
+  category_label?: string;
+  generated_at?: ISODateTime | null;
   id: string;
   text: string;
   /** 依据（至少 1 条）；没有依据的建议不应下发 */
@@ -218,6 +221,7 @@ export interface SectionConfig {
 }
 
 export interface ProjectViewModel {
+  ai_suggestions?: AiSuggestion[];
   schema: "paw.pm.project/1";
   generated_at: ISODateTime;
   today: ISODate;
@@ -242,6 +246,8 @@ export interface ProjectViewModel {
 
 /* ------------------------------------------------------------------ 回调（由接入方实现） */
 export interface PmCallbacks {
+  onAdoptSuggestion?: (id: string) => void | Promise<void>;
+  onGenerateSuggestions?: (projectId: string) => void | Promise<void>;
   /** 打开来源 / 跳转工作台内部地址 */
   onNavigate?: (href: string) => void;
   /** 批量或单条决定：choice = "yes" | "no" | "later" */

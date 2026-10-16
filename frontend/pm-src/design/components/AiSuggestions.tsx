@@ -10,7 +10,7 @@ export function AiSuggestionList({ items, cb }: { items: AiSuggestion[]; cb?: Pm
     <ul className="pm-ai-list">
       {items.map((s) => (
         <li key={s.id} className="pm-ai">
-          <span className="pm-ai-label">AI 建议{s.project_name ? ` · ${s.project_name}` : ""}</span>
+          <span className="pm-ai-label">AI 建议{s.category_label ? ` · ${s.category_label}` : ""}{s.project_name ? ` · ${s.project_name}` : ""}</span>
           <p>{s.text}</p>
           <div className="pm-ai-basis">
             <span className="pm-meta">依据</span>
@@ -20,6 +20,8 @@ export function AiSuggestionList({ items, cb }: { items: AiSuggestion[]; cb?: Pm
               </DetailPopover>
             ))}
           </div>
+          {s.generated_at ? <span className="pm-meta">{shortDateTime(s.generated_at)}</span> : null}
+          {cb?.onAdoptSuggestion && (!s.state || s.state === 'open') ? <button className="pm-btn" onClick={() => cb.onAdoptSuggestion?.(s.id)}>转为待办候选</button> : s.state ? <span className="pm-meta">{{pending_review:'等待用户核准',adopted:'已采纳为正式待办',declined:'用户已拒绝',open:''}[s.state]}</span> : null}
         </li>
       ))}
     </ul>

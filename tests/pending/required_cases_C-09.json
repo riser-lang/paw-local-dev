@@ -1,0 +1,8 @@
+{
+  "_note": "Reviewer-owned. Split by task when activating: PM-E1/E2 in C-08, PM-E3/E4 in C-09, PM-F in C-10 (git mv/copy without changing case text). Reviewer may refine before activation.",
+  "cases": {
+    "PM-E3-01": "每日健康检查发现过时引用、栏目间矛盾、长期未裁定的文档族、长期无进展，结果显示在项目页和驾驶舱",
+    "PM-E4-01": "AI 助手回答'依据不足'的问题被记入知识缺口清单，清单在工作台可以看到"
+  },
+  "negative_controls": {}
+}

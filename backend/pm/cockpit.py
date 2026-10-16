@@ -73,6 +73,15 @@ def receipt_vm(row):
             'state':row['state'] if row['state']!='rejected' else 'pending'}
 
 
+def suggestion_vm(conn,pid=None):
+    from .suggestions import read
+    return [{'id':r['id'],'text':r['text'],'project_id':r['project_id'],'project_name':r['project_name'],
+        'state':r['state'],'category_label':{'gaps':'缺口','risks':'风险','next':'下一步'}[r['category']],
+        'generated_at':stamp(r['last_generated_at']),
+        'basis':[{k:stamp(v) if k=='updated_at' else v for k,v in b.items() if k!='source_version_id'} for b in r['basis']]}
+        for r in read(conn,pid)]
+
+
 def project_vm(conn,pid):
     data=dossier.read(conn,pid);p=data['project'];entries={};changes={};all_sources={}
     section_titles={s['id']:s['title'] for s in data['sections']}
@@ -153,7 +162,8 @@ def project_vm(conn,pid):
             'updated_at':stamp(p.get('updated_at'))},
         'sections':[{'key':s['id'],'title':s['title'],'kind':configured[s['id']],'empty_text':None} for s in data['sections']],
         'entries':entries,'metrics':metrics,'milestones':milestones,'changes':sorted(changes.values(),key=lambda c:c['at'],reverse=True),
-        'conflicts':conflicts,'sources':list(all_sources.values()),'receipts':[receipt_vm(r) for r in receipts.read(conn,pid)]}
+        'conflicts':conflicts,'sources':list(all_sources.values()),'receipts':[receipt_vm(r) for r in receipts.read(conn,pid)],
+        'ai_suggestions':suggestion_vm(conn,pid)}
 
 
 def today_vm(conn):
@@ -168,7 +178,7 @@ def today_vm(conn):
     status=[{'key':k,'label':label,'state':'unknown','summary':'尚无成功记录','last_success_at':None}
         for k,label in [('patrol','巡航'),('scan','扫描'),('backup','备份'),('model','模型连通'),('disk','磁盘')]]
     return {'schema':'paw.pm.today/1','generated_at':stamp(storage.now()),'today':day(storage.now()),
-        'system_status':status,'decisions':pending,'portfolio':{'projects':projects},'ai_suggestions':[],
+        'system_status':status,'decisions':pending,'portfolio':{'projects':projects},'ai_suggestions':suggestion_vm(conn),
         'receipts':[receipt_vm(r) for r in receipts.read(conn)]}
 
 

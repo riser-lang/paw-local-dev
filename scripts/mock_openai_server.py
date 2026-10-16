@@ -197,6 +197,7 @@ def generate_structured_analysis(all_text: str) -> Dict[str, Any]:
 
 
 _request_count=0
+_advice_fault_sentences=0
 _count_lock=threading.Lock()
 
 
@@ -216,8 +217,8 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path=='/stats':
-            with _count_lock:count=_request_count
-            self._send_json(200,{'chat_requests':count})
+            with _count_lock:count=_request_count;faults=_advice_fault_sentences
+            self._send_json(200,{'chat_requests':count,'advice_fault_sentences':faults})
         elif self.path in ("/health", "/"):
             self._send_json(200, {"status": "ok", "service": "mock_openai_server"})
         elif self.path.startswith("/v1/models"):
@@ -233,9 +234,9 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Not Found"})
 
     def do_POST(self):
-        global _request_count
+        global _request_count,_advice_fault_sentences
         if self.path=='/stats/reset':
-            with _count_lock:_request_count=0
+            with _count_lock:_request_count=0;_advice_fault_sentences=0
             self._send_json(200,{'chat_requests':0})
             return
         if not self.path.startswith("/v1/chat/completions"):
@@ -267,6 +268,16 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
         if user_prompt.strip().lower() == "ping":
             reply_content = "pong"
 
+        elif '语义任务契约：project_advice' in system_prompt:
+            if req_data.get('model')=='fault-schema:project_advice':
+                reply_content=json.dumps({'invalid_marker':'FAULT_SCHEMA_OUTPUT'})
+            else:
+                try:
+                    from scripts.mock_grounded_answer import project_advice
+                except ModuleNotFoundError:
+                    from mock_grounded_answer import project_advice
+                reply_content=json.dumps(project_advice(json.loads(user_prompt)),ensure_ascii=False)
+
         elif '语义任务契约：section_update' in system_prompt:
             try:
                 from scripts.mock_grounded_answer import section_updates
@@ -296,6 +307,13 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
             except ModuleNotFoundError:
                 from mock_grounded_answer import answer
             reply_content=answer(all_text)
+            if req_data.get('model')=='fault-advice-entities' and '<<<EVIDENCE_MAP' in reply_content:
+                try:
+                    from scripts.mock_grounded_answer import inject_unbacked_advice
+                except ModuleNotFoundError:
+                    from mock_grounded_answer import inject_unbacked_advice
+                reply_content=inject_unbacked_advice(reply_content)
+                with _count_lock:_advice_fault_sentences+=2
 
         resp = {
             "id": f"chatcmpl-mock-{int(time.time()*1000)}",

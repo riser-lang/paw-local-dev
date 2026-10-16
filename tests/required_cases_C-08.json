@@ -1,0 +1,11 @@
+{
+  "_note": "Reviewer-owned. Split by task when activating: PM-E1/E2 in C-08, PM-E3/E4 in C-09, PM-F in C-10 (git mv/copy without changing case text). Reviewer may refine before activation.",
+  "cases": {
+    "PM-E1-01": "填 Key 后跑一轮巡航：每个项目生成缺口、风险、下一步建议，每条都附依据（来源链接）；'建议'与'事实'在数据中分开存放",
+    "PM-E1-02": "项目档案页上，'AI 建议'与事实结论在视觉上可以区分（建议带'AI 建议'标注），渲染后的文字可以验证",
+    "PM-E1-03": "模型输出不符合契约 schema 时被丢弃并记录，页面不显示该输出，正式数据不变",
+    "PM-E2-01": "向 AI 助手提问'某项目后续最好如何优化？'：给出回答而不是拒答；事实句带引用；建议放在'建议（基于以上依据的推断）'段落中",
+    "PM-E2-02": "建议段落中出现了未被引用的新数字或新人名时，该句被删除或修正，其余回答照常返回"
+  },
+  "negative_controls": {}
+}
