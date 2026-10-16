@@ -37,6 +37,19 @@ def stable_page(page,url):
 
 
 def capture(c,page,width,suffix=''):
+    measure='''()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,layout:document.querySelector('[data-pm-layout]')?.dataset.pmLayout,
+      overflow:[...document.querySelectorAll('body *')].filter(n=>n.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(n=>({tag:n.tagName,cls:n.getAttribute('class'),right:n.getBoundingClientRect().right}))})'''
+    before=page.evaluate(measure)
+    if page.locator('[data-pm-layout]').count():
+        # The breakpoint event replaces the desktop chart with a different React tree.
+        # Synchronize with that tree, never poll for the overflow assertion to become true.
+        page.wait_for_function("document.querySelector('[data-pm-layout]').dataset.pmLayout === (innerWidth<=640?'phone':'desktop')",timeout=5000)
+        page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+    after=page.evaluate(measure)
+    print('Responsive layout evidence',json.dumps({'case':c.id,'before':before,'after':after},ensure_ascii=False))
+    if after['scroll']>after['viewport']:
+        debug=Path('screenshots')/('debug_'+c.id.replace('-','_')+'_'+str(width)+suffix+'.png')
+        page.screenshot(path=str(debug),full_page=True);c.screenshot(debug,page.url)
     c.check('no_page_overflow_'+str(width)+suffix,page.evaluate('document.documentElement.scrollWidth <= innerWidth'),True)
     out=Path('screenshots')/('screen_'+c.id.replace('-','_')+'_'+str(width)+suffix+'.png')
     page.screenshot(path=str(out),full_page=True);c.screenshot(out,page.url)

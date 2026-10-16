@@ -27,7 +27,7 @@ export function TodayCockpit({ vm, cb, initialUnit = "week", title = "今日驾�
   const projects = vm.portfolio.projects;
   const pending = vm.decisions.length;
   return (
-    <div className="pm-root pm-page pm-today-page">
+    <div className="pm-root pm-page pm-today-page" data-pm-layout={phone ? 'phone' : 'desktop'}>
       <header className="pm-page-head">
         <div className="pm-page-title">
           <span className="pm-eyebrow">{todayHeading(vm.today)}</span>

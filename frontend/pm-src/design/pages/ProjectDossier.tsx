@@ -69,7 +69,7 @@ export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLab
   };
 
   return (
-    <div className="pm-root pm-page pm-project-page">
+    <div className="pm-root pm-page pm-project-page" data-pm-layout={phone ? 'phone' : 'desktop'}>
       <header className="pm-page-head is-project">
         <div className="pm-page-title">
           {backHref && cb?.onNavigate ? (
