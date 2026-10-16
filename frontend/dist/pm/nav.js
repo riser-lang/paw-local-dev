@@ -12,7 +12,7 @@
    let projectLink=group.querySelector('[data-current-pm-dossier]');
    const current=location.pathname.match(/^\/app\/projects\/([^/?#]+)$/);
    if(current&&!projectLink){projectLink=link('本项目档案','/app/pm/projects/'+current[1]);projectLink.dataset.currentPmDossier='1';group.append(projectLink);}
-   if(projectLink){projectLink.hidden=!current;if(current)projectLink.href='/app/pm/projects/'+current[1];}
+   if(projectLink){projectLink.style.display=current?'block':'none';if(current)projectLink.href='/app/pm/projects/'+current[1];}
   }
   document.querySelectorAll('a[href^="/app/projects/"]').forEach(a=>{
    const match=a.getAttribute('href').match(/^\/app\/projects\/([^/?#]+)$/);
