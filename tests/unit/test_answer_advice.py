@@ -41,3 +41,29 @@ def test_fact_only_and_malformed_maps_are_left_to_existing_gate():
     assert advice.clean(text,{'advice_allowed':False})[0]==text
     malformed='原型已完成。\n<<<EVIDENCE_MAP {invalid EVIDENCE_MAP>>>'
     assert advice.clean(malformed,contract())[0]==malformed
+
+
+def test_insufficient_evidence_answer_keeps_its_prose():
+    """An honest "依据不足" answer carries no claims by design.
+
+    Rebuilding the visible text from claims alone would erase the model's own
+    statement of insufficiency, and the turn would then fail closed on an
+    empty answer instead of reporting that the context does not answer it.
+    """
+    text=('依据不足：当前请求上下文没有能回答该问题的相关资料。\n<<<EVIDENCE_MAP\n'
+          +json.dumps({'claims':[],'answer_status':'insufficient_evidence'},ensure_ascii=False)
+          +'\nEVIDENCE_MAP>>>')
+    result,stats=advice.clean(text,contract())
+    visible,mapping=advice.extract(result)
+    assert visible.startswith('依据不足')
+    assert mapping['answer_status']=='insufficient_evidence'
+    assert stats['removed']==0
+    assert advice.display(result,contract()).startswith('依据不足')
+
+
+def test_empty_claim_list_without_prose_still_yields_a_map():
+    """A claimless answer with no prose must not silently become "verified"."""
+    text='<<<EVIDENCE_MAP\n'+json.dumps({'claims':[]})+'\nEVIDENCE_MAP>>>'
+    result,_=advice.clean(text,contract())
+    _,mapping=advice.extract(result)
+    assert mapping=={'claims':[]}
