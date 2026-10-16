@@ -71,3 +71,6 @@
 
 ## 执行者变更（2026-10-16）
 - Codex 额度用完，C-10 由 **Gemini** 接手，分支 gemini/C-10，任务见 TASK-C-10.md。test.yml 已增加 gemini/** 触发。
+
+- 2026-10-17：C-10 返工改由 **DeepSeek v4.1 flash** 执行，沿用分支 gemini/C-10 和 PR #10（已有 CI 触发）。规则与 TASK-C-10、REVIEW-C-10 相同。
+
