@@ -2,7 +2,7 @@ name: PAW Verification Pipeline (TASK-G-03)
 
 on:
   push:
-    branches: [ main, 'codex/**', 'claude/**' ]
+    branches: [ main, 'codex/**', 'claude/**', 'gemini/**' ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
