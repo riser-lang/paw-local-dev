@@ -76,9 +76,12 @@ Name: "startupicon"; Description: "开机自动启动 PAW (&S)"; GroupDescriptio
 
 [Files]
 Source: "..\dist\PAW_Personal_Work_OS\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The full user guide ships with the program, byte-for-byte as docs/使用说明.txt.
+Source: "..\docs\使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\使用说明"; Filename: "{app}\使用说明.txt"
 Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon

@@ -82,21 +82,11 @@ start "" "PAW_Personal_Work_OS.exe"
     with open(DIST_DIR / "启动PAW.bat", "w", encoding="gbk") as f:
         f.write(bat_content)
 
-    readme_content = """PAW Personal Work OS v2.5.0 (Windows 参赛版本)
-=================================================================
-
-面向普通员工的个人 AI 工作系统（严肃资产化平台）。
-
-【快速开始】
-1. 双击运行 "启动PAW.bat" 或 "PAW_Personal_Work_OS.exe"；
-2. 浏览器将自动打开 http://127.0.0.1:8800/app；
-3. 按照新手引导选择您的工作文件夹（或使用默认 sources 目录）；
-4. 正常在此文件夹中保存 Word/Excel/PPT/PDF 文件；
-5. PAW 会在后台自动完成高保真提取、证据绑定、冲突检测与知识提炼；
-6. 在“审核中心”一键核准后沉淀为持久业务资产。
-"""
-    with open(DIST_DIR / "使用说明.txt", "w", encoding="utf-8") as f:
-        f.write(readme_content)
+    # The user guide is not generated here: installer/paw_setup.iss installs
+    # docs/使用说明.txt verbatim, so there is exactly one copy to keep correct.
+    stale_readme = DIST_DIR / "使用说明.txt"
+    if stale_readme.exists():
+        stale_readme.unlink()
 
     dist_frontend = DIST_DIR / "frontend"
     if not dist_frontend.exists():
