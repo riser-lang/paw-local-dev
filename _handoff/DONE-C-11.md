@@ -1,43 +1,70 @@
-# DONE-C-11（返工更新）
+# DONE-C-11：第二次返工
 
-## 1. 子项对照
+- PR：[#12](https://github.com/riser-lang/paw-local-dev/pull/12)，分支 `codex/C-11`
+- 最终分支头：`9827606098fa3b1cd1eace0c395658e9610bf8c7`（同步 `origin/main` 后）
+- push 完整验证：GREEN，[run 39022857027](https://github.com/riser-lang/paw-local-dev/actions/runs/39022857027)
+- PR 完整验证：GREEN，[run 39022859325](https://github.com/riser-lang/paw-local-dev/actions/runs/39022859325)；PR 工作流在 GitHub merge ref `33f74d449afef417f06014cea8a2b90855ca461d` 上执行
+- push / PR 单元工作流：均 GREEN（[push run 39022857069](https://github.com/riser-lang/paw-local-dev/actions/runs/39022857069)，[PR run 39022859323](https://github.com/riser-lang/paw-local-dev/actions/runs/39022859323)）
 
-| 子项 | 状态 | 证据 / 说明 |
+## 1. 任务核对
+
+| 要求 | 结果 | 证据 |
 |---|---|---|
-| 激活并保留审核人修订后的 C-11 required cases | 完成 | 审核人提交 `d7a7e79` 修订了 PM-S1-01 页面描述，并撤销 NC-PM-S1；测试判定文件未由执行者修改。 |
-| `_recall()` 安全 FTS 查询、有界 LIKE 兜底和脱敏诊断 | 完成 | 保留前次实现；内存 SQLite/FTS5 单元覆盖 9 种点号、特殊字符、英文和中文长度情形。 |
-| PM-S1-01 核验【资料】页与资料接口 | 完成 | 通过受支持的 `/v1/web/workspace/sources/register` 产品 API 登记虚构文件元数据；检查 `/v1/web/workspace/sources` 返回项，并在 `/app/files` 输入“搜索文件名或分类”后检查 `.source-grid` 渲染文字。 |
-| PM-S1-02、PM-S1-03 及已有检查 | 完成 | 其检查逻辑保持不变；最终 PM09 区块 GREEN。 |
-| 删除已撤销的 NC-PM-S1 执行代码 | 完成 | 从 `tests/run_pm_search_tests.py` 移除负对照执行函数，从 `tests/run_pm_tests.py` 移除调用。 |
+| 扫描导入的资料进入【资料】页登记 | 完成 | 扫描阶段通过 `repository.register_source(...)` 写入资料库；PM-S1-01 在资料 API 和渲染页面上检查完整文件名 |
+| 标题含扩展名、路径/来源/哈希/类型信息齐全 | 完成 | `title=p.name`、canonical path、`local_scan`、文件哈希；按扩展名映射 source_kind |
+| 同路径重新扫描更新原记录 | 完成 | repository 的稳定 ID 由来源与路径决定；单测检查重复登记仅一行且 content_hash 更新 |
+| PM-S1-01 走正常“监控文件夹 → 扫描”路径 | 完成 | 未调用 `/sources/register`；检查 `scanned_file_listed_in_sources` 先于浏览器步骤，页面检查使用 `.source-grid.inner_text()` |
+| NC-PM-S1 在 v2.3.9 同步骤、同名检查失败 | 完成 | 两次完整流程报告均记录 `NC-PM-S1` 在 `scanned_file_listed_in_sources` 失败；负对照报告 artifact 也确认同名失败项 |
+| PM-S1-02、PM-S1-03 | 完成 | 未更改原用例与既有检查；两份 summary 均为 PASS |
+| 本地 lint 与单元测试 | 完成 | `python tests/paw_lint.py` → `lint clean`；`python -m pytest tests/unit -q` → `162 passed` |
 
 ## 2. 改动清单
 
-- `tests/run_pm_search_tests.py`：PM-S1-01 改为资料源登记接口、资料列表接口和资料页搜索的双重检查；保留 PM-S1-02/03 检查。
-- `tests/run_pm_tests.py`：删除已撤销的 NC-PM-S1 调用。
-- `backend/runtime/core/paw_retrieval_core.py`、`tests/unit/test_retrieval_search_special_chars.py`：沿用前次提交的修复和单元测试，本次未修改。
-- `tests/required_cases_C-11.json`：由审核人在 `d7a7e79` 修订，本次未修改。
+- `backend/runtime_core/scanner.py`：正常扫描成功与旧检查点快速路径都会登记扫描来源，便于旧版本已经扫过的文件在重新扫描后进入资料库。
+- `backend/workspace_api/repository.py`：仅为 `source_origin` 增加 `local_scan` 允许值；资料表字段没有数据库取值约束，无需迁移。
+- `tests/unit/test_scanner_source_registry.py`：验证完整文件名、扩展名、路径、local_scan、类型及哈希；相同路径二次登记仅留一条并更新哈希。
+- `tests/run_pm_search_tests.py`：PM-S1-01 改为生成文件、配置监控目录、启动扫描、等待扫描并检查资料 API 与渲染文本；恢复 `run_c11_negative`，使用传入的 v2.3.9-baseline 安装包跑相同步骤。
+- `tests/run_pm_tests.py`：PM 负对照流水线调用 NC-PM-S1。
+- `tests/required_cases_C-11.json`：使用审核人第二次修订的必测用例；内容未改动。
+- `_handoff/REVIEW-C-11.md` 与 `_handoff/STATUS.md`：随 `origin/main` 同步提交带入审核人已提交的更新，用于消除 PR 冲突；未手工撰写状态或审核内容。
 
-PR：[#12](https://github.com/riser-lang/paw-local-dev/pull/12)。最终测试头部提交 `f340fcc5625af21a28789673351f80f1a65e778e`。
+## 3. 测试结果
 
-## 3. 测试
-
-本地（`D:\PAW\paw-dev-codex`，最终代码提交 f340fcc）：
-
-- `python tests/paw_lint.py` → `lint clean`
-- `python -m pytest tests/unit -q` → `161 passed in 14.43s`
-- `git diff --check`、`python -m py_compile tests/run_pm_search_tests.py` → 成功
-
-云端完整流水线（同一 head SHA `f340fcc5625af21a28789673351f80f1a65e778e`）：
-
-- push：[运行 39019532245](https://github.com/riser-lang/paw-local-dev/actions/runs/39019532245) → GREEN；83 PASS / 0 FAIL / 0 NOT RUN。
-- PR：[运行 39019536499](https://github.com/riser-lang/paw-local-dev/actions/runs/39019536499) → GREEN；83 PASS / 0 FAIL / 0 NOT RUN。PR summary.md 内报告 SHA 为 `c7ce41ab667b25847989abfe95b285f3ba4909c0`；该 PR 运行 head SHA 与 push 一致，为 f340fcc。
-- 两侧 unit 工作流均成功：push `39019532249`、PR `39019536481`；PR 安装包构建 `39019536502` 成功。
-- 中间提交 `5e1dc2b` 的 PR 完整流程曾因扫描夹具未写入资料源注册表而失败；最终提交改由产品源登记 API 准备资料记录，最终 push/PR 均 GREEN。该中间运行不作为最终验收结果。
-
-### push 运行 summary.md 全文（原样）
+### 本地
 
 ```text
-# Pipeline verdict for f340fcc5625af21a28789673351f80f1a65e778e
+python tests/paw_lint.py
+lint clean
+
+python -m pytest tests/unit -q
+162 passed
+```
+
+### 云端 push
+
+- Commit：`9827606098fa3b1cd1eace0c395658e9610bf8c7`
+- Full verification：[run 39022857027](https://github.com/riser-lang/paw-local-dev/actions/runs/39022857027) — GREEN
+- Unit：[run 39022857069](https://github.com/riser-lang/paw-local-dev/actions/runs/39022857069) — GREEN
+- required cases：83 PASS，0 FAIL，0 NOT RUN。
+
+### 云端 PR
+
+- PR：[#12](https://github.com/riser-lang/paw-local-dev/pull/12)
+- PR source head：`9827606098fa3b1cd1eace0c395658e9610bf8c7`
+- Full verification：[run 39022859325](https://github.com/riser-lang/paw-local-dev/actions/runs/39022859325) — GREEN
+- Unit：[run 39022859323](https://github.com/riser-lang/paw-local-dev/actions/runs/39022859323) — GREEN
+- required cases：83 PASS，0 FAIL，0 NOT RUN。
+
+### 新增/保留用例核对
+
+- PM-S1-01、PM-S1-02、PM-S1-03 均 PASS。
+- NC-PM-S1 作为负对照在 `scanned_file_listed_in_sources` 失败，符合预期；负对照整体由 verdict gate 判为通过。
+- PM-S1-01 页面结果取自渲染后的 `.source-grid` 文本；资料 API 也返回扫描文件。
+
+### Summary 原文（push run 39022857027）
+
+```summary-push
+# Pipeline verdict for 9827606098fa3b1cd1eace0c395658e9610bf8c7
 
 Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
@@ -75,6 +102,7 @@ Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 | NEGATIVE-CONTROL | NC-02 | FAIL | explainer_fields_filled | mock-llm |
 | NEGATIVE-CONTROL | NC-03 | FAIL | environment_clean | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-GOV | FAIL | formal_fields_unchanged_after_cruise | mock-llm |
+| NEGATIVE-CONTROL | NC-PM-S1 | FAIL | scanned_file_listed_in_sources | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-C1 | FAIL | cockpit_rendered | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-B2 | FAIL | old_version_superseded | mock-llm |
 | PM02 | PM-B1-01 | PASS |  | mock-llm |
@@ -135,13 +163,12 @@ Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
 ## No problems
 
-VERDICT: GREEN
-```
+VERDICT: GREEN```
 
-### PR 运行 summary.md 全文（原样）
+### Summary 原文（PR run 39022859325）
 
-```text
-# Pipeline verdict for c7ce41ab667b25847989abfe95b285f3ba4909c0
+```summary-pr
+# Pipeline verdict for 33f74d449afef417f06014cea8a2b90855ca461d
 
 Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
@@ -179,6 +206,7 @@ Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 | NEGATIVE-CONTROL | NC-02 | FAIL | explainer_fields_filled | mock-llm |
 | NEGATIVE-CONTROL | NC-03 | FAIL | environment_clean | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-GOV | FAIL | formal_fields_unchanged_after_cruise | mock-llm |
+| NEGATIVE-CONTROL | NC-PM-S1 | FAIL | scanned_file_listed_in_sources | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-C1 | FAIL | cockpit_rendered | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-B2 | FAIL | old_version_superseded | mock-llm |
 | PM02 | PM-B1-01 | PASS |  | mock-llm |
@@ -239,24 +267,23 @@ Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
 ## No problems
 
-VERDICT: GREEN
-```
+VERDICT: GREEN```
 
 ## 4. 截图
 
-最终运行的 `screens-PM09` artifact 含 PM-E3-01 与 PM-E4-01 的既有截图：`screen_PM_E3_01_1440_cockpit.png`、`screen_PM_E3_01_1440_project.png`、`screen_PM_E3_01_390_cockpit.png`、`screen_PM_E3_01_390_project.png`、`screen_PM_E4_01_1440_cockpit.png`、`screen_PM_E4_01_1440_project.png`、`screen_PM_E4_01_390_cockpit.png`、`screen_PM_E4_01_390_project.png`。PM-S1-01 未单独生成截图；其页面与接口检查通过。
+- push 运行 artifact：`screens-PM09`，来自 [run 39022857027](https://github.com/riser-lang/paw-local-dev/actions/runs/39022857027)。
+- PR 运行 artifact：`screens-PM09`，来自 [run 39022859325](https://github.com/riser-lang/paw-local-dev/actions/runs/39022859325)。
+- PM-S1-01 的通过依据是已渲染页面文字检查与资料 API；没有以截图替代断言。
 
 ## 5. 风险与未确认事项
 
-- 测试通过调用正式支持的 source registry 注册 API 构造页面使用的资料条目；该检查覆盖源注册接口、列表接口和资料页前端筛选，不覆盖监控目录扫描自动创建 source registry 记录的行为。
-- PM-S1-02 与 PM-S1-03 代码未改，最终 PM09 区块通过。
-- 未修改判定规则、考试目录、其他 required cases 或 `_handoff/STATUS.md`；未合并 PR。
+- 【资料】页现有列表最多加载最近 200 份资料，搜索仍只过滤当前加载列表；本任务未调整该既有限制。
+- 未合并 PR；等待审核人复核并决定是否合并。
 
 ## 6. 大白话摘要
 
-审核人修订了 PM-S1-01，测试现在检查【资料】页面和资料接口。
-NC-PM-S1 已按审核意见撤销，PM-S1-02/03 保持原有检查。
-本地 lint clean，161 项单元测试通过。
-push 和 PR 完整流水线均为 GREEN，报告附有两份完整 summary。
-
-
+扫描完成后，文件会进入【资料】页，标题保留扩展名。
+同一路径重新扫描会更新现有资料记录。
+完整文件名搜索与特殊字符检索用例均通过。
+2.3.9 负对照按预期在扫描登记检查失败。
+push 和 PR 的完整流水线及单元测试均为 GREEN。
