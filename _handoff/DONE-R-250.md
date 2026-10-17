@@ -371,6 +371,17 @@ Required cases: 80 | PASS 80 | FAIL 0 | NOT RUN 0
 VERDICT: GREEN
 ```
 
+### 5.5 本报告提交后的运行（只有文档改动）
+
+本报告本身也推到了同一分支，因此 PR 头部会再前进一步。该提交只新增本文件，两次运行同样 GREEN：
+
+| 事件 | 运行 | 提交 | 结论 |
+|---|---|---|---|
+| push | [39010817666](https://github.com/riser-lang/paw-local-dev/actions/runs/39010817666) | `4f1ee3f` | **GREEN**（80/80 PASS，0 FAIL，0 NOT RUN） |
+| pull_request | [39010820037](https://github.com/riser-lang/paw-local-dev/actions/runs/39010820037) | `4f1ee3f` | **GREEN**（80/80 PASS，0 FAIL，0 NOT RUN） |
+
+（本表是在这两次运行结束后补写的，所以写入本表的这次提交又会成为新的头部；其代码内容与 `4f1ee3f` 完全相同，只有这份 Markdown 不同。）
+
 ---
 
 ## 6. 我在 C-11 分支上做过的部分工作（已按要求停下）
