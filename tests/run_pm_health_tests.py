@@ -60,3 +60,5 @@ def run_c09(report,installer):
                             page.set_viewport_size({'width':1440,'height':1000});capture(c,page,1440,label)
                             page.set_viewport_size({'width':390,'height':900});capture(c,page,390,label)
                     finally:browser.close()
+    from tests.run_pm_search_tests import run_c11
+    run_c11(report, installer)
