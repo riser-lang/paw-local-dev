@@ -50,10 +50,10 @@ if res.returncode != 0:
 # 3. Post-build setup
 print("\n[INFO] 配置分发目录辅助启动脚本...")
 bat_content = """@echo off
-title PAW Personal Work OS v2.4.0 (本地独立版)
+title PAW Personal Work OS v2.5.0 (本地独立版)
 cd /d "%~dp0"
 echo =================================================================
-echo       正在启动 PAW Personal Work OS v2.4.0 (参赛版本)
+echo       正在启动 PAW Personal Work OS v2.5.0 (参赛版本)
 echo       请稍候，系统将自动在默认浏览器中打开个人工作台...
 echo =================================================================
 start "" "PAW_Personal_Work_OS.exe"
@@ -61,7 +61,7 @@ start "" "PAW_Personal_Work_OS.exe"
 with open(DIST_DIR / "启动PAW.bat", "w", encoding="gbk") as f:
     f.write(bat_content)
 
-readme_content = """PAW Personal Work OS v2.4.0 (Windows 参赛版本)
+readme_content = """PAW Personal Work OS v2.5.0 (Windows 参赛版本)
 =================================================================
 
 面向普通员工的个人 AI 工作系统（严肃资产化平台）。
@@ -127,7 +127,7 @@ if inno_compiler.is_file() and ISS_FILE.is_file():
             sign_binary(installer_exe)
             size_mb = installer_exe.stat().st_size / (1024 * 1024)
             print(f"\n[SUCCESS] 安装程序构建成功并已签名:\n -> {installer_exe} ({size_mb:.2f} MB)")
-            desktop_target = Path(os.environ["USERPROFILE"]) / "Desktop" / "PAW_Personal_Work_OS_Setup_v2.4.0.exe"
+            desktop_target = Path(os.environ["USERPROFILE"]) / "Desktop" / "PAW_Personal_Work_OS_Setup_v2.5.0.exe"
             shutil.copy2(installer_exe, desktop_target)
             print(f"[COPY] 已复制最终安装包至桌面:\n -> {desktop_target}")
         else:

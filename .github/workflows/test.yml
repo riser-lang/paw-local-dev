@@ -50,18 +50,18 @@ jobs:
       - name: Generate Installer SHA256 Text File
         shell: pwsh
         run: |
-          $exe = "dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe"
+          $exe = "dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe"
           $hash = (Get-FileHash -Path $exe -Algorithm SHA256).Hash
-          "$hash  PAW_Personal_Work_OS_Setup_v2.4.0.exe" | Out-File -FilePath "dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe.sha256" -Encoding ascii
-          Get-Content "dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe.sha256"
+          "$hash  PAW_Personal_Work_OS_Setup_v2.5.0.exe" | Out-File -FilePath "dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe.sha256" -Encoding ascii
+          Get-Content "dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe.sha256"
 
       - name: Upload Built Installer Artifact
         uses: actions/upload-artifact@v4
         with:
           name: built-installer-exe
           path: |
-            dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe
-            dist/PAW_Personal_Work_OS_Setup_v2.4.0.exe.sha256
+            dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe
+            dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe.sha256
           if-no-files-found: error
           retention-days: 5
 
@@ -227,7 +227,7 @@ jobs:
           mkdir -p baseline_installer
           gh release download v2.3.7-baseline --repo ${{ github.repository }} --dir baseline_installer
 
-      - name: Download Baseline v2.4.0 Governance Negative Control
+      - name: Download Baseline v2.5.0 Governance Negative Control
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path baseline_pm -Force | Out-Null
@@ -264,7 +264,7 @@ jobs:
           $baseline = (Get-ChildItem -Path baseline_installer\*.exe)[0].FullName
           $current = (Get-ChildItem -Path installer_artifact\*.exe)[0].FullName
           Write-Host "Baseline 2.3.7 Installer: $baseline"
-          Write-Host "Current 2.4.0 Installer: $current"
+          Write-Host "Current 2.5.0 Installer: $current"
           mkdir -p reports
           python tests/run_e2e_tests.py --block NEGATIVE-CONTROL --installer-exe $current --baseline-exe $baseline --commit-sha ${{ github.sha }} --model-mode mock-llm --output-report reports/report_negative_control.json
 

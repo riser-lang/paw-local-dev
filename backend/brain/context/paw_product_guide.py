@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-GUIDE_VERSION = "2.4.0"
+GUIDE_VERSION = "2.5.0"
 
 GUIDE: tuple[dict[str, Any], ...] = (
     {"id": "overview", "title": "PAW 是什么",

@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller build spec for PAW Personal Work OS v2.4.0 (Windows 本地化版)
+# PyInstaller build spec for PAW Personal Work OS v2.5.0 (Windows 本地化版)
 
 import sys
 from pathlib import Path
