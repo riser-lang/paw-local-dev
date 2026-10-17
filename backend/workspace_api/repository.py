@@ -1172,7 +1172,7 @@ def register_source(
     size: int | None = None,
     mtime: str | None = None,
 ) -> dict[str, Any]:
-    """Register or update an office_sync source in the wiki_page registry.
+    """Register or update a synchronized or locally scanned source.
 
     This is a metadata-only operation.  It never reads file contents,
     creates Knowledge, or modifies existing Knowledge links.
@@ -1181,10 +1181,10 @@ def register_source(
     source_origin + canonical_location, so repeated calls for the same
     source are idempotent.
     """
-    if source_origin != "office_sync":
+    if source_origin not in {"office_sync", "local_scan"}:
         raise SourceRegistrationError(
             "SOURCE_ORIGIN_NOT_ALLOWED",
-            f"source_origin must be 'office_sync', got '{source_origin}'",
+            f"source_origin must be 'office_sync' or 'local_scan', got '{source_origin}'",
         )
 
     ext = file_ext.lower() if file_ext else ""

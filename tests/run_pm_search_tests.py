@@ -1,5 +1,4 @@
 """C-11 installed-app acceptance for filename and special-character search."""
-import hashlib
 import json
 import os
 import time
@@ -52,45 +51,63 @@ def prepare_search_document(case_id):
     return result
 
 
+def scan_file_for_sources(case_id):
+    """Run the regular monitored-folder scan and safely collect source-list results."""
+    directory = Path(os.environ["TEMP"]) / ("PAW_PM_C11_" + case_id)
+    items = []
+    scan_error = None
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        document = Document()
+        document.core_properties.title = FILENAME
+        document.add_paragraph(BODY)
+        path = directory / FILENAME
+        document.save(path)
+        configure_mock_settings(directory)
+        api("POST", "/v1/local/scanner/start", {
+            "directory": str(directory), "force_restart": True,
+        })
+        poll_candidates_from_scanner()
+    except Exception as exc:
+        # Keep the required source-registry check first even if setup or scan
+        # polling fails; the check itself will then fail with the missing row.
+        scan_error = type(exc).__name__
+
+    try:
+        sources = api("GET", "/v1/web/workspace/sources?limit=500")
+        items = sources.get("items", [])
+    except Exception as exc:
+        scan_error = scan_error or type(exc).__name__
+
+    print("C-11 scan-to-source evidence", json.dumps({
+        "scan_error": scan_error,
+        "count": len(items),
+        "matching_titles": [item.get("title") for item in items
+                            if item.get("title") == FILENAME],
+    }, ensure_ascii=False))
+    return items
+
+
 def run_c11(report, installer):
     from playwright.sync_api import sync_playwright
 
     with report.case("PM-S1-01", "资料页完整文件名搜索") as c:
         c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
         with running():
-            directory = Path(os.environ["TEMP"]) / ("PAW_PM_C11_" + c.id)
-            directory.mkdir(parents=True, exist_ok=True)
-            document = Document()
-            document.core_properties.title = FILENAME
-            document.add_paragraph(BODY)
-            path = directory / FILENAME
-            document.save(path)
-            api("POST", "/v1/web/workspace/sources/register", {
-                "title": FILENAME,
-                "canonical_location": str(path),
-                "source_origin": "office_sync",
-                "content_hash": hashlib.sha256(path.read_bytes()).hexdigest(),
-                "file_ext": path.suffix,
-                "source_kind": "document",
-                "canonical_state": "canonical",
-            })
-            sources = api("GET", "/v1/web/workspace/sources?limit=500")
-            items = sources.get("items", [])
+            items = scan_file_for_sources(c.id)
             found = any(item.get("title") == FILENAME for item in items)
-            print("C-11 source registry search evidence", json.dumps({
-                "count": len(items),
-                "matching_titles": [item.get("title") for item in items
-                                    if item.get("title") == FILENAME],
-            }, ensure_ascii=False))
+            # This named check must precede browser work, whose setup can raise.
+            c.check("scanned_file_listed_in_sources", found, True)
             c.check("full_filename_search_found", found, True)
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=False)
                 try:
                     page = browser.new_page(viewport={"width": 1440, "height": 900})
                     page.goto(BASE + "/app/files", wait_until="networkidle")
+                    initial_rendered = page.locator(".source-grid").inner_text()
+                    c.check("full_filename_listed_rendered", FILENAME in initial_rendered, True)
                     search = page.get_by_placeholder("搜索文件名或分类", exact=True)
                     search.fill(FILENAME)
-                    page.get_by_text(FILENAME, exact=True).first.wait_for(timeout=10000)
                     rendered = page.locator(".source-grid").inner_text()
                     c.check("full_filename_search_rendered", FILENAME in rendered, True)
                 finally:
@@ -129,3 +146,12 @@ def run_c11(report, installer):
             sources = answer.get("sources") or answer.get("source_refs") or answer.get("evidence") or []
             c.check("assistant_source_contains_full_filename",
                     FILENAME in json.dumps(sources, ensure_ascii=False), True)
+
+
+def run_c11_negative(report, installer):
+    with report.case("NC-PM-S1", "2.3.9 扫描文件未进入资料库的负对照") as c:
+        c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
+        with running():
+            items = scan_file_for_sources(c.id)
+            found = any(item.get("title") == FILENAME for item in items)
+            c.check("scanned_file_listed_in_sources", found, True)
