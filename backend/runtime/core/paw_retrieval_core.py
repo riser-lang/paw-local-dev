@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -305,34 +306,77 @@ def refresh_knowledge(db_path: str | Path, knowledge_id: str) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------
-# Lexical recall (FTS trigram + bounded LIKE fallback for short terms)
+# Lexical recall (FTS trigram + bounded LIKE fallback)
 # ------------------------------------------------------------------
 _CJK = re.compile(r"[\u4e00-\u9fff]")
+logger = logging.getLogger(__name__)
+# A token is a run of letters, digits or CJK characters.  Everything else
+# (dots, quotes, brackets, stars, colons, hyphens, whitespace) only separates
+# tokens and must never reach FTS5 as query syntax.
+_TOKEN = re.compile(r"[0-9A-Za-z_\u4e00-\u9fff]+")
+_LIKE_ESCAPE = "\\"
+
+
+def _fts_query(query: str) -> str:
+    """Turn arbitrary user input into a safe FTS5 phrase query.
+
+    Each token becomes a quoted phrase, and a double quote inside a token is
+    escaped by doubling it, so FTS5 reads the whole thing as literal text
+    instead of operators.  Returns an empty string when nothing is left.
+    """
+    tokens = _TOKEN.findall(query or "")
+    phrases = []
+    for token in tokens:
+        literal = token.replace('"', '""')
+        phrases.append(f'"{literal}"')
+    return " AND ".join(phrases)
+
+
+def _like_pattern(query: str) -> str:
+    """A LIKE pattern for the literal query, with wildcards escaped."""
+    escaped = (query or "").replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+    escaped = escaped.replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
+    return f"%{escaped}%"
+
+
+def _like_fallback(db: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
+    """Bounded literal substring search over title and body.
+
+    Used whenever FTS yields nothing usable - for every query length, not only
+    short CJK terms: a full filename such as "项目周报_v2.docx" is longer than
+    three characters and used to miss both paths.
+    """
+    pattern = _like_pattern(query)
+    return db.execute(
+        "SELECT document_id, -1.0 AS score FROM retrieval_document"
+        " WHERE search_text LIKE ? ESCAPE ? OR title LIKE ? ESCAPE ?"
+        " ORDER BY document_id LIMIT ?",
+        (pattern, _LIKE_ESCAPE, pattern, _LIKE_ESCAPE, limit * 3),
+    ).fetchall()
 
 
 def _recall(db: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
-    """FTS trigram recall; bounded LIKE fallback for 2-char CJK terms."""
-    q = query.strip()
+    """FTS trigram recall with a bounded literal LIKE fallback."""
+    q = (query or "").strip()
+    if not q:
+        return []
     rows: list[sqlite3.Row] = []
-    fts_err = None
-    try:
-        rows = db.execute(
-            "SELECT f.document_id, bm25(retrieval_document_fts) AS score"
-            " FROM retrieval_document_fts f"
-            " WHERE retrieval_document_fts MATCH ?"
-            " ORDER BY score LIMIT ?",
-            (q, limit * 3),
-        ).fetchall()
-    except sqlite3.OperationalError as e:
-        fts_err = str(e)
-    cjk_len = len(_CJK.findall(q))
-    if not rows and cjk_len and cjk_len < 3:
-        # Deterministic bounded LIKE fallback for short CJK terms only.
-        rows = db.execute(
-            "SELECT document_id, -1.0 AS score FROM retrieval_document"
-            " WHERE search_text LIKE ? OR title LIKE ? LIMIT ?",
-            (f"%{q}%", f"%{q}%", limit * 3),
-        ).fetchall()
+    fts_query = _fts_query(q)
+    if fts_query:
+        try:
+            rows = db.execute(
+                "SELECT f.document_id, bm25(retrieval_document_fts) AS score"
+                " FROM retrieval_document_fts f"
+                " WHERE retrieval_document_fts MATCH ?"
+                " ORDER BY score LIMIT ?",
+                (fts_query, limit * 3),
+            ).fetchall()
+        except sqlite3.OperationalError as e:
+            # FTS5 rejected the derived query.  Leave a trace without echoing
+            # the user's text or the raw input into the log.
+            logger.warning("retrieval_fts_query_rejected: %s", type(e).__name__)
+    if not rows:
+        rows = _like_fallback(db, q, limit)
     return rows
 
 

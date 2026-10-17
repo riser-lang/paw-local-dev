@@ -339,7 +339,7 @@ def build_knowledge_detail_projection(knowledge_id: str) -> dict[str, Any] | Non
 def knowledge_search(query: str, *, limit: int = 20,
                      include_provisional: bool = False) -> dict[str, Any]:
     """User-facing knowledge search backed by v1.3B full-corpus
-    current-safe retrieval (FTS trigram + short-CJK fallback + authority
+    current-safe retrieval (FTS trigram + bounded LIKE fallback + authority
     revalidation + lineage gate)."""
     r = _retrieval_contract.knowledge_search(
         query, limit=limit, include_provisional=include_provisional,

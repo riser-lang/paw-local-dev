@@ -1,7 +1,7 @@
 """PAW v1.3 TD-002 — the single user-facing Knowledge Retrieval Contract.
 
 Every user-callable *knowledge* search resolves recall through
-``paw_retrieval_core.search_current``: FTS trigram + short-CJK fallback +
+``paw_retrieval_core.search_current``: FTS trigram + bounded LIKE fallback +
 authority revalidation + lineage gate.  This module is the ONE adapter between
 that contract and the workspace DTO shape, so no surface can drift back to an
 ad-hoc substring scan.
