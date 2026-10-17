@@ -128,22 +128,30 @@ def _entity(question, records):
     return best
 
 
-def _named_scope(question):
+def _named_scope(question, records):
     """A name the question uses to scope the question ("…项目的…").
 
     ``None`` means the question does not scope itself to a named thing, so any
-    record may answer it.  A name here that matches no record title means the
-    answer must come from a record about that name, not from some other
-    project's document that happens to contain the same noun.
+    record may answer it.  A name that no record title carries means the answer
+    must come from a record about that name, not from another project's
+    document that happens to contain the same noun.
+
+    The name must read as a noun a project could be called, so a sentence
+    fragment such as "周报中规划的" is rejected: no record is called that, and
+    treating it as a scope would filter out every record.
     """
-    hit = re.match(r'^\s*([\u4e00-\u9fffA-Za-z0-9]{2,20}?)(?:项目|计划|方案|产品)?'
-                   r'(?:的|里|中|上|下)', question)
+    hit = re.match(r'^\s*([\u4e00-\u9fffA-Za-z0-9]{2,20}?)(?:项目|计划|方案|产品)?的',
+                   question)
     if not hit:
         return None
     name = hit.group(1)
-    # A demonstrative or counted phrase ("这三个", "所有", "几个") refers to a set,
+    # A demonstrative or counted phrase ("这三个", "所有") refers to a set,
     # not to one named thing, so it must not scope the question.
     if re.match(r'^[这那该本各某全几多每]|^[一两三四五六七八九十百千万\d]', name):
+        return None
+    # Only a name that a record could plausibly be titled with is a scope; a
+    # fragment ending in a verb or function word is prose, not a subject.
+    if re.search(r'(?:中|里|上|下|规划|推进|计划|进行|需要|应该|如何|什么)$', name):
         return None
     return name
 
@@ -257,7 +265,7 @@ def answer(prompt):
     # noun: "冲刺项目的采购预算" is not answered by a different project's budget.
     # A status question is exempt: the record's own status line is the answer,
     # whatever the record is called.
-    scope=_named_scope(question)
+    scope=_named_scope(question,records)
     scoped_out=bool(scope) and not subject and not asks_progress and not asks_next
     choices=[]
     for ident,title,content in records:
