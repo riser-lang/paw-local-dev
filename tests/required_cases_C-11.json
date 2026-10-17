@@ -1,9 +1,11 @@
 {
-  "_note": "Reviewer-owned (C-11 search fix). Revised by the reviewer 2026-10-17 (REVIEW-C-11): PM-S1-01 now names the 资料 page explicitly; the 2.3.9 negative control was withdrawn because 2.3.9 already lists files by name there.",
+  "_note": "Reviewer-owned (C-11). Revised by the reviewer 2026-10-17 (REVIEW-C-11, second revision): files imported by scanning were never listed on the 资料 page; PM-S1-01 must use the normal scan flow, and the 2.3.9 negative control is restored.",
   "cases": {
-    "PM-S1-01": "导入一份文件名含 3 个以上汉字和扩展名的文档（例如 项目周报_v2.docx）后，在【资料】页的搜索框输入完整文件名（含点号和扩展名），列表中出现该文件；资料接口返回的列表中也包含该文件",
+    "PM-S1-01": "把一份文件名含 3 个以上汉字和扩展名的文档放进监控文件夹并完成扫描（必须走正常扫描流程，不得直接调用资料登记接口）后，【资料】页列表中出现该文件且显示完整文件名；在搜索框输入完整文件名（含点号和扩展名）仍能看到该文件；资料接口返回的列表中也包含该文件",
     "PM-S1-02": "搜索词包含双引号、括号、星号、冒号、连字符等特殊字符时，接口不报错、页面不出现错误提示，正常返回结果或明确显示'没有找到'",
     "PM-S1-03": "AI 助手被问到'某某文件（带扩展名的完整文件名）里写了什么'时，回答引用了该文件（接口返回的来源中包含该文件名）"
   },
-  "negative_controls": {}
+  "negative_controls": {
+    "NC-PM-S1": {"installer": "v2.3.9-baseline", "runs": "PM-S1-01", "expect_failed_check": "scanned_file_listed_in_sources"}
+  }
 }
