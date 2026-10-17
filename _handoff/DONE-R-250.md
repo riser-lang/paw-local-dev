@@ -457,6 +457,29 @@ VERDICT: GREEN
 
 （本表写入后，头部会再前进一次；那次提交同样只改本文件。按 TASK-R-250 第 6 项，C-11 合并通知到达后还要 `git merge origin/main` 并整条重跑一次，届时以那一轮的结果为准。）
 
+### 5.6 再上一个提交 `775fec8` 的运行
+
+上表那次提交把头部推到 `775fec8`（同样只改本文件），结果：
+
+| 事件 | 运行 | 尝试 | 结论 |
+|---|---|---|---|
+| push | [39024305174](https://github.com/riser-lang/paw-local-dev/actions/runs/39024305174) | attempt 1 | **GREEN**（80/80 PASS） |
+| pull_request | [39024308485](https://github.com/riser-lang/paw-local-dev/actions/runs/39024308485) | attempt 1 | **RED**：80 个用例全 PASS，但门禁报 `screenshot … reused 2 times` |
+| pull_request | 同上 | attempt 2（整条 workflow 重跑） | **GREEN**（80/80 PASS） |
+
+attempt 1 的截图重复，定位结果是 **PM-E1-02 与 PM-E1-03 各两张截图逐字节相同**（`screen_PM_E1_02_1440.png` 与 `screen_PM_E1_03_1440.png`、以及对应的 390 版）：
+
+```
+DUP fe6408906e6b  PM-E1-02 screen_PM_E1_02_1440.png  /app/pm/projects/e74c4d89-…
+                  PM-E1-03 screen_PM_E1_03_1440.png  /app/pm/projects/e2154a0c-…
+DUP 0a3cfaef6173  PM-E1-02 screen_PM_E1_02_390.png
+                  PM-E1-03 screen_PM_E1_03_390.png
+```
+
+这两条是 **C-08 的既有用例，本轮未改动**；同一提交的 push 运行里它们是 PASS。判断属于"截图时机"这一类偶发问题（页面尚未渲染出各自内容就截图，两张图都一样），已在审核人的不稳定记录同类项中。**没有改动 PM-E1-02/PM-E1-03 的检查或截图逻辑**，只是整条重跑；重跑即通过。
+
+> 说明：以上两次 RED 都发生在"只改本报告"的提交上，代码提交 `350d16a` 的 push 与 PR 均为首次 GREEN。按第 6 项，最终以 C-11 合并后那一轮全量运行为准。
+
 ---
 ## 6. 我在 C-11 分支上做过的部分工作（已按要求停下）
 
