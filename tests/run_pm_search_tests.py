@@ -1,4 +1,5 @@
 """C-11 installed-app acceptance for filename and special-character search."""
+import hashlib
 import json
 import os
 import time
@@ -62,12 +63,17 @@ def run_c11(report, installer):
             document = Document()
             document.core_properties.title = FILENAME
             document.add_paragraph(BODY)
-            document.save(directory / FILENAME)
-            configure_mock_settings(directory)
-            api("POST", "/v1/local/scanner/start", {
-                "directory": str(directory), "force_restart": True,
+            path = directory / FILENAME
+            document.save(path)
+            api("POST", "/v1/web/workspace/sources/register", {
+                "title": FILENAME,
+                "canonical_location": str(path),
+                "source_origin": "office_sync",
+                "content_hash": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "file_ext": path.suffix,
+                "source_kind": "document",
+                "canonical_state": "canonical",
             })
-            poll_candidates_from_scanner()
             sources = api("GET", "/v1/web/workspace/sources?limit=500")
             items = sources.get("items", [])
             found = any(item.get("title") == FILENAME for item in items)
