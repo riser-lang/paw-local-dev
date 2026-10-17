@@ -292,6 +292,9 @@
       "properties": {
         "health_checks": {"type":"array","items":{"$ref":"#/$defs/HealthCheck"}},
         "knowledge_gaps": {"type":"array","items":{"$ref":"#/$defs/KnowledgeGap"}},
+        "evolution_metrics": {"type":"array","items":{"$ref":"#/$defs/Metric"}},
+        "weekly_reports": {"type":"array","items":{"$ref":"#/$defs/WeeklyReport"}},
+        "cross_project_report": {"$ref":"#/$defs/CrossProjectReport"},
         "schema": { "const": "paw.pm.today/1" },
         "generated_at": { "$ref": "#/$defs/ISODateTime" },
         "today": { "$ref": "#/$defs/ISODate" },
@@ -446,12 +449,125 @@
       "additionalProperties": false
     },
 
+    "WeeklyReport": {
+      "type": "object",
+      "required": ["id", "project_id", "project_name", "week", "period", "generated_at", "status", "progress", "changes", "risks", "suggestions"],
+      "properties": {
+        "id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "project_name": { "type": "string" },
+        "week": { "type": "string" },
+        "period": { "type": "string" },
+        "generated_at": { "$ref": "#/$defs/ISODateTime" },
+        "status": { "$ref": "#/$defs/ProjectStatus" },
+        "one_liner": { "$ref": "#/$defs/NullableString" },
+        "progress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "sources"],
+            "properties": {
+              "text": { "type": "string" },
+              "sources": { "type": "array", "items": { "$ref": "#/$defs/SourceRef" } },
+              "kind": { "type": "string" }
+            }
+          }
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "at"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "at": { "$ref": "#/$defs/ISODateTime" },
+              "before": { "$ref": "#/$defs/NullableString" },
+              "after": { "$ref": "#/$defs/NullableString" },
+              "source": { "oneOf": [{ "$ref": "#/$defs/SourceRef" }, { "type": "null" }] }
+            }
+          }
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title", "detail"],
+            "properties": {
+              "title": { "type": "string" },
+              "detail": { "type": "string" },
+              "sources": { "type": "array", "items": { "$ref": "#/$defs/SourceRef" } },
+              "level": { "type": "string" }
+            }
+          }
+        },
+        "suggestions": {
+          "type": "object",
+          "required": ["needs_key", "items"],
+          "properties": {
+            "needs_key": { "type": "boolean" },
+            "message": { "$ref": "#/$defs/NullableString" },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "text", "basis"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "text": { "type": "string" },
+                  "category": { "type": "string" },
+                  "basis": { "type": "array", "items": { "$ref": "#/$defs/SourceRef" } },
+                  "state": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "CrossProjectReport": {
+      "type": "object",
+      "required": ["id", "week", "period", "generated_at", "project_count", "projects", "matrix", "highlights"],
+      "properties": {
+        "id": { "type": "string" },
+        "week": { "type": "string" },
+        "period": { "type": "string" },
+        "generated_at": { "$ref": "#/$defs/ISODateTime" },
+        "project_count": { "type": "integer" },
+        "projects": { "type": "array", "items": { "$ref": "#/$defs/WeeklyReport" } },
+        "matrix": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["project_id", "project_name", "status"],
+            "properties": {
+              "project_id": { "type": "string" },
+              "project_name": { "type": "string" },
+              "status": { "$ref": "#/$defs/ProjectStatus" },
+              "one_liner": { "type": "string" },
+              "progress_count": { "type": "integer" },
+              "change_count": { "type": "integer" },
+              "risk_count": { "type": "integer" },
+              "decision_count": { "type": "integer" },
+              "gap_count": { "type": "integer" },
+              "suggestion_count": { "type": "integer" }
+            }
+          }
+        },
+        "highlights": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+
     "ProjectViewModel": {
       "type": "object",
       "required": ["schema", "generated_at", "today", "project", "sections", "entries", "metrics", "milestones", "changes", "conflicts", "sources", "receipts"],
       "properties": {
         "health_checks": {"type":"array","items":{"$ref":"#/$defs/HealthCheck"}},
         "knowledge_gaps": {"type":"array","items":{"$ref":"#/$defs/KnowledgeGap"}},
+        "weekly_report": {"$ref":"#/$defs/WeeklyReport"},
         "ai_suggestions": { "type": "array", "items": { "$ref": "#/$defs/AiSuggestion" } },
         "schema": { "const": "paw.pm.project/1" },
         "generated_at": { "$ref": "#/$defs/ISODateTime" },

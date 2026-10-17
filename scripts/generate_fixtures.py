@@ -99,3 +99,6 @@ startxref
 pdf_path.write_bytes(pdf_bytes)
 
 print("Generated all 4 test fixtures in tests/fixtures/")
+from scripts.build_exam_corpus import build_corpus
+build_corpus()
+print("Generated exam corpus in tests/fixtures/exam/")

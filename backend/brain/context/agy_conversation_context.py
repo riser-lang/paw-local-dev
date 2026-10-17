@@ -110,7 +110,7 @@ class ConversationContext:
 
     def wants_historical(self, message: str) -> bool:
         return bool(re.search(r"(历史|以前|之前|曾经|上一版|旧版|更早|superseded|"
-                              r"previous|earlier|history)", _s(message), re.IGNORECASE))
+                              r"previous|earlier|history|最早|v1|原方案|原定)", _s(message), re.IGNORECASE))
 
     def update(self, *, user_message: str, intent: str = "",
                project_id: Optional[str] = None,

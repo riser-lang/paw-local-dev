@@ -58,6 +58,15 @@ def clean(raw,contract,kind_of=None):
     lines=[c['text'] for c in facts]
     if advice:lines+=['建议（基于以上依据的推断）']+[c['text'] for c in advice]
     elif reasons:lines+=['建议部分未能逐句核对依据，已保留可核对的事实。']
+    if not lines:
+        # Nothing survived the projection.  An answer that reports insufficient
+        # evidence carries no claims by design, so the prose must be preserved
+        # rather than rebuilt from claims; dropping it would erase the model's
+        # "依据不足" statement and fail the turn closed on an empty answer.
+        body=visible.strip()
+        if body:
+            return (body+'\n'+OPEN+'\n'+json.dumps(mapping,ensure_ascii=False)+'\n'+CLOSE,
+                    {'removed':sum(reasons.values()),'reasons':dict(reasons)})
     output='\n'.join(lines)+'\n'+OPEN+'\n'+json.dumps({**mapping,'claims':facts+advice},ensure_ascii=False)+'\n'+CLOSE
     return output,{'removed':sum(reasons.values()),'reasons':dict(reasons)}
 

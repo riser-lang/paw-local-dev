@@ -137,10 +137,77 @@ export interface RoutingReceipt {
   note?: string | null;
 }
 
+export interface WeeklyProgressItem {
+  text: string;
+  sources: SourceRef[];
+  kind?: string;
+}
+
+export interface WeeklyRiskItem {
+  title: string;
+  detail: string;
+  sources?: SourceRef[];
+  level?: string;
+}
+
+export interface WeeklySuggestions {
+  needs_key: boolean;
+  message?: string | null;
+  items: {
+    id: string;
+    text: string;
+    category?: string;
+    basis: SourceRef[];
+    state?: string;
+  }[];
+}
+
+export interface WeeklyReport {
+  id: string;
+  project_id: string;
+  project_name: string;
+  week: string;
+  period: string;
+  generated_at: ISODateTime;
+  status: ProjectStatus;
+  one_liner?: string | null;
+  progress: WeeklyProgressItem[];
+  changes: ChangeEntry[];
+  risks: WeeklyRiskItem[];
+  suggestions: WeeklySuggestions;
+}
+
+export interface CrossProjectMatrixRow {
+  project_id: string;
+  project_name: string;
+  status: ProjectStatus;
+  one_liner: string;
+  progress_count: number;
+  change_count: number;
+  risk_count: number;
+  decision_count: number;
+  gap_count: number;
+  suggestion_count: number;
+}
+
+export interface CrossProjectReport {
+  id: string;
+  week: string;
+  period: string;
+  generated_at: ISODateTime;
+  project_count: number;
+  projects: WeeklyReport[];
+  matrix: CrossProjectMatrixRow[];
+  highlights: Record<string, any>;
+}
+
 /* ------------------------------------------------------------------ 首页 */
 export interface TodayViewModel {
   health_checks?:HealthCheck[];
   knowledge_gaps?:KnowledgeGap[];
+  evolution_metrics?:Metric[];
+  weekly_reports?:WeeklyReport[];
+  cross_project_report?:CrossProjectReport;
   schema: "paw.pm.today/1";
   generated_at: ISODateTime;
   /** 今天（北京时间日历日）—— 甘特图“今天”标线以此为准 */
@@ -236,6 +303,7 @@ export interface SectionConfig {
 export interface ProjectViewModel {
   health_checks?:HealthCheck[];
   knowledge_gaps?:KnowledgeGap[];
+  weekly_report?:WeeklyReport;
   ai_suggestions?: AiSuggestion[];
   schema: "paw.pm.project/1";
   generated_at: ISODateTime;

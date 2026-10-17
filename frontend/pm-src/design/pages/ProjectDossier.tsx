@@ -8,6 +8,7 @@ import { MilestoneTimeline } from "../components/VerticalTimeline";
 import { ChangeList, ConflictList, EntryList, EntryItem, MetricList, SectionCard, SourceList } from "../components/Sections";
 import { ReceiptList, AiSuggestionList } from "../components/AiSuggestions";
 import { ProjectHealth } from "../components/ProjectHealth";
+import { ProjectWeeklyReportView } from "../components/EvolutionAndReports";
 
 export const DEFAULT_EMPTY: Record<SectionKind, string> = {
   summary: "还没有现状说明，系统会从新资料中提取。",
@@ -103,6 +104,7 @@ export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLab
         <AiSuggestionList items={vm.ai_suggestions ?? []} cb={cb}/>
       </section>
       <ProjectHealth checks={vm.health_checks??[]} gaps={vm.knowledge_gaps??[]} cb={cb} projectId={p.id}/>
+      {vm.weekly_report ? <ProjectWeeklyReportView report={vm.weekly_report} /> : null}
       <div className="pm-sections">
         {vm.sections.map((s) => {
           const span = s.span ?? (HALF.includes(s.kind) ? "half" : "full");

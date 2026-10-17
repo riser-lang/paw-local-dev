@@ -49,6 +49,65 @@ _PARTIAL_STRIP_RE = re.compile(
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
+def _char_terms(text: str) -> set[str]:
+    """Generic CJK bigrams + latin words; no domain vocabulary."""
+    out: set[str] = set()
+    for run in re.findall(r"[\u4e00-\u9fff]+", str(text or "")):
+        out.add(run)
+        for i in range(len(run) - 1):
+            out.add(run[i:i + 2])
+    for word in re.findall(r"[A-Za-z0-9_]{2,}", str(text or "")):
+        out.add(word.lower())
+    return out
+
+
+def _rank_items_by_message(items: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
+    """Score context items by generic term overlap with the question.
+
+    Returns copies carrying a transient ``_rank`` used only for prompt
+    compaction.  Deterministic; no external model and no domain word list.
+    """
+    want = _char_terms(message)
+    # Question scaffolding carries no retrieval signal.
+    want -= _char_terms("请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议")
+    ranked = []
+    for item in items:
+        if want:
+            score = len(want & _char_terms("%s %s" % (item.get("title", ""), item.get("content", ""))))
+        else:
+            score = 0
+        ranked.append({**item, "_rank": score})
+    return ranked
+
+
+def _relevant_excerpt(text: str, message: str, limit: int) -> str:
+    """Longest question-overlapping window of ``text``, up to ``limit`` chars."""
+    text = str(text or "")
+    if len(text) <= limit:
+        return text
+    want = _char_terms(message)
+    want -= _char_terms("请问目前现在是什么是否多少哪里哪些有关情况资料项目这个我们能否后续最好如何优化怎么建议")
+    if not want:
+        return text[:limit]
+    pieces = [p for p in re.split(r"(?<=[。；\n])", text) if p]
+    if len(pieces) <= 1:
+        return text[:limit]
+    # Sliding window over consecutive sentences: keep the densest run that fits.
+    best_start, best_score = 0, -1.0
+    for start in range(len(pieces)):
+        used, score = 0, 0
+        for end in range(start, len(pieces)):
+            used += len(pieces[end])
+            if used > limit:
+                break
+            score += len(want & _char_terms(pieces[end]))
+            density = score / max(used, 1)
+            if score > 0 and density > best_score:
+                best_start, best_score = start, density
+    chunk = "".join(pieces[best_start:])
+    return chunk[:limit]
+
+
 def _render_bounded_prompt(contract: dict[str, Any], message: str,
                            conv: CC.ConversationContext) -> str:
     """Render the V2 contract within the Web helper's hard input boundary.
@@ -75,15 +134,40 @@ def _render_bounded_prompt(contract: dict[str, Any], message: str,
     if len(prompt) <= MAX_WEB_PROMPT_CHARS:
         return prompt
 
-    for content_chars, title_chars in ((96, 48), (56, 36), (28, 28)):
+    # Uniform truncation is the wrong lever: it shrinks the two or three items
+    # that actually answer the question by exactly as much as the dozens that do
+    # not, so a global-scope question ("培训预算有多少？") loses the figure it
+    # asked for while a wall of unrelated summaries survives.  Compaction is
+    # therefore relevance-first: question-matched items keep a much larger
+    # budget and the remainder is cut hard, so total size falls while the
+    # answering evidence stays readable.
+    items = _rank_items_by_message(list(contract.get("context_items", [])), message)
+    # ``title_chars`` also bounds the evidence-index titles: the index repeats
+    # one line per item, so at 29 items it alone costs ~2.5k characters and is
+    # what actually pushes a global-scope turn past the boundary.
+    for content_chars, title_chars, keep_chars, keep_titles in (
+            (200, 40, 600, 60), (120, 28, 400, 44), (80, 22, 260, 32),
+            (48, 16, 180, 24), (24, 12, 120, 16), (0, 8, 80, 10)):
         compact = dict(contract)
         compact["authority_notes"] = [str(n)[:180] for n in contract.get("authority_notes", [])[:4]]
         compact["metric_facts"] = contract.get("metric_facts", [])
-        compact["context_items"] = [
-            {**item, "title": str(item.get("title", ""))[:title_chars],
-             "content": str(item.get("content", ""))[:content_chars]}
-            for item in contract.get("context_items", [])
-        ]
+        trimmed = []
+        for item in items:
+            hot = item.get("_rank", 0) > 0
+            c_chars = keep_chars if hot else content_chars
+            t_chars = keep_titles if hot else title_chars
+            content = str(item.get("content", ""))
+            if c_chars <= 0:
+                content = "" if not hot else _relevant_excerpt(content, message, keep_chars)
+            elif hot:
+                # Keep the sentences that overlap the question rather than the
+                # first N characters; the figure usually sits mid-paragraph.
+                content = _relevant_excerpt(content, message, c_chars)
+            else:
+                content = content[:c_chars]
+            trimmed.append({**item, "title": str(item.get("title", ""))[:t_chars],
+                            "content": content})
+        compact["context_items"] = trimmed
         compact["evidence_index"] = [
             {**entry, "title": str(entry.get("title", ""))[:title_chars]}
             for entry in contract.get("evidence_index", [])
@@ -92,9 +176,27 @@ def _render_bounded_prompt(contract: dict[str, Any], message: str,
         if len(prompt) <= MAX_WEB_PROMPT_CHARS:
             return prompt
 
-    # Keep all evidence ids available in a purpose-built bounded prompt.  A
-    # hard character slice would risk cutting the evidence-map instructions
-    # or the user message, so the compact form is assembled at field bounds.
+    # Last resort: keep every evidence id and the full text of the best-matching
+    # items, and drop the prose of the rest entirely.  Dropping prose is safe
+    # only because no evidence id is ever removed, so the grounding gate can
+    # still validate the answer.
+    compact = dict(contract)
+    compact["authority_notes"] = [str(n)[:180] for n in contract.get("authority_notes", [])[:4]]
+    compact["metric_facts"] = contract.get("metric_facts", [])
+    compact["context_items"] = [
+        {**item, "title": str(item.get("title", ""))[:60],
+         "content": (_relevant_excerpt(str(item.get("content", "")), message, 600)
+                     if item.get("_rank", 0) > 0 else "（内容已省略，证据 id 仍可用于引用）")}
+        for item in items
+    ]
+    prompt = A.render_prompt(compact, message=message, conv=conv)
+    if len(prompt) <= MAX_WEB_PROMPT_CHARS:
+        return prompt
+
+    # Keep every evidence id available in a purpose-built bounded prompt.  The
+    # context block keeps the canonical marker and the same title/content shape
+    # as the rendered contract, so a reader of this prompt sees one consistent
+    # context format instead of a second, differently-labelled dialect.
     lines = [
         "你是 PAW 工作台助手 Agy，使用 PAW Agy V2 回答。你是工作助手，不是文件清单"
         "检索器，也不是只会复述正式知识的审计机器人：先直接回答用户真正的问题，再给支撑事实。",
@@ -133,17 +235,45 @@ def _render_bounded_prompt(contract: dict[str, Any], message: str,
     ])
     for entry in contract.get("evidence_index", []):
         lines.append("- %s [%s]" % (entry["evidence_id"], entry.get("authority")))
-    lines.append("PAW 上下文（按权威顺序，内容为摘要）：")
-    for item in contract.get("context_items", []):
-        flag = "正式/当前" if item.get("is_formal_fact") else "非正式或待确认"
-        content = str(item.get("content", ""))
-        if item.get("layer") == "PROJECT_DATA_METRIC" and not show_metrics:
-            content = "指标已关联；用户未直接询问指标时不要输出数字。"
-        lines.append("- %s：%s（%s）" % (
-            str(item.get("title", ""))[:18], content[:28], flag))
-    lines.append(conv.prompt_block())
-    lines.append("用户消息：" + message)
-    return "\n".join(lines)
+    header = lines
+    tail = []
+    if conv is not None:
+        tail.append(conv.prompt_block())
+    tail.append("用户消息：" + message)
+
+    def assemble(content_chars, title_chars, relevant_chars):
+        body = ["--- PAW 上下文 V2（按权威顺序）---"]
+        for item in items:
+            flag = "正式/当前" if item.get("is_formal_fact") else "非正式或待确认"
+            content = str(item.get("content", ""))
+            if item.get("layer") == "PROJECT_DATA_METRIC" and not show_metrics:
+                content = "指标已关联；用户未直接询问指标时不要输出数字。"
+            elif item.get("_rank", 0) > 0 and relevant_chars:
+                # Same "- [evidence_id] title\n  content" shape as the rendered
+                # contract, so the evidence id stays visible next to its text.
+                content = _relevant_excerpt(content, message, relevant_chars)
+            else:
+                content = content[:content_chars]
+            body.append("- [%s] %s\n  %s（%s）" % (
+                item.get("item_id", ""), str(item.get("title", ""))[:title_chars],
+                content, flag))
+        return "\n".join(header + body + tail)
+
+    prompt = assemble(600, 24, 600)
+    if len(prompt) <= MAX_WEB_PROMPT_CHARS:
+        return prompt
+    # The evidence index alone can exceed the boundary when a workspace has very
+    # many records.  Evidence ids are never dropped (the grounding gate needs
+    # them), so the remaining prose is shrunk instead until the prompt fits.
+    # Question-matched items shrink far more slowly than the rest, because they
+    # are the only items that can answer the question at all.
+    for content_chars, title_chars, relevant_chars in (
+            (200, 24, 400), (120, 20, 300), (60, 16, 200),
+            (24, 10, 120), (0, 6, 60)):
+        prompt = assemble(content_chars, title_chars, relevant_chars)
+        if len(prompt) <= MAX_WEB_PROMPT_CHARS:
+            return prompt
+    return prompt
 
 
 def _normalize_text(text: str) -> str:
@@ -393,7 +523,7 @@ def build_v2_turn(message: str, mode: str = "chat", *,
     resolution_status, refusal = _refusal_for(resolution, pack, contract)
     # A document question can have usable workspace evidence without naming a project.
     # Keep that evidence grounded instead of rerouting the turn to general chat/web.
-    if pack.get('status') == 'GLOBAL_WORKSPACE_SCOPE' and contract.get('evidence_index') and re.search(r'文档|资料|周报|文件|工作台',message):
+    if pack.get('status') == 'GLOBAL_WORKSPACE_SCOPE' and contract.get('evidence_index') and re.search(r'文档|资料|周报|文件|工作台|记录|例会|项目|预算|方案|进度|多少|谁|什么|哪|如何|怎么', message):
         resolution_status,refusal='GLOBAL_WORKSPACE',None
     prompt = _render_bounded_prompt(contract, message, conv)
     return {

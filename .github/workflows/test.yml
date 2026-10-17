@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09]
+        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09, PM10]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -121,12 +121,18 @@ jobs:
       - name: Start Mock Model Server
         shell: pwsh
         run: |
+          # The standard exam reads documents and must see the kind of answer a
+          # real model gives, so it runs the stand-in in extractive mode.  Every
+          # other block keeps the scripted mode its cases are written against.
+          $mockMode = if ('${{ matrix.block }}' -eq 'PM10') { 'extractive' } else { 'scripted' }
+          Write-Host "Mock mode: $mockMode"
+          $env:PAW_MOCK_MODE = $mockMode
           Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
           $retries = 15
           while ($retries -gt 0) {
             try {
               $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
-              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live!"; break }
+              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live ($mockMode mode)!"; break }
             } catch {}
             Start-Sleep -Seconds 1
             $retries--
@@ -159,8 +165,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.block }}
-          path: reports/
+          path: reports/report_${{ matrix.block }}.json
           retention-days: 5
+
+      - name: Upload Exam Results
+        if: always() && matrix.block == 'PM10'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exam-results
+          path: reports/exam_result.json
+          if-no-files-found: ignore
+          retention-days: 10
 
       - name: Upload Block Screenshots
         if: always()

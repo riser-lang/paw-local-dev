@@ -39,12 +39,12 @@ def inbox(conn):
         result.append({'id':kind+':'+row['id'],'question':question,'if_yes':yes,'if_no':no,
             'impact':impact,'project_id':pid,'project_name':projects.get(pid),'created_at':stamp(row['created_at']),
             'due_at':None,'sources':sources(conn,refs),'excerpt':excerpt})
-    # No arbitrary page limit: count and list represent the same full pending set.
-    for raw in conn.execute("SELECT * FROM candidate WHERE status='pending' ORDER BY created_at,id"):
-        row=dict(raw);proposal=json.loads(row['proposed_change'] or '{}');payload=proposal.get('payload',{})
-        copy=decision_copy.candidate(proposal,projects,row.get('raw_excerpt'))
-        add('candidate',row,copy['question'],copy['if_yes'],copy['if_no'],copy['project_id'],
-            json.loads(row['source_refs'] or '[]'),excerpt=row.get('raw_excerpt') or copy['excerpt'])
+    if table(conn, 'candidate'):
+        for raw in conn.execute("SELECT * FROM candidate WHERE status='pending' ORDER BY created_at,id"):
+            row=dict(raw);proposal=json.loads(row['proposed_change'] or '{}');payload=proposal.get('payload',{})
+            copy=decision_copy.candidate(proposal,projects,row.get('raw_excerpt'))
+            add('candidate',row,copy['question'],copy['if_yes'],copy['if_no'],copy['project_id'],
+                json.loads(row['source_refs'] or '[]'),excerpt=row.get('raw_excerpt') or copy['excerpt'])
     for raw in conn.execute("SELECT d.*,s.title FROM pm_family_decision d JOIN pm_source s ON s.source_version_id=d.source_version_id WHERE d.status='pending'"):
         row=dict(raw);kind='assignment' if row['project_id'] is None else 'version'
         add(kind,row,('确认归属：' if kind=='assignment' else '确认文档族与版本：')+row['title']+'？',
@@ -82,7 +82,7 @@ def suggestion_vm(conn,pid=None):
         for r in read(conn,pid)]
 
 
-def project_vm(conn,pid,health_run=None):
+def project_vm(conn,pid,health_run=None,include_weekly=True):
     data=dossier.read(conn,pid);p=data['project'];entries={};changes={};all_sources={}
     section_titles={s['id']:s['title'] for s in data['sections']}
     current_ids={s['current']['id'] for s in data['sections'] if s['current']}
@@ -156,6 +156,15 @@ def project_vm(conn,pid,health_run=None):
             'resolved':{'choice':resolution['decision'],'at':stamp(resolution['created_at'])} if resolution else None})
     view_kinds=json.loads(Path(__file__).with_name('dossier_views.json').read_text(encoding='utf-8'))
     configured={s['id']:view_kinds.get(s['id'],'list') for s in storage.config()['sections']}
+    weekly_rep=None
+    if include_weekly:
+        try:
+            from backend.provider.adapter import get_active_provider
+            provider=get_active_provider()
+        except Exception:
+            provider=None
+        from . import weekly
+        weekly_rep=weekly.build_project_weekly_report(conn,pid,provider)
     return {'schema':'paw.pm.project/1','generated_at':stamp(storage.now()),'today':day(storage.now()),
         'project':{'id':pid,'name':p['name'],'status':project_status(p,bool(any(entries.values()) or milestones or all_sources),any(not c['resolved'] for c in conflicts)),
             'one_liner':next((e['text'] for s in data['sections'] if s['id']=='status' for e in entries[s['id']]),None),
@@ -163,7 +172,7 @@ def project_vm(conn,pid,health_run=None):
         'sections':[{'key':s['id'],'title':s['title'],'kind':configured[s['id']],'empty_text':None} for s in data['sections']],
         'entries':entries,'metrics':metrics,'milestones':milestones,'changes':sorted(changes.values(),key=lambda c:c['at'],reverse=True),
         'conflicts':conflicts,'sources':list(all_sources.values()),'receipts':[receipt_vm(r) for r in receipts.read(conn,pid)],
-        'ai_suggestions':suggestion_vm(conn,pid),**health_vm(conn,pid,health_run)}
+        'ai_suggestions':suggestion_vm(conn,pid), 'weekly_report':weekly_rep, **health_vm(conn,pid,health_run)}
 
 
 def health_vm(conn,pid=None,health_run=None):
@@ -184,11 +193,21 @@ def today_vm(conn,health_run=None):
                 'title':change['title'],'href':'/app/pm/projects/'+p['id']+'#pm-change-'+change['id'],'source':change['source']})
         projects.append({**vm['project'],'start':None,'end':day(p.get('due_date')),'progress':None,
             'events':events,'href':'/app/pm/projects/'+p['id']})
+    try:
+        from backend.provider.adapter import get_active_provider
+        provider=get_active_provider()
+    except Exception:
+        provider=None
     status=[{'key':k,'label':label,'state':'unknown','summary':'尚无成功记录','last_success_at':None}
         for k,label in [('patrol','巡航'),('scan','扫描'),('backup','备份'),('model','模型连通'),('disk','磁盘')]]
+    from . import evolution, weekly
+    evo_metrics=evolution.read_trends(conn)
+    cross_rep=weekly.build_cross_project_comparison(conn,provider)
     return {'schema':'paw.pm.today/1','generated_at':stamp(storage.now()),'today':day(storage.now()),
         'system_status':status,'decisions':pending,'portfolio':{'projects':projects},'ai_suggestions':suggestion_vm(conn),
-        'receipts':[receipt_vm(r) for r in receipts.read(conn)],**health_vm(conn,health_run=health_run)}
+        'receipts':[receipt_vm(r) for r in receipts.read(conn)],
+        'evolution_metrics':evo_metrics,'cross_project_report':cross_rep,'weekly_reports':cross_rep.get('projects',[]),
+        **health_vm(conn,health_run=health_run)}
 
 
 def decide(ids,choice,selections,provider):

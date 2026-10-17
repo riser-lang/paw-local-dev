@@ -239,13 +239,17 @@ def families(project_id: str):
 @router.get('/decisions')
 def family_decisions():
     with storage.connect() as conn:
-        return {'items':[dict(r) for r in conn.execute("SELECT * FROM pm_family_decision WHERE status='pending' ORDER BY created_at")]}
+        return {'items':[dict(r) for r in conn.execute('''SELECT d.*,s.title,i.family_key
+          FROM pm_family_decision d
+          JOIN pm_source s ON s.source_version_id=d.source_version_id
+          JOIN pm_document_intake i ON i.source_version_id=d.source_version_id
+          WHERE d.status='pending' ORDER BY d.created_at''')]}
 
 
 class FamilyChoice(BaseModel):
     project_id: str
     family_id: str | None = None
-    family_title: str = Field(min_length=1,max_length=300)
+    family_title: str | None = None
 
 
 @router.post('/decisions/{decision_id}/resolve')
@@ -356,3 +360,65 @@ def synthesize(project_id: str):
             conn.execute('INSERT INTO pm_semantic_draft VALUES(?,?,?,?,?)',
                          (str(uuid.uuid4()), project_id, 'dossier_synthesis', storage.encoded(result['output']), storage.now()))
         return result
+
+
+@router.get('/weekly-reports')
+def get_weekly_reports(project_id: str | None = None):
+    from . import weekly
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        if project_id:
+            try:
+                return weekly.build_project_weekly_report(conn, project_id, get_active_provider())
+            except ValueError as exc:
+                raise HTTPException(404, str(exc)) from exc
+        else:
+            projects = conn.execute("SELECT id FROM project WHERE status NOT IN ('merged','archived','deleted') ORDER BY name").fetchall()
+            return {'items': [weekly.build_project_weekly_report(conn, r['id'], get_active_provider()) for r in projects]}
+
+
+@router.get('/weekly-reports/cross-project')
+def get_cross_project_report():
+    from . import weekly
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        return weekly.build_cross_project_comparison(conn, get_active_provider())
+
+
+class WeeklyGenerateRequest(BaseModel):
+    project_id: str | None = None
+
+
+@router.post('/weekly-reports/generate')
+def generate_weekly_reports(body: WeeklyGenerateRequest):
+    from . import weekly
+    from backend.provider.adapter import get_active_provider
+    with storage.connect() as conn:
+        if body.project_id:
+            try:
+                rep = weekly.build_project_weekly_report(conn, body.project_id, get_active_provider())
+                return {'report': rep, **rep}
+            except ValueError as exc:
+                raise HTTPException(404, str(exc)) from exc
+        rep = weekly.build_cross_project_comparison(conn, get_active_provider())
+        return {'report': rep, **rep}
+
+
+@router.get('/evolution-metrics')
+def get_evolution_metrics():
+    from . import evolution
+    with storage.connect() as conn:
+        return {'items': evolution.read_trends(conn)}
+
+
+class SnapshotRequest(BaseModel):
+    period: str | None = None
+
+
+@router.post('/evolution-metrics/snapshot')
+def snapshot_evolution_metrics(body: SnapshotRequest | None = None):
+    from . import evolution
+    period = body.period if body else None
+    with storage.connect() as conn:
+        return {'items': evolution.record_snapshot(conn, period=period)}
+

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import threading
@@ -33,6 +34,21 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("mock_openai_server")
+
+# ``scripted`` (default) replays the fixed candidate set the early B/PM cases
+# are written against.  ``extractive`` derives every candidate from the
+# document text in the request and is used by the standard exam, so the exam
+# sees the kind of answer a real model would give.
+MOCK_MODE = os.environ.get("PAW_MOCK_MODE", "scripted").strip().lower()
+
+
+def extractive_analysis(text: str) -> Dict[str, Any]:
+    """Extractive-mode analysis: candidates come only from the document text."""
+    try:
+        from scripts.mock_extractive_analysis import analyse
+    except ModuleNotFoundError:
+        from mock_extractive_analysis import analyse
+    return analyse(text)
 
 
 def extract_project_name(text: str) -> str:
@@ -304,7 +320,10 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
         # 3. Structured Analysis (Document ingest / Engine analysis / Planner proposals)
         elif any(k in all_text for k in ["请分析以下内容", "todo_candidates", "阅读高保真文档证据", "认知治理专家", "现有活跃项目"]):
-            analysis_dict = generate_structured_analysis(all_text)
+            if MOCK_MODE == 'extractive':
+                analysis_dict = extractive_analysis(all_text)
+            else:
+                analysis_dict = generate_structured_analysis(all_text)
             reply_content = json.dumps(analysis_dict, ensure_ascii=False)
 
         # 4. Grounded Q&A (Assistant)

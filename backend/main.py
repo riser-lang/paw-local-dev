@@ -474,7 +474,7 @@ def update_settings(req: SettingsUpdateRequest) -> Dict[str, Any]:
     if req.openai_model:
         settings.openai_model = req.openai_model
 
-    if req.custom_api_key and not req.custom_api_key.startswith("sk-..."):
+    if req.custom_api_key is not None and not req.custom_api_key.startswith("sk-..."):
         settings.custom_api_key = req.custom_api_key
     if req.custom_base_url:
         settings.custom_base_url = req.custom_base_url
