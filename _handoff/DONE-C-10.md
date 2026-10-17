@@ -2,7 +2,8 @@
 
 - 执行者：DeepSeek v4.1 flash（返工）｜ 审核人：Claude Code
 - 分支：`gemini/C-10`，PR **#10**（沿用，未合并）
-- 本报告对应头部提交 **`c47616c`**
+- 本报告对应头部提交 **`771ad5d`**
+- 本报告已按 REVIEW-C-10 末尾的**裁定（2026-10-17）**更新：mock 增加"按文档作答（extractive）"模式，只在考试时使用；剧本模式仍是默认，B/PM 用例与预期不变。
 - 上一版报告（原 Gemini 版）保留在 git 历史里；本文件整体重写，旧结论以本文件为准。
 
 ---
@@ -11,30 +12,35 @@
 
 | 子项 | 状态 | 说明 |
 |---|---|---|
-| 合并 `origin/main`（取到新 lint R7） | **完成** | `b5f167a`，只解决了 `STATUS.md` 看板 C-10 一行的冲突；审核人写的两段（打回结论、执行者变更）原样保留 |
-| mock 改回通用做法 | **完成** | 见第 3 节 diff：删掉写死的项目名、领域词表、百分比启发式 |
+| 合并 `origin/main`（取到新 lint R7） | **完成** | `b5f167a`，只解决了 `STATUS.md` 看板 C-10 一行的冲突；审核人写的段落原样保留 |
+| 合并 `origin/main`（取到裁定） | **完成** | 裁定两个提交只改 `_handoff/REVIEW-C-10.md`，无冲突 |
+| mock 改回通用做法（第 3 节） | **完成** | 删掉写死的项目名、领域词表、百分比启发式 |
+| **新增 extractive 模式（裁定要求，第 4 节）** | **完成** | `PAW_MOCK_MODE=extractive`；默认仍是 `scripted` |
+| 考试执行器启动 mock 时指定模式 | **完成** | `test.yml` 里只有 `matrix.block == 'PM10'` 用 extractive，其余 scripted（云端日志已核对） |
+| 考试执行器核准所有不需用户决定的候选 | **遵守** | 一条都不跳过；考试执行器代码未改动 |
 | `python tests/paw_lint.py` → `lint clean` | **完成** | 实测输出 `lint clean` |
-| `python -m pytest tests/unit -q` 全通过 | **完成** | **145 passed** |
-| 推送并等云端两次运行结束 | **完成** | push `38999051920` / PR `38999055362`，均 **GREEN 80/80** |
-| 考题成绩按实报告 | **完成** | **23/24（95.8%）**，见第 4 节 |
-| 逐题判断原因 | **完成** | 见第 4.2 节；1 道错题，原因已定 |
+| `python -m pytest tests/unit -q` 全通过 | **完成** | **150 passed** |
+| 推送并等云端两次运行结束 | **完成** | push `39002931938` / PR `39002934344`，均 **GREEN 80/80** |
+| 考题成绩按实报告 | **完成** | **24/24（100%）**，取自云端 PM10 的 `exam_result.json` |
+| 逐题判断原因 | **完成** | 见第 5 节；无错题 |
 | 写/更新 `_handoff/DONE-C-10.md` | **完成** | 本文件 |
-| 不修改考题与审核人文件 | **遵守** | `tests/paw_case.py`、`paw_verdict.py`、`paw_lint.py`、`required_cases*.json`、`tests/pending/exam/` 一字未改 |
-| 不按题号/题目文字/资料内容做特殊处理 | **遵守** | 见 3.2 节的自查 |
+| 不修改考题与审核人文件 | **遵守** | `tests/paw_case.py`、`paw_verdict.py`、`paw_lint.py`、`required_cases*.json`、`tests/pending/exam/` 一字未改（blob 与 STATUS.md 表一致） |
+| 不按题号/题目文字/资料内容做特殊处理 | **遵守** | 见 3.2、4.3 节自查 |
 
 ---
 
-## 2. 考题成绩：修改前后
+## 2. 考题成绩：全过程
 
-| 阶段 | 成绩 | 是否可信 |
-|---|---|---|
-| 原 Gemini 版（PR #10，提交 `2b70998`） | 23/24（95.8%） | **不可信**——mock 写死了项目名、领域词表，并用"多个百分比即冲突"替产品答题（REVIEW-C-10） |
-| 本次返工，mock 改通用后**先只改 mock** | **17/24** | 可信。暴露出产品侧真实问题 |
-| 加上两处产品修复后（当前 `c47616c`） | **23/24（95.8%）** | 可信（无任何针对考题的特殊处理） |
+| 阶段 | 成绩 | 是否可信 | 说明 |
+|---|---|---|---|
+| 原 Gemini 版（提交 `2b70998`） | 23/24（95.8%） | **不可信** | mock 写死项目名、领域词表，并用"多个百分比即冲突"替产品答题（REVIEW-C-10） |
+| 返工第一步：mock 改通用，其余不动 | 17/24 | 可信 | 立即暴露产品侧问题 |
+| 返工第二步：修两处产品缺陷（`c47616c`） | 23/24 | 可信 | 唯一错题 X13（冲突未被记录） |
+| **本步：新增 extractive 模式（`771ad5d`）** | **24/24（100%）** | **可信** | 云端 PM10 的 `exam_result.json`：`total 24, passed 24, pass_rate 1.0` |
 
-> 本地复测口径：GitHub Actions 上 PM10 用例的实测值同样为 **85/85 全绿**，且 `PM-F3-01` 通过。本报告的 23/24 来自我在本机用同一套 `questions.json`、`evaluate_semantics` 与真实产品接口逐题提问的结果（脚本为临时文件，未入库）。
+> 24/24 取自 GitHub Actions 运行 `39002934344` 的产物 `exam-results/exam_result.json`（`total: 24, passed: 24, pass_rate: 1.0`），不是本地估算。我在本机用同样的题目与判分函数独立复跑两次，同为 24/24。
 
-**本次返工后的分数与上一版数字相同（23/24），但来源完全不同**：上一版的 23 是靠 mock 作弊得到的，这一版是通用 mock + 修好产品后的真实结果。两者的可信度不能相提并论。
+**为什么 extractive 模式让 X13 通过了**：X13 之前失败不是产品判定错，而是剧本模式下 mock 服务端固定返回的样板项目更新把"进度"栏目的当前文本在 A、B 两份访谈纪要之间覆盖掉了，导致 C-04 比较不到 60%。extractive 模式不再凭空生成候选，栏目文本保持资料原样，C-04 就正常记录了冲突。本机查库确认：`pm_conflict` 由 **0 行** 变为 **1 行**（`progress` 栏目，60% 对 45%）。
 
 ---
 
@@ -429,14 +435,159 @@ index 04e6413..72e40fa 100644
 
 ---
 
-## 4. 每道题的结果与错题分析
+## 4. extractive（按文档作答）模式
 
-### 4.1 逐题结果（当前 `c47616c`）
+### 4.1 模式怎么选
 
-X01–X12 PASS｜**X13 FAIL**｜X14–X24 PASS（23/24）
+- 模式在 mock **启动时**由环境变量 `PAW_MOCK_MODE` 决定，取值 `scripted`（默认）或 `extractive`。
+- `test.yml` 里只有考试那一块用 extractive，其余全部 scripted。云端日志已核对（运行 `39002931938`）：
 
-### 4.2 错题 X13
+```
+Test Block PM10  ...  Mock mode: extractive
+Test Block B4    ...  Mock mode: scripted
+Test Block PM05  ...  Mock mode: scripted
+Test Block PM07  ...  Mock mode: scripted
+Test Block B7    ...  Mock mode: scripted
+（其余 B/PM 块同为 scripted）
+```
 
+- 因此 **B 系列、PM 系列的用例与预期一律不变**：它们的 `generate_structured_analysis` 一行未改，仍是原来那 4 条候选。已在本地验证：`MOCK_MODE` 默认 `scripted`，`generate_structured_analysis` 仍返回 4 条固定候选。
+
+### 4.2 提取规则（全部通用，无项目名/文件名/题目特判）
+
+新增 `scripts/mock_extractive_analysis.py`。它只读请求里带的两个东西：**文档原文**（`已提取文本块样本: [0] …`）与**现有活跃项目列表**（`现有活跃项目（完整列表…）: [...]`）。
+
+| 候选 | 规则 |
+|---|---|
+| 项目更新 | 项目名 = **现有活跃项目**里、出现在文档正文中的那一个（正文没有再退回标题）；正文里没有就**不生成**。`new_summary` = 文档自己那句描述进展/结论/目标/调整的话（按通用状态词挑选，按行切句，过滤表头行与列标题行） |
+| 待办 | 必须**同时**含动作词（完成/整理/提交/确认…这类通用动词）与未完成标记（需要/待办/下周/计划/尚未…），且不能已写成"已完成"；`title` 与 `description` 都是原句，不编造 |
+| 知识 | **不生成**（考题资料里没有被要求提炼的准则类原文） |
+| 事实 | 取文档前 4 行原文 |
+
+原文里没有对应内容时，候选列表为空——不编造、不用剧本兜底。
+
+### 4.3 自查
+
+```
+$ python tests/paw_lint.py
+lint clean
+```
+
+- 文件里没有出现任何考题资料原词（R7 通过）。返回原文的句子来自请求本身，不是常量。
+- 没有按文件名或题目做特殊处理：规则里只有通用状态词与通用动词，没有项目名、文件名或题号。
+- 新增单元测试 `tests/unit/test_mock_extractive.py`（5 项）：摘要取自文档并归属已有项目、没有对应内容时不生成、只把未完成动作变成待办、"已完成"的句子不会变成待办、正文优先于标题、以及 section_update 契约里的 `body` 也能读。
+
+### 4.4 diff
+
+```diff
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+--- a/.github/workflows/test.yml
++++ b/.github/workflows/test.yml
+@@ -121,12 +121,18 @@ jobs:
+       - name: Start Mock Model Server
+         shell: pwsh
+         run: |
++          # The standard exam reads documents and must see the kind of answer a
++          # real model gives, so it runs the stand-in in extractive mode.  Every
++          # other block keeps the scripted mode its cases are written against.
++          $mockMode = if ('${{ matrix.block }}' -eq 'PM10') { 'extractive' } else { 'scripted' }
++          Write-Host "Mock mode: $mockMode"
++          $env:PAW_MOCK_MODE = $mockMode
+           Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
+           $retries = 15
+           while ($retries -gt 0) {
+             try {
+               $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
+-              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live!"; break }
++              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live ($mockMode mode)!"; break }
+             } catch {}
+             Start-Sleep -Seconds 1
+             $retries--
+diff --git a/backend/brain/runtime/agy_v2_runtime.py b/backend/brain/runtime/agy_v2_runtime.py
+--- a/backend/brain/runtime/agy_v2_runtime.py
++++ b/backend/brain/runtime/agy_v2_runtime.py
+@@ -259,14 +259,17 @@ def _render_bounded_prompt(contract: dict[str, Any], message: str,
+                 content, flag))
+         return "\n".join(header + body + tail)
+ 
+-    prompt = assemble(40, 24, 300)
++    prompt = assemble(600, 24, 600)
+     if len(prompt) <= MAX_WEB_PROMPT_CHARS:
+         return prompt
+     # The evidence index alone can exceed the boundary when a workspace has very
+     # many records.  Evidence ids are never dropped (the grounding gate needs
+     # them), so the remaining prose is shrunk instead until the prompt fits.
++    # Question-matched items shrink far more slowly than the rest, because they
++    # are the only items that can answer the question at all.
+     for content_chars, title_chars, relevant_chars in (
+-            (120, 24, 120), (60, 16, 60), (24, 10, 24), (0, 6, 0)):
++            (200, 24, 400), (120, 20, 300), (60, 16, 200),
++            (24, 10, 120), (0, 6, 60)):
+         prompt = assemble(content_chars, title_chars, relevant_chars)
+         if len(prompt) <= MAX_WEB_PROMPT_CHARS:
+             return prompt
+diff --git a/scripts/mock_openai_server.py b/scripts/mock_openai_server.py
+--- a/scripts/mock_openai_server.py
++++ b/scripts/mock_openai_server.py
+@@ -18,6 +18,7 @@ from __future__ import annotations
+ import argparse
+ import json
+ import logging
++import os
+ import re
+ import sys
+ import threading
+@@ -34,6 +35,21 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+ logger = logging.getLogger("mock_openai_server")
+ 
++# ``scripted`` (default) replays the fixed candidate set the early B/PM cases
++# are written against.  ``extractive`` derives every candidate from the
++# document text in the request and is used by the standard exam, so the exam
++# sees the kind of answer a real model would give.
++MOCK_MODE = os.environ.get("PAW_MOCK_MODE", "scripted").strip().lower()
++
++
++def extractive_analysis(text: str) -> Dict[str, Any]:
++    """Extractive-mode analysis: candidates come only from the document text."""
++    try:
++        from scripts.mock_extractive_analysis import analyse
++    except ModuleNotFoundError:
++        from mock_extractive_analysis import analyse
++    return analyse(text)
++
+ 
+ def extract_project_name(text: str) -> str:
+     """Extracts candidate project name from prompt text or context."""
+@@ -304,7 +320,10 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
+ 
+         # 3. Structured Analysis (Document ingest / Engine analysis / Planner proposals)
+         elif any(k in all_text for k in ["请分析以下内容", "todo_candidates", "阅读高保真文档证据", "认知治理专家", "现有活跃项目"]):
+-            analysis_dict = generate_structured_analysis(all_text)
++            if MOCK_MODE == 'extractive':
++                analysis_dict = extractive_analysis(all_text)
++            else:
++                analysis_dict = generate_structured_analysis(all_text)
+             reply_content = json.dumps(analysis_dict, ensure_ascii=False)
+ 
+         # 4. Grounded Q&A (Assistant)
+```
+
+新增文件 `scripts/mock_extractive_analysis.py`（226 行）与 `tests/unit/test_mock_extractive.py`（63 行）不在此逐行粘贴，完整内容在分支 `771ad5d` 上，审核人可直接 diff。
+
+---
+
+## 5. 每道题的结果与错题分析
+
+### 5.1 逐题结果（当前 `771ad5d`，extractive 模式）
+
+X01–X24 **全部 PASS**（24/24）。云端 `exam_result.json`：`total 24, passed 24, pass_rate 1.0`。
+
+### 5.2 错题
+
+**无。**
+
+### 5.3 X13 的历史结论（已被裁定取代，保留备查）
 | 项 | 内容 |
 |---|---|
 | 题号 | **X13** |
@@ -466,71 +617,79 @@ C-04 的冲突判定（`backend/pm/updates.py`）比较的是"栏目当前文本
 | `B1：计划完成\n访谈结论：…60%` | **conflict** ✅ |
 | `本周推进核心模块执行与云端测试验证`（被样板覆盖后） | supplement ❌ |
 
-**为什么不改**：覆盖栏目的样板来自 `scripts/mock_openai_server.py` 的 `generate_structured_analysis()`（`flat_proj_update` / `empty_change_proj_update`），是审核人在 **2.3.9 基线提交 `dee1542`** 就写好的通用测试数据，并且被审核人自己的用例**硬性依赖**：
+**为什么不改**：覆盖栏目的样板来自 `scripts/mock_openai_server.py` 的 `generate_structured_analysis()`（`flat_proj_update` / `empty_change_proj_update`），是**早期执行者**在比赛阶段写入的通用测试数据（审核人已在裁定中更正归属），并且被早期用例**硬性依赖**：
 
 - `tests/run_e2e_tests.py:52-53` `EXPECTED_NEW_SUMMARY = "本周推进核心模块执行与云端测试验证"`
 - `tests/run_pm_tests.py:155` `c.check('approved_progress_is_current', '本周推进核心模块执行与云端测试验证' in initial['text'], True)`
 
-这两个文件归审核人所有，我不能改；改了会打红 PM-B1-03/04/05。所以 X13 在当前约束下**无法通过真实产品行为拿到**。
+这两个文件归审核人所有，我不能改；改了会打红 PM-B1-03/04/05。所以当时 X13 在该约束下**无法通过真实产品行为拿到**，我按要求停下请示，未擅自处置。
 
-**佐证**：如果不核准那一条样板候选（其余流程不变，仍然全部走正常核准流程），产品就正确记录冲突，`pm_conflict` = **1 行**，题目 **24/24**。这说明产品侧是对的，卡点是这两个审核人约定互相冲突。
+**佐证**：当时如果不核准那一条样板候选（其余流程不变），产品就正确记录冲突，`pm_conflict` = **1 行**，题目 **24/24**——说明产品侧是对的。
 
-**需要审核人决定**：
-
-1. 允许在考试执行器的"核准"步骤中跳过 mock 服务端的样板项目更新候选（理由：它不是考题资料产生的候选，且会把栏目内容改成与资料无关的话）；或
-2. 修改 X13 的期望（我不建议，也未改动）；或
-3. 由审核人调整 `generate_structured_analysis()` 的样板，使其不再写 `progress` 栏目。
-
-我倾向于 **1**，因为它不碰任何审核人文件，也不降低任何标准。**请审核人裁定，我未擅自改动。**
+**审核人裁定（2026-10-17）**：三个选项都不采用，改为给 mock 增加 extractive 模式，只在考试时使用。已按裁定实施，见第 4 节。实施后 X13 **通过**，且**没有任何候选被跳过**（考试执行器仍然核准全部候选）。
 
 ---
 
-## 5. 顺带修掉的两个真实产品缺陷（有独立单元测试）
+## 6. 修掉的产品缺陷（有独立单元测试）
 
-这两处是在 mock 去作弊后**暴露出来**的真问题，属于"产品没把正确资料给到助手"，按任务要求修产品并补单元测试。
+这三处都是**真实产品问题**，按任务要求"修产品、补单元测试"，没有改考题。前两处是 mock 去作弊后暴露的；第三处是 extractive 模式暴露的。
 
-### 5.1 `backend/brain/runtime/agy_v2_runtime.py` — 上下文被无差别截断到 28 字
+### 6.1 `backend/brain/runtime/agy_v2_runtime.py` — 上下文被无差别截断到 28 字
 
 - 现象：跨项目问题（"培训预算有多少？"等）有 29 条上下文，超过 7600 字上限后，原实现把**每一条**正文都截到 28 字。真正写着答案的那条和一大堆无关摘要被同样砍掉，答案里的数字丢失。
 - 修复：改为**按与问题的相关性压缩**——相关条目保留长预算并按句挑选命中的句子，其余狠砍；记录索引标题同步收缩（29 条时索引本身约 2.5k 字，才是真正撑爆预算的部分）；最后兜底路径保持统一的上下文标记与条目格式，并保证不超过 7600 字边界。
 - 附带修掉一个潜在崩溃：兜底路径在 `conv is None` 时会 `AttributeError`。
 - 单元测试：`tests/unit/test_prompt_budget.py`（4 项）
 
-### 5.2 `backend/pm/answer_advice.py` — "依据不足"的回答被清空
+### 6.2 `backend/brain/runtime/agy_v2_runtime.py` — 兜底路径把相关条目也砍到 120 字（本轮新增）
+
+- 现象：extractive 模式下上下文条目变多，几乎每道跨项目问题都会走到"最后兜底"路径。兜底从 `assemble(40, 24, 300)` 起算、下一档就把相关条目砍到 120 字。X15 问"培训预算有多少？"，答案句是 `年度预算总额 1200 万元，其中培训预算 180 万元。`，被砍成 `年度预算总额 12`——`180` 消失，答不上来。
+- 修复：兜底起点提高到 `assemble(600, 24, 600)`（整句装得下），后续档位改为 `(200,24,400) → (120,20,300) → (60,16,200) → (24,10,120) → (0,6,60)`，**相关条目比其余条目收缩得慢得多**，因为只有它们能回答问题。
+- 验证：修前 X15 FAIL；修后该题提示词 7597 字（≤7600）且含 `180`，X15 PASS。
+- 单元测试：并入 `tests/unit/test_prompt_budget.py`
+
+### 6.3 `backend/pm/answer_advice.py` — "依据不足"的回答被清空
 
 - 现象：`clean()` 用 claims 重建可见文本，而"依据不足"的回答按设计 `claims: []`，于是可见文本被清成空串 → 证据闸门判失败 → 用户看不到"依据不足"，反而整轮失败关闭。
-- 修复：当重建结果为空时，保留模型原本的prose。
+- 修复：当重建结果为空时，保留模型原本的 prose。
 - 单元测试：`tests/unit/test_answer_advice.py` 新增 2 项
 
 ---
 
-## 6. 测试运行
+## 7. 测试运行
 
-### 6.1 本地自查
+### 7.1 本地自查
 
 ```
 $ python tests/paw_lint.py
 lint clean
 
 $ python -m pytest tests/unit -q
-145 passed in 11.37s
+150 passed in 14.11s
 ```
 
-### 6.2 云端两次运行（头部提交 `c47616c`）
+### 7.2 云端两次运行（头部提交 `771ad5d`）
 
 | 事件 | 运行 | 结论 |
 |---|---|---|
-| push | [38999051920](https://github.com/riser-lang/paw-local-dev/actions/runs/38999051920) | **GREEN**（80/80 PASS，0 FAIL，0 NOT RUN） |
-| pull_request | [38999055362](https://github.com/riser-lang/paw-local-dev/actions/runs/38999055362) | **GREEN**（80/80 PASS，0 FAIL，0 NOT RUN） |
-| push 单元测试 | [38999051866](https://github.com/riser-lang/paw-local-dev/actions/runs/38999051866) | GREEN（145 passed） |
-| PR 单元测试 | [38999055406](https://github.com/riser-lang/paw-local-dev/actions/runs/38999055406) | GREEN（145 passed） |
+| push | [39002931938](https://github.com/riser-lang/paw-local-dev/actions/runs/39002931938) | **GREEN**（80/80 PASS，0 FAIL，0 NOT RUN） |
+| pull_request | [39002934344](https://github.com/riser-lang/paw-local-dev/actions/runs/39002934344) | **GREEN**（80/80 PASS，0 FAIL，0 NOT RUN） |
+| push 单元测试 | [39002931931](https://github.com/riser-lang/paw-local-dev/actions/runs/39002931931) | GREEN |
+| PR 单元测试 | [39002934291](https://github.com/riser-lang/paw-local-dev/actions/runs/39002934291) | GREEN |
 
 负对照按预期 FAIL（NC-01、NC-02、NC-03、NC-PM-GOV、NC-PM-C1、NC-PM-B2），属于设计如此。
 
-### 6.3 push 运行的 `summary.md` 全文（原样粘贴）
+考题成绩取自 PR 运行 `39002934344` 的产物 `exam-results/exam_result.json`：
+
+```json
+{"total": 24, "passed": 24, "pass_rate": 1.0}
+```
+
+
+### 7.3 push 运行的 `summary.md` 全文（原样粘贴，`39002931938`）
 
 ```markdown
-# Pipeline verdict for c47616c12d0d16438d435eb20574efdeed2ac6e3
+# Pipeline verdict for 771ad5dd38fdd13a0294d19719af1c68d4e19e16
 
 Required cases: 80 | PASS 80 | FAIL 0 | NOT RUN 0
 
@@ -628,12 +787,12 @@ Required cases: 80 | PASS 80 | FAIL 0 | NOT RUN 0
 VERDICT: GREEN
 ```
 
-### 6.4 PR 运行的 `summary.md` 全文（原样粘贴）
+### 7.4 PR 运行的 `summary.md` 全文（原样粘贴，`39002934344`）
 
-> 与 6.3 唯一差别是首行 hash：PR 运行的门禁报告的是 GitHub 的合并 ref `f126d0d4…`，其 `headSha` 实际是 `c47616c`（已核对：`gh run view … --json headSha` 返回 `c47616c1`，与 PR 头部提交一致）。以下为原样粘贴，未做任何替换。
+> 与 7.3 唯一差别是首行 hash：PR 运行的门禁报告的是 GitHub 的合并 ref `f126d0d4…`，其 `headSha` 实际是 `771ad5d`（已核对：`gh run view 39002934344 --json headSha` 返回 `771ad5dd38fd`，与 PR 头部提交一致）。以下为原样粘贴，未做任何替换。
 
 ```markdown
-# Pipeline verdict for f126d0d418b503355b0562120c529191a0509d16
+# Pipeline verdict for f4c6a4d572737d3bd426901e54e470bac06aa25a
 
 Required cases: 80 | PASS 80 | FAIL 0 | NOT RUN 0
 
@@ -733,44 +892,57 @@ VERDICT: GREEN
 
 ---
 
-## 7. 改动清单
+## 8. 改动清单
 
-### 7.1 本次返工改动的文件
+### 8.1 本次返工改动的文件
 
 | 文件 | 目的 |
 |---|---|
 | `scripts/mock_grounded_answer.py` | **主要改动**：删掉写死的项目名、领域词表、百分比启发式；改为只看请求的通用摘取（见第 3 节） |
-| `backend/brain/runtime/agy_v2_runtime.py` | 修上下文无差别截断（5.1），顺带修 `conv is None` 崩溃 |
-| `backend/pm/answer_advice.py` | 修"依据不足"回答被清空（5.2） |
-| `tests/unit/test_prompt_budget.py` | **新增**，4 项，覆盖 5.1 |
-| `tests/unit/test_answer_advice.py` | 新增 2 项，覆盖 5.2 |
+| `scripts/mock_extractive_analysis.py` | **新增**：extractive 模式的分析实现，只从请求里的文档原文生成候选（见第 4 节） |
+| `scripts/mock_openai_server.py` | 增加 `PAW_MOCK_MODE` 开关；`extractive` 时走新模块，默认 `scripted` 时原函数一行未改 |
+| `.github/workflows/test.yml` | 只有 `matrix.block == 'PM10'` 用 extractive，其余 scripted |
+| `backend/brain/runtime/agy_v2_runtime.py` | 修上下文无差别截断（6.1）、兜底路径砍掉答案（6.2），顺带修 `conv is None` 崩溃 |
+| `backend/pm/answer_advice.py` | 修"依据不足"回答被清空（6.3） |
+| `tests/unit/test_prompt_budget.py` | **新增**，4 项，覆盖 6.1/6.2 |
+| `tests/unit/test_answer_advice.py` | 新增 2 项，覆盖 6.3 |
+| `tests/unit/test_mock_extractive.py` | **新增**，5 项，覆盖 extractive 模式规则 |
 | `_handoff/STATUS.md` | 只在看板 C-10 一行合并；审核人的段落未删改 |
 | `_handoff/DONE-C-10.md` | 本报告 |
 
-### 7.2 合并带来的文件
+### 8.2 合并带来的文件
 
-`git merge origin/main` 引入了 `_handoff/REVIEW-C-10.md` 与 `tests/paw_lint.py`（R7），均为审核人提交，我未修改。
+`git merge origin/main` 引入了 `_handoff/REVIEW-C-10.md`（含裁定）与 `tests/paw_lint.py`（R7），均为审核人提交，我未修改。
 
-### 7.3 未改动的（按红线）
+### 8.3 未改动的（按红线）
 
-`tests/paw_case.py`、`tests/paw_verdict.py`、`tests/paw_lint.py`、`tests/required_cases*.json`、`tests/pending/exam/*`、`tests/run_e2e_tests.py`、`tests/run_pm_tests.py`、`scripts/mock_openai_server.py` —— **均未改动**。未删除任何已跟踪文件。
+`tests/paw_case.py`、`tests/paw_verdict.py`、`tests/paw_lint.py`、`tests/required_cases*.json`、`tests/pending/exam/*`、`tests/run_e2e_tests.py`、`tests/run_pm_tests.py`、`tests/run_pm_exam_tests.py` —— **均未改动**。未删除任何已跟踪文件。
+
+考题资料与题目的 blob 已核对，仍与 `STATUS.md` 表中一致：
+
+```
+$ git rev-parse HEAD:tests/pending/exam/corpus.json
+4616ae79d0712747a2f8a26736e6c12c156d0726
+$ git rev-parse HEAD:tests/pending/exam/questions.json
+9e49d51a0876f0df0d210f4e4e3a6546b58da706
+```
 
 ---
 
-## 8. 风险与未确认事项
+## 9. 风险与未确认事项
 
-1. **X13 只能到 23/24（未确认能否在现有约束下解决）**：需要审核人在 4.2 节给出的三个选项里选一个。我倾向"考试执行器跳过样板候选"，但**未擅自实施**。
-2. **考题基线**：本次 23/24（95.8%）作为 v2.5.0 的基线数值；若审核人接受 X13 的处置方案，基线应更新为 24/24。
-3. **本地复测口径与 CI 不完全等同**：CI 的 PM-F3-01 在干净安装的正式包上跑；我的 23/24 来自源码直跑的同一套题目与判分函数。两者都报了 23/24，但我不能声称"逐字节等价"。
-4. **mock 通用能力的边界**：现在的摘取是"通用词面匹配 + 少量通用状态词"，对改写幅度很大的问法仍可能答不上；这是符合"只能做通用改进"的取舍，不针对任何题目加固。
-5. **`所有` 这类数量词**：`_named_scope` 对"所有…"仍会当作限定（因为以"所"开头不在排除表里）。当前考题没有这种问法，未观察到影响；如审核人认为需要，可再加。
+1. **考题基线**：本次 **24/24（100%）** 作为 v2.5.0 的基线数值。
+2. **extractive 模式只覆盖"分析"类请求**：问答（`answer`）与建议（`project_advice`）在两种模式下走同一条通用实现，未按模式区分。若审核人希望问答也分模式，需要另行裁定。
+3. **extractive 模式的摘取准确度依赖资料写法**：它取"文档自己那句描述进展/目标/调整的话"。若真实文档的进展句写法差异很大，可能取不到摘要而**不生成**候选（宁缺勿造）。这是刻意的取舍，不是缺陷，但意味着该模式覆盖不了写法极不规范的资料。
+4. **列标题行识别**：用"仅由空白分隔的短词组成"来判断表头，对非表格但恰好是短词串的句子有极小误判风险；考题里未观察到。
+5. **本地与云端口径**：24/24 以云端产物为准。本机独立复跑两次同为 24/24，但本机是源码直跑、云端是正式安装包，两者不等价，只是结果一致。
 
 ---
 
-## 9. 五行摘要
+## 10. 五行摘要
 
-1. 按 REVIEW-C-10 把模拟模型改回通用做法：写死的项目名、领域词表、百分比启发式全部删除，冲突只转述产品原话。
-2. 去作弊后先掉到 17/24，暴露两个真产品缺陷（上下文被砍到 28 字、依据不足回答被清空），修好后回到 23/24，两处都补了单元测试。
-3. 唯一错题 X13：产品侧 C-04 冲突判定是对的，但 mock 服务端的样板项目更新把"进度"栏目在 A、B 两份访谈纪要之间覆盖掉，导致冲突没被记录；该样板被审核人用例硬性依赖，我未改动，请审核人裁定处置。
-4. lint `clean`、单元测试 145 项全过；push 与 PR 两次完整运行均 **GREEN 80/80**，头部提交 `c47616c`。
-5. 未合并 PR，未推送 main，未 force push，未改任何审核人文件与考题。
+1. 按裁定给 mock 增加 extractive（按文档作答）模式，模式在启动时由 `PAW_MOCK_MODE` 指定，默认仍是剧本模式，B/PM 用例与预期不变。
+2. extractive 模式只从请求里的文档原文生成候选：项目更新取已有项目名 + 原文进展句，待办取原文里未完成的动作句，原文没有就不生成；规则通用，lint R7 干净。
+3. 考试执行器仍然核准全部候选、一条不跳过；剧本样板不再污染考试数据，产品因此正常记录了 60%/45% 冲突（`pm_conflict` 0 行 → 1 行）。
+4. 过程中又修出一个产品缺陷（兜底路径把相关条目砍到 120 字，导致"培训预算"丢数字），补了单元测试；lint `clean`、单元测试 150 项全过。
+5. push 与 PR 两次完整运行均 **GREEN 80/80**，考题 **24/24**（取自云端产物），头部提交 `771ad5d`；未合并 PR、未推送 main、未 force push、未改考题与审核人文件。
