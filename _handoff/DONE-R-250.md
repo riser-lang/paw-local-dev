@@ -440,17 +440,22 @@ VERDICT: GREEN
 
 ### 5.5 本报告提交后的运行（只有本文件改动）
 
-本报告推到同一分支后，PR 头部再前进一步。如实记录：
+报告推到分支后 PR 头部再前进一步，头部提交为 **`c62e3cd`**（只有本 Markdown）。如实记录全部经过：
 
-| 事件 | 运行 | 提交 | 结论 |
+| 事件 | 运行 | 尝试 | 结论 |
 |---|---|---|---|
-| push | [39020576902](https://github.com/riser-lang/paw-local-dev/actions/runs/39020576902) | `6126368` | **GREEN**（80/80 PASS，首次运行即通过） |
-| pull_request（首次） | [39020579880](https://github.com/riser-lang/paw-local-dev/actions/runs/39020579880) | `6126368` | **RED**：`PM-B2-05` 报 `httpx.ReadError: [WinError 10054] An existing connection was forcibly closed by the remote host` |
-| pull_request（重跑失败作业后） | [39020579880](https://github.com/riser-lang/paw-local-dev/actions/runs/39020579880)（attempt 2） | `6126368` | **GREEN**（80/80 PASS，`PM-B2-05` PASS） |
+| pull_request | [39022496567](https://github.com/riser-lang/paw-local-dev/actions/runs/39022496567) | attempt 1 | **GREEN**（80/80 PASS，首次即通过） |
+| push | [39022494198](https://github.com/riser-lang/paw-local-dev/actions/runs/39022494198) | attempt 1 | **RED**：`PM-A4-01` 报 `playwright._impl._errors.TargetClosedError: Page.screenshot: Target page, context or browser has been closed`（浏览器在截图时被关闭） |
+| push | 同上 | attempt 2（只重跑失败作业） | **RED**，但**全部 80 个用例 PASS**；门禁失败原因是 `screenshot … reused 2 times`——只重跑 PM07 导致两次尝试的产物混在一起，PM-A4-01 新截图与上一次的重复 |
+| push | 同上 | attempt 3（重跑整个 workflow） | **GREEN**（80/80 PASS，0 FAIL，0 NOT RUN） |
 
-关于那次 RED，如实说明：`PM-B2-05` 失败在**连接被对端关闭**（WinError 10054），不是断言失败；同一提交的 push 运行里 `PM-B2-05` 是 PASS，且该提交只改了这一个 Markdown 文件、不含任何代码。判断为运行环境的偶发网络/进程中断，因此重跑失败的作业，重跑后全绿。**没有改动任何测试或断言来让它通过。**
+关于这些 RED，如实说明：
+- **attempt 1** 是浏览器/页面在截图时被关闭（`TargetClosedError`），不是断言失败。审核人的不稳定记录里 PM-A2-01 / PM-A4-01 本就属于"截图时机"一类问题。
+- **attempt 2** 是我操作造成的：只重跑失败作业，使报告目录里混入两次尝试的截图，出现哈希重复。**教训：这类含截图校验的流水线要整条重跑，不能只重跑失败作业。**
+- 两次 RED 都不是产品问题：该提交只改本文件，不含任何代码；上一提交 `350d16a` 的 push 与 PR 均为 GREEN。
+- **没有改动任何测试、断言或截图逻辑来让它通过**；attempt 3 是整条 workflow 干净重跑。
 
-（本表是在这两次运行结束后补写的，所以写入本表的这次提交又会成为新的头部；其内容只有本文件。）
+（本表写入后，头部会再前进一次；那次提交同样只改本文件。按 TASK-R-250 第 6 项，C-11 合并通知到达后还要 `git merge origin/main` 并整条重跑一次，届时以那一轮的结果为准。）
 
 ---
 ## 6. 我在 C-11 分支上做过的部分工作（已按要求停下）
