@@ -198,6 +198,21 @@ def _knowledge_doc(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         " JOIN wiki_page wp ON wp.id = ksl.source_page_id"
         " WHERE ksl.knowledge_id = ? ORDER BY wp.id", (kid,),
     ).fetchall() if r[0]]
+    try:
+        source_names = [str(r[0]) for r in db.execute(
+            "SELECT COALESCE(NULLIF(ld.display_name, ''), wp.title)"
+            " FROM knowledge_source_link ksl"
+            " JOIN wiki_page wp ON wp.id = ksl.source_page_id"
+            " LEFT JOIN source_version_governance svg"
+            "   ON svg.source_version_id = wp.wps_document_id"
+            " LEFT JOIN logical_document ld"
+            "   ON ld.logical_document_id = svg.logical_document_id"
+            " WHERE ksl.knowledge_id = ? ORDER BY wp.id", (kid,),
+        ).fetchall() if r[0]]
+        source_titles = list(dict.fromkeys(source_titles + source_names))
+    except sqlite3.Error as exc:
+        _LOGGER.warning("retrieval source filename lookup failed (%s)",
+                        type(exc).__name__)
     prj = db.execute(
         "SELECT project_id FROM knowledge_project_link WHERE knowledge_id = ?",
         (kid,),

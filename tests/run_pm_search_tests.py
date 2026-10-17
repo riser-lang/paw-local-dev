@@ -65,6 +65,11 @@ def run_c11(report, installer):
             result = prepare_search_document(c.id)
             found = any(item.get("title") == FILENAME or BODY[:16] in item.get("snippet", "")
                         for item in result.get("items", []))
+            print("C-11 full filename search evidence", json.dumps({
+                "count": result.get("count"),
+                "items": [{"title": item.get("title"), "snippet": item.get("snippet")}
+                          for item in result.get("items", [])],
+            }, ensure_ascii=False))
             c.check("full_filename_search_found", found, True)
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=False)

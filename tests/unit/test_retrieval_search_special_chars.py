@@ -58,9 +58,13 @@ def test_knowledge_index_includes_linked_source_filename():
         db.row_factory = sqlite3.Row
         db.execute("CREATE TABLE knowledge_source_link (knowledge_id TEXT, source_page_id TEXT)")
         db.execute("CREATE TABLE knowledge_project_link (knowledge_id TEXT, project_id TEXT)")
-        db.execute("CREATE TABLE wiki_page (id TEXT, title TEXT)")
+        db.execute("CREATE TABLE wiki_page (id TEXT, title TEXT, wps_document_id TEXT)")
+        db.execute("CREATE TABLE source_version_governance (source_version_id TEXT, logical_document_id TEXT)")
+        db.execute("CREATE TABLE logical_document (logical_document_id TEXT, display_name TEXT)")
         db.execute("INSERT INTO knowledge_source_link VALUES ('k1', 'w1')")
-        db.execute("INSERT INTO wiki_page VALUES ('w1', '星火导师计划_方案_v2.docx')")
+        db.execute("INSERT INTO wiki_page VALUES ('w1', '星火导师计划方案', 'doc1@1')")
+        db.execute("INSERT INTO source_version_governance VALUES ('doc1@1', 'logical1')")
+        db.execute("INSERT INTO logical_document VALUES ('logical1', '星火导师计划_方案_v2.docx')")
         row = db.execute(
             "SELECT 'k1' AS id, '项目知识' AS title, '' AS one_line_summary,"
             " '{}' AS content_json, 1 AS confirmed_revision_no, 'current' AS status,"
