@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09, PM10]
+        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09, PM10, PM11]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -285,6 +285,12 @@ jobs:
         run: |
           $baselinePm = (Get-ChildItem -Path baseline_pm\*.exe)[0].FullName
           python tests/run_pm_tests.py --cockpit-negative --installer-exe $baselinePm --commit-sha ${{ github.sha }} --output-report reports/report_negative_pm_cockpit.json
+
+      - name: Execute PM Search Negative Control
+        shell: pwsh
+        run: |
+          $baselinePm = (Get-ChildItem -Path baseline_pm\*.exe)[0].FullName
+          python tests/run_pm_tests.py --search-negative --installer-exe $baselinePm --commit-sha ${{ github.sha }} --output-report reports/report_negative_pm_search.json
 
       - name: Scan Artifacts for Credential Leaks
         if: always()
