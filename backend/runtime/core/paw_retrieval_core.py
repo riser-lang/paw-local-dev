@@ -193,6 +193,11 @@ def _knowledge_doc(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         "SELECT source_page_id FROM knowledge_source_link WHERE knowledge_id = ?",
         (kid,),
     ).fetchall()
+    source_titles = [str(r[0]) for r in db.execute(
+        "SELECT wp.title FROM knowledge_source_link ksl"
+        " JOIN wiki_page wp ON wp.id = ksl.source_page_id"
+        " WHERE ksl.knowledge_id = ? ORDER BY wp.id", (kid,),
+    ).fetchall() if r[0]]
     prj = db.execute(
         "SELECT project_id FROM knowledge_project_link WHERE knowledge_id = ?",
         (kid,),
@@ -210,8 +215,9 @@ def _knowledge_doc(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         "revision_ref": (f"knowledge_revision:{row['rev_id']}"
                          if row["rev_id"] else None),
         "title": row["title"] or "",
-        "search_text": build_search_text(
-            row["title"] or "", "" if canonical else row["one_line_summary"] or "", row["content_json"]),
+        "search_text": (build_search_text(
+            row["title"] or "", "" if canonical else row["one_line_summary"] or "", row["content_json"])
+            + (" " + " ".join(source_titles) if source_titles else ""))[:_MAX_TEXT],
         "authority_state": (EFFECTIVE_CURRENT if canonical else
                             ("ARCHIVED" if status == "deprecated" else status.upper() or None)),
         "valid_from": None, "valid_to": None,

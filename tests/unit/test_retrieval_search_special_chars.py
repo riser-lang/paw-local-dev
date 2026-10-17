@@ -9,7 +9,7 @@ CORE_DIR = Path(__file__).resolve().parents[2] / "backend" / "runtime" / "core"
 if str(CORE_DIR) not in sys.path:
     sys.path.insert(0, str(CORE_DIR))
 
-from paw_retrieval_core import _recall  # noqa: E402
+from paw_retrieval_core import _knowledge_doc, _recall  # noqa: E402
 
 
 @pytest.mark.parametrize("query", [
@@ -51,3 +51,23 @@ def test_recall_logs_fts_errors_without_query_text(caplog):
     assert [row["document_id"] for row in results] == ["expected"]
     assert "retrieval FTS query failed" in caplog.text
     assert "private-search-term" not in caplog.text
+
+
+def test_knowledge_index_includes_linked_source_filename():
+    with sqlite3.connect(":memory:") as db:
+        db.row_factory = sqlite3.Row
+        db.execute("CREATE TABLE knowledge_source_link (knowledge_id TEXT, source_page_id TEXT)")
+        db.execute("CREATE TABLE knowledge_project_link (knowledge_id TEXT, project_id TEXT)")
+        db.execute("CREATE TABLE wiki_page (id TEXT, title TEXT)")
+        db.execute("INSERT INTO knowledge_source_link VALUES ('k1', 'w1')")
+        db.execute("INSERT INTO wiki_page VALUES ('w1', '星火导师计划_方案_v2.docx')")
+        row = db.execute(
+            "SELECT 'k1' AS id, '项目知识' AS title, '' AS one_line_summary,"
+            " '{}' AS content_json, 1 AS confirmed_revision_no, 'current' AS status,"
+            " 'r1' AS rev_id, 1 AS revision_no, '2026-10-17' AS updated_at,"
+            " '2026-10-17' AS confirmed_at, '2026-10-17' AS rev_created_at"
+        ).fetchone()
+
+        indexed = _knowledge_doc(db, row)
+
+    assert "星火导师计划_方案_v2.docx" in indexed["search_text"]
