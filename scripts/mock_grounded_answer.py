@@ -128,8 +128,47 @@ def _entity(question, records):
     return best
 
 
+def _named_scope(question):
+    """A name the question uses to scope the question ("…项目的…").
+
+    ``None`` means the question does not scope itself to a named thing, so any
+    record may answer it.  A name here that matches no record title means the
+    answer must come from a record about that name, not from some other
+    project's document that happens to contain the same noun.
+    """
+    hit = re.match(r'^\s*([\u4e00-\u9fffA-Za-z0-9]{2,20}?)(?:项目|计划|方案|产品)?'
+                   r'(?:的|里|中|上|下)', question)
+    if not hit:
+        return None
+    name = hit.group(1)
+    # A demonstrative or counted phrase ("这三个", "所有", "几个") refers to a set,
+    # not to one named thing, so it must not scope the question.
+    if re.match(r'^[这那该本各某全几多每]|^[一两三四五六七八九十百千万\d]', name):
+        return None
+    return name
+
+
 def _sentences(text):
-    return [s.strip() for s in re.split(r'[。；\n]', text) if s.strip()]
+    """Prose sentences only.
+
+    Approved-change records carry raw JSON payloads.  Quoting one back is not an
+    answer to anything, and matching a question against its keys (a key like
+    ``latest_progress_summary`` shares characters with many questions) would let
+    an unrelated record masquerade as the answering evidence.
+    """
+    out = []
+    for raw in re.split(r'[。；\n]', text):
+        s = raw.strip()
+        if not s or s[0] in '{["' or re.match(r'^[\[{]', s):
+            continue
+        # A change record's payload is machine metadata, not prose.  Quoting it
+        # back is not an answer, so only the part before the payload is kept.
+        cut = re.search(r'\s*\{[^{}]*"', s)
+        if cut:
+            s = s[:cut.start()].strip()
+        if s:
+            out.append(s)
+    return out
 
 
 def _grams(text, low, high=6):
@@ -154,6 +193,27 @@ def _weighted_overlap(want, sentence):
     return sum(len(g) for g in want & have)
 
 
+def _char_content(sentence, question):
+    """The sentence's own content: what it says that the question does not.
+
+    A sentence that adds a fact ("风险：设计评审尚未完成" for a question that
+    also contains 风险) says something new; a bare restatement of the subject
+    says nothing the question did not already supply, so it is not an answer to
+    anything.
+    """
+    body = re.sub(r'^[^：:]{0,12}[：:]', '', str(sentence or ''))
+    body = re.sub(r'[\s。；：:，,、]', '', body)
+    asked = re.sub(r'[\s。；：:，,、]', '', str(question or ''))
+    # Longest run of the sentence that the question does not already contain.
+    remaining, longest = asked, 0
+    for ch in body:
+        if ch in remaining:
+            remaining = remaining.replace(ch, '', 1)
+        else:
+            longest += 1
+    return longest
+
+
 def answer(prompt):
     question=prompt.rsplit('--- 用户消息 ---',1)[-1].split('【严格修复')[0].strip()
     refs=_refs(prompt)
@@ -175,6 +235,10 @@ def answer(prompt):
         name=re.split(r'[_（(.\s·]',title)[0].strip()
         return bool(subject) and len(name)>=2 and (name in subject or subject in name)
 
+    def title_matches_scope(title,scope):
+        name=re.split(r'[_（(.\s·]',title)[0].strip()
+        return len(name)>=2 and (name in scope or scope in name)
+
     # A question may single out one member of a document family by a token that
     # appears in that document's own title ("最早的 v1 方案").  Such a token is
     # taken from the question, never from a fixed list.
@@ -188,9 +252,18 @@ def answer(prompt):
     # A "where does this stand" question is answered by the record's status
     # line, which need not repeat the question's own words.
     asks_progress=bool(_PROGRESS_RE.search(question))
+    # When the question scopes itself to a name that no record title carries,
+    # another subject's document must not answer it just because it shares a
+    # noun: "冲刺项目的采购预算" is not answered by a different project's budget.
+    # A status question is exempt: the record's own status line is the answer,
+    # whatever the record is called.
+    scope=_named_scope(question)
+    scoped_out=bool(scope) and not subject and not asks_progress and not asks_next
     choices=[]
     for ident,title,content in records:
         if ident not in refs:
+            continue
+        if scoped_out and not title_matches_scope(title,scope):
             continue
         same_subject=title_matches_subject(title)
         qualified=title_matches_qualifier(title)
@@ -207,26 +280,26 @@ def answer(prompt):
             # the record's own content, so a bare header cell does not stand in
             # for the row it belongs to.
             score+=min(len(sentence),60)/60.0
-            # A status/next-step question is answered by the status line, which
-            # the question's own wording need not repeat.
             stated=bool(_PENDING_RE.search(sentence)) or bool(
                 re.search(r'已完成|完成|已交付|已上线|进行中|里程碑',sentence))
-            # When the question names no subject that any record title carries,
-            # a status line is the best available answer to a status question;
-            # requiring a subject match there would refuse a question the
-            # context plainly answers.
-            progress_hit=(asks_progress and stated
-                          and (same_subject or not subject))
+            # A status line answers a status question.  When the question names
+            # no subject that any record title carries, the record's own status
+            # line is the best available answer; when it does name one, that
+            # subject must be the one whose status is shown.
+            progress_hit=(asks_progress and stated and (same_subject or not subject))
             if progress_hit:
                 score+=4
-            # ``addressed`` records whether the sentence matches the thing the
-            # question actually asks about, as opposed to merely being about
-            # the same subject.  Without it a question whose answer is absent
-            # ("...的预算是多少？") still looks answered because the subject
-            # name alone overlaps every sentence of that subject's records.
-            addressed=(bool(want & _grams(sentence,2))
-                       or (asks_next and pending and (same_subject or not subject))
-                       or progress_hit)
+            # ``addressed`` records whether the sentence answers what was asked,
+            # as opposed to merely being about the same subject.  The question's
+            # scaffolding is already excluded from ``want``, so any surviving
+            # overlap is a content word the question really used.  The sentence
+            # must also carry something of its own: a bare label or a restated
+            # subject ("冲刺项目") answers nothing.
+            overlap=want & _grams(sentence,2)
+            content=_char_content(sentence, question)
+            addressed=(sum(len(g) for g in overlap)>=2 and content>=2
+                       or (asks_next and pending and same_subject)
+                       or (asks_progress and stated and (same_subject or not subject)))
             choices.append({'score':score,'qualified':qualified,'same_subject':same_subject,
                             'addressed':addressed,'title':title,'sentence':sentence,
                             'eid':refs[ident]})
