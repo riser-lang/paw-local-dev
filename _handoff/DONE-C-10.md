@@ -677,6 +677,16 @@ $ python -m pytest tests/unit -q
 | push 单元测试 | [39002931931](https://github.com/riser-lang/paw-local-dev/actions/runs/39002931931) | GREEN |
 | PR 单元测试 | [39002934291](https://github.com/riser-lang/paw-local-dev/actions/runs/39002934291) | GREEN |
 
+**本报告提交 `7c3804d` 后的运行**（只有文档改动）：
+
+| 事件 | 运行 | 结论 |
+|---|---|---|
+| push | [39004407429](https://github.com/riser-lang/paw-local-dev/actions/runs/39004407429) | **GREEN**（80/80 PASS） |
+| pull_request（首次） | [39004412403](https://github.com/riser-lang/paw-local-dev/actions/runs/39004412403) | **RED**：`PM-C1-03` 报 `TimeoutError: Scanner did not reach completed within 40s (last state=phase2_…)` |
+| pull_request（重跑失败作业后） | [39004412403](https://github.com/riser-lang/paw-local-dev/actions/runs/39004412403)（attempt 2） | **GREEN**（80/80 PASS） |
+
+关于那次 RED，如实说明：`PM-C1-03` 失败在 `tests/scanner_wait.py` 的**扫描超时**（40 秒内扫描没走完），不是断言失败，也不是我的改动导致——PM06 跑的是 scripted 模式，我这次没有碰它的任何代码路径，而且同一提交的 push 运行里 `PM-C1-03` 是 PASS。判断为运行环境的偶发超时，因此重跑失败的作业，重跑后全绿。**没有改动任何测试或断言来让它通过。**
+
 负对照按预期 FAIL（NC-01、NC-02、NC-03、NC-PM-GOV、NC-PM-C1、NC-PM-B2），属于设计如此。
 
 考题成绩取自 PR 运行 `39002934344` 的产物 `exam-results/exam_result.json`：
