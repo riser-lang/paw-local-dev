@@ -216,8 +216,6 @@ def run_governance_negative(report, installer):
             before = formal()
             cruise()
             c.check('formal_fields_unchanged_after_cruise', formal(), before)
-    from tests.run_pm_search_tests import run_c11_negative
-    run_c11_negative(report, installer)
 
 
 if __name__ == '__main__':

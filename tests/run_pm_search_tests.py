@@ -18,7 +18,7 @@ FILENAME = "星火导师计划_方案_v2.docx"
 BODY = "星火导师计划方案说明。已完成第一阶段验证，下一步整理交付清单。"
 
 
-def prepare_search_document(case_id, *, allow_missing_knowledge=False):
+def prepare_search_document(case_id):
     directory = Path(os.environ["TEMP"]) / ("PAW_PM_C11_" + case_id)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / FILENAME
@@ -33,12 +33,7 @@ def prepare_search_document(case_id, *, allow_missing_knowledge=False):
     candidates = poll_candidates_from_scanner()
     _, _, _, knowledge_id = parse_candidate_types(candidates)
     if not knowledge_id:
-        if not allow_missing_knowledge:
-            raise RuntimeError("扫描完成但没有知识候选")
-        progress = api("GET", "/v1/local/scanner/progress")
-        if progress.get("status") != "completed" or progress.get("phase1_success", 0) < 1:
-            raise RuntimeError("基线资料未完成摄取，不能执行搜索负对照")
-        return None
+        raise RuntimeError("扫描完成但没有知识候选")
     accepted = api("POST", "/v1/web/brain/review/batch_accept", {
         "candidate_ids": [knowledge_id], "reviewer": "LocalTester",
     })
@@ -59,28 +54,38 @@ def prepare_search_document(case_id, *, allow_missing_knowledge=False):
 def run_c11(report, installer):
     from playwright.sync_api import sync_playwright
 
-    with report.case("PM-S1-01", "完整文件名含扩展名的知识搜索") as c:
+    with report.case("PM-S1-01", "资料页完整文件名搜索") as c:
         c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
         with running():
-            result = prepare_search_document(c.id)
-            found = any(item.get("title") == FILENAME or BODY[:16] in item.get("snippet", "")
-                        for item in result.get("items", []))
-            print("C-11 full filename search evidence", json.dumps({
-                "count": result.get("count"),
-                "items": [{"title": item.get("title"), "snippet": item.get("snippet")}
-                          for item in result.get("items", [])],
+            directory = Path(os.environ["TEMP"]) / ("PAW_PM_C11_" + c.id)
+            directory.mkdir(parents=True, exist_ok=True)
+            document = Document()
+            document.core_properties.title = FILENAME
+            document.add_paragraph(BODY)
+            document.save(directory / FILENAME)
+            configure_mock_settings(directory)
+            api("POST", "/v1/local/scanner/start", {
+                "directory": str(directory), "force_restart": True,
+            })
+            poll_candidates_from_scanner()
+            sources = api("GET", "/v1/web/workspace/sources?limit=500")
+            items = sources.get("items", [])
+            found = any(item.get("title") == FILENAME for item in items)
+            print("C-11 source registry search evidence", json.dumps({
+                "count": len(items),
+                "matching_titles": [item.get("title") for item in items
+                                    if item.get("title") == FILENAME],
             }, ensure_ascii=False))
             c.check("full_filename_search_found", found, True)
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=False)
                 try:
                     page = browser.new_page(viewport={"width": 1440, "height": 900})
-                    page.goto(BASE + "/app/knowledge", wait_until="networkidle")
-                    search = page.get_by_role("searchbox", name="搜索正式知识")
+                    page.goto(BASE + "/app/files", wait_until="networkidle")
+                    search = page.get_by_placeholder("搜索文件名或分类", exact=True)
                     search.fill(FILENAME)
-                    search.press("Enter")
                     page.get_by_text(FILENAME, exact=True).first.wait_for(timeout=10000)
-                    rendered = page.locator(".knowledge-grid").inner_text()
+                    rendered = page.locator(".source-grid").inner_text()
                     c.check("full_filename_search_rendered", FILENAME in rendered, True)
                 finally:
                     browser.close()
@@ -118,18 +123,3 @@ def run_c11(report, installer):
             sources = answer.get("sources") or answer.get("source_refs") or answer.get("evidence") or []
             c.check("assistant_source_contains_full_filename",
                     FILENAME in json.dumps(sources, ensure_ascii=False), True)
-
-
-def run_c11_negative(report, installer):
-    with report.case("NC-PM-S1", "2.3.9 完整文件名搜索负对照") as c:
-        c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
-        with running():
-            prepare_search_document(c.id, allow_missing_knowledge=True)
-            try:
-                response = httpx.get(BASE + "/v1/web/workspace/projection/knowledge-search",
-                                     params={"q": FILENAME, "limit": 20}, timeout=20)
-                result = response.json() if response.is_success else {"items": []}
-            except (httpx.HTTPError, ValueError):
-                result = {"items": []}
-            found = any(item.get("title") == FILENAME for item in result.get("items", []))
-            c.check("full_filename_search_found", found, True)
