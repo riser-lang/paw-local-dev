@@ -438,6 +438,20 @@ Required cases: 80 | PASS 80 | FAIL 0 | NOT RUN 0
 VERDICT: GREEN
 ```
 
+### 5.5 本报告提交后的运行（只有本文件改动）
+
+本报告推到同一分支后，PR 头部再前进一步。如实记录：
+
+| 事件 | 运行 | 提交 | 结论 |
+|---|---|---|---|
+| push | [39020576902](https://github.com/riser-lang/paw-local-dev/actions/runs/39020576902) | `6126368` | **GREEN**（80/80 PASS，首次运行即通过） |
+| pull_request（首次） | [39020579880](https://github.com/riser-lang/paw-local-dev/actions/runs/39020579880) | `6126368` | **RED**：`PM-B2-05` 报 `httpx.ReadError: [WinError 10054] An existing connection was forcibly closed by the remote host` |
+| pull_request（重跑失败作业后） | [39020579880](https://github.com/riser-lang/paw-local-dev/actions/runs/39020579880)（attempt 2） | `6126368` | **GREEN**（80/80 PASS，`PM-B2-05` PASS） |
+
+关于那次 RED，如实说明：`PM-B2-05` 失败在**连接被对端关闭**（WinError 10054），不是断言失败；同一提交的 push 运行里 `PM-B2-05` 是 PASS，且该提交只改了这一个 Markdown 文件、不含任何代码。判断为运行环境的偶发网络/进程中断，因此重跑失败的作业，重跑后全绿。**没有改动任何测试或断言来让它通过。**
+
+（本表是在这两次运行结束后补写的，所以写入本表的这次提交又会成为新的头部；其内容只有本文件。）
+
 ---
 ## 6. 我在 C-11 分支上做过的部分工作（已按要求停下）
 
