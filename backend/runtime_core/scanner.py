@@ -374,6 +374,13 @@ class PawScanner:
                     and cp_entry.get("size") == size
                     and cp_entry.get("phase1_status") == "success"
                 ):
+                    # Populate the source registry for files scanned by older
+                    # versions too. Registration is keyed by canonical path,
+                    # so rescans update the existing source instead of adding
+                    # another row.
+                    checkpoint_hash = cp_entry.get("hash")
+                    if checkpoint_hash:
+                        self._register_local_scan_source(p, checkpoint_hash, mtime, size)
                     self.phase1_processed += 1
                     self.phase1_success += 1
                     continue
@@ -563,6 +570,35 @@ class PawScanner:
                     (sid,logical_id,json.dumps({'file_name':p.name,'hash':f_hash},ensure_ascii=False),now,now))
         finally:
             conn.close()
+        self._register_local_scan_source(p, f_hash, mtime, size)
+
+    @staticmethod
+    def _register_local_scan_source(p: Path, f_hash: str, mtime: float, size: int) -> None:
+        """Expose scanned files in the source library without creating Knowledge."""
+        from backend.workspace_api import repository
+
+        kind_by_ext = {
+            ".docx": "document",
+            ".txt": "document",
+            ".text": "document",
+            ".md": "document",
+            ".pdf": "pdf",
+            ".xlsx": "spreadsheet",
+            ".xlsm": "spreadsheet",
+            ".pptx": "presentation",
+        }
+        path = p.resolve()
+        repository.register_source(
+            title=p.name,
+            canonical_location=_safe_str_path(path),
+            source_origin="local_scan",
+            content_hash=f_hash,
+            file_ext=p.suffix,
+            source_kind=kind_by_ext[p.suffix.lower()],
+            canonical_state="canonical",
+            size=size,
+            mtime=datetime.fromtimestamp(mtime, timezone.utc).isoformat(),
+        )
 
     # ── Phase 2 Worker: AI Analysis & Candidate Proposal ──────────────────────
 

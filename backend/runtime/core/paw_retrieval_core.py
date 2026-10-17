@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -192,6 +193,26 @@ def _knowledge_doc(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         "SELECT source_page_id FROM knowledge_source_link WHERE knowledge_id = ?",
         (kid,),
     ).fetchall()
+    source_titles = [str(r[0]) for r in db.execute(
+        "SELECT wp.title FROM knowledge_source_link ksl"
+        " JOIN wiki_page wp ON wp.id = ksl.source_page_id"
+        " WHERE ksl.knowledge_id = ? ORDER BY wp.id", (kid,),
+    ).fetchall() if r[0]]
+    try:
+        source_names = [str(r[0]) for r in db.execute(
+            "SELECT COALESCE(NULLIF(ld.display_name, ''), wp.title)"
+            " FROM knowledge_source_link ksl"
+            " JOIN wiki_page wp ON wp.id = ksl.source_page_id"
+            " LEFT JOIN source_version_governance svg"
+            "   ON svg.source_version_id = wp.wps_document_id"
+            " LEFT JOIN logical_document ld"
+            "   ON ld.logical_document_id = svg.logical_document_id"
+            " WHERE ksl.knowledge_id = ? ORDER BY wp.id", (kid,),
+        ).fetchall() if r[0]]
+        source_titles = list(dict.fromkeys(source_titles + source_names))
+    except sqlite3.Error as exc:
+        _LOGGER.warning("retrieval source filename lookup failed (%s)",
+                        type(exc).__name__)
     prj = db.execute(
         "SELECT project_id FROM knowledge_project_link WHERE knowledge_id = ?",
         (kid,),
@@ -209,8 +230,9 @@ def _knowledge_doc(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         "revision_ref": (f"knowledge_revision:{row['rev_id']}"
                          if row["rev_id"] else None),
         "title": row["title"] or "",
-        "search_text": build_search_text(
-            row["title"] or "", "" if canonical else row["one_line_summary"] or "", row["content_json"]),
+        "search_text": (build_search_text(
+            row["title"] or "", "" if canonical else row["one_line_summary"] or "", row["content_json"])
+            + (" " + " ".join(source_titles) if source_titles else ""))[:_MAX_TEXT],
         "authority_state": (EFFECTIVE_CURRENT if canonical else
                             ("ARCHIVED" if status == "deprecated" else status.upper() or None)),
         "valid_from": None, "valid_to": None,
@@ -307,31 +329,50 @@ def refresh_knowledge(db_path: str | Path, knowledge_id: str) -> dict[str, Any]:
 # ------------------------------------------------------------------
 # Lexical recall (FTS trigram + bounded LIKE fallback for short terms)
 # ------------------------------------------------------------------
-_CJK = re.compile(r"[\u4e00-\u9fff]")
+_LOGGER = logging.getLogger(__name__)
+_FTS_TOKEN = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
+_LIKE_MAX_QUERY_CHARS = 512
+
+
+def _fts_query(query: str) -> str:
+    """Build a quoted FTS5 query from user supplied text."""
+    tokens = _FTS_TOKEN.findall(query[:_LIKE_MAX_QUERY_CHARS])
+    return " AND ".join('"' + token.replace('"', '""') + '"'
+                        for token in tokens)
+
+
+def _like_pattern(query: str) -> str:
+    """Escape LIKE metacharacters and cap the user-controlled search term."""
+    term = query.strip()[:_LIKE_MAX_QUERY_CHARS]
+    term = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{term}%"
 
 
 def _recall(db: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
-    """FTS trigram recall; bounded LIKE fallback for 2-char CJK terms."""
+    """FTS trigram recall with a bounded LIKE fallback for every query."""
     q = query.strip()
     rows: list[sqlite3.Row] = []
-    fts_err = None
-    try:
-        rows = db.execute(
-            "SELECT f.document_id, bm25(retrieval_document_fts) AS score"
-            " FROM retrieval_document_fts f"
-            " WHERE retrieval_document_fts MATCH ?"
-            " ORDER BY score LIMIT ?",
-            (q, limit * 3),
-        ).fetchall()
-    except sqlite3.OperationalError as e:
-        fts_err = str(e)
-    cjk_len = len(_CJK.findall(q))
-    if not rows and cjk_len and cjk_len < 3:
-        # Deterministic bounded LIKE fallback for short CJK terms only.
+    fts_query = _fts_query(q)
+    if fts_query:
+        try:
+            rows = db.execute(
+                "SELECT f.document_id, bm25(retrieval_document_fts) AS score"
+                " FROM retrieval_document_fts f"
+                " WHERE retrieval_document_fts MATCH ?"
+                " ORDER BY score LIMIT ?",
+                (fts_query, max(1, limit * 3)),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            # Query text is intentionally excluded from diagnostic logs.
+            _LOGGER.warning("retrieval FTS query failed (%s); using LIKE fallback",
+                            type(exc).__name__)
+    if not rows and q:
+        # SQL wildcards are escaped so the fallback remains a literal substring search.
+        pattern = _like_pattern(q)
         rows = db.execute(
             "SELECT document_id, -1.0 AS score FROM retrieval_document"
-            " WHERE search_text LIKE ? OR title LIKE ? LIMIT ?",
-            (f"%{q}%", f"%{q}%", limit * 3),
+            " WHERE search_text LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' LIMIT ?",
+            (pattern, pattern, max(1, limit * 3)),
         ).fetchall()
     return rows
 
