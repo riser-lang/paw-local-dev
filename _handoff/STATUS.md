@@ -84,3 +84,4 @@
 - C-11 预定用例 blob：27618f4e3b86bea75e56366ccb1eab25ecb0ff73（tests/pending/required_cases_C-11.json）
 
 - 2026-10-17 审核人修订 C-11 用例（REVIEW-C-11）：新 blob 03c92511b62a3136a6e37a2b88df0483153a8ca6（原 27618f4 作废），PM-S1-01 改为【资料】页，撤销 NC-PM-S1。PR #11 已关闭。R-250 需按 REVIEW-C-11 修改后再合并。
+- 2026-10-17 C-11 第二次修订：扫描的文件从不进入【资料】页（2.3.9 起就存在），列为 C-11 的核心修复；用例新 blob b17402e（PM-S1-01 必须走扫描流程，恢复 NC-PM-S1）。
