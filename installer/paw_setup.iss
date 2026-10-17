@@ -4,7 +4,7 @@
 ; =====================================================================
 
 #define MyAppName "PAW Personal Work OS"
-#define MyAppVersion "2.4.0"
+#define MyAppVersion "2.5.0"
 #define MyAppPublisher "PAW Work OS Team"
 #define MyAppURL "http://127.0.0.1:8800/app"
 #define MyAppExeName "PAW_Personal_Work_OS.exe"
@@ -30,17 +30,17 @@ LicenseFile=LICENSE.txt
 
 ; Output Directory & Installer Name
 OutputDir=..\dist
-OutputBaseFilename=PAW_Personal_Work_OS_Setup_v2.4.0
+OutputBaseFilename=PAW_Personal_Work_OS_Setup_v2.5.0
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 
 ; SmartScreen & Windows Compatibility Metadata
-VersionInfoVersion=2.4.0.0
+VersionInfoVersion=2.5.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} 安装向导
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=2.4.0.0
+VersionInfoProductVersion=2.5.0.0
 VersionInfoCopyright=Copyright (C) 2026 {#MyAppPublisher}. All rights reserved.
 
 ; Privileges & Architecture (Universal compatibility across Admin and Standard user accounts)
@@ -76,9 +76,12 @@ Name: "startupicon"; Description: "开机自动启动 PAW (&S)"; GroupDescriptio
 
 [Files]
 Source: "..\dist\PAW_Personal_Work_OS\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The full user guide ships with the program, byte-for-byte as docs/使用说明.txt.
+Source: "..\docs\使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\使用说明"; Filename: "{app}\使用说明.txt"
 Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon

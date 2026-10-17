@@ -367,6 +367,21 @@ def run_b1(report: Report, installer_exe: Path):
         )
         c.check("start_menu_shortcut_exists", has_sm, True)
 
+        # The full user guide must ship with the program, byte-for-byte as the
+        # copy kept in docs/.  Added for R-250; the checks above are unchanged.
+        guide_installed = INSTALL_DIR / "使用说明.txt"
+        c.check("installed_guide_exists", guide_installed.is_file(), True)
+        docs_guide = Path("docs") / "使用说明.txt"
+        same_bytes = (guide_installed.is_file() and docs_guide.is_file()
+                      and guide_installed.read_bytes() == docs_guide.read_bytes())
+        c.check("installed_guide_matches_docs", same_bytes, True)
+        has_guide_lnk = any(
+            (p / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+             / "PAW Personal Work OS" / "使用说明.lnk").exists()
+            for p in [app_data, prog_data]
+        )
+        c.check("start_menu_guide_shortcut_exists", has_guide_lnk, True)
+
     # B1-02
     with report.case("B1-02", "从快捷方式启动后 /app 返回 200，工作台页面截图") as c:
         c.fresh_install(clean_and_record, lambda: silent_install(installer_exe)[2], INSTALL_DIR)
