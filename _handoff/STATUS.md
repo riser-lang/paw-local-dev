@@ -82,3 +82,5 @@
 - 进度对比：云端已完成 A（运维）、A5（告警邮件）、B0（"需要你决定"打通）；B1–B6 大多只有规范或基础逻辑，C 只有设计包，D、E、F 未开始。**本地版（C-01 至 C-10）已领先**。合流方向应以本地 backend/pm 为底本，云端复用；云端的语义工作需改走 Spark/MCP，不能照搬本地直接调用模型的做法。
 - 从云端带回本地的：B7a 搜索缺陷（本地同样存在）→ **TASK-C-11**，用例已预定（tests/pending/required_cases_C-11.json）。云端的统一资料库页面、每日简报邮件，比赛后再评估。
 - C-11 预定用例 blob：27618f4e3b86bea75e56366ccb1eab25ecb0ff73（tests/pending/required_cases_C-11.json）
+
+- 2026-10-17 审核人修订 C-11 用例（REVIEW-C-11）：新 blob 03c92511b62a3136a6e37a2b88df0483153a8ca6（原 27618f4 作废），PM-S1-01 改为【资料】页，撤销 NC-PM-S1。PR #11 已关闭。R-250 需按 REVIEW-C-11 修改后再合并。
