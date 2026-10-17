@@ -1,46 +1,45 @@
-# DONE-C-11
+# DONE-C-11（返工更新）
 
 ## 1. 子项对照
 
 | 子项 | 状态 | 证据 / 说明 |
 |---|---|---|
-| 激活审核人提供的 C-11 required cases，内容不改 | 完成 | `git mv tests/pending/required_cases_C-11.json tests/required_cases_C-11.json`；原文件 SHA-256 `27618f4e3b86bea75e56366ccb1eab25ecb0ff73`，移动后未改。 |
-| `_recall()` 将输入安全转换为 FTS5 查询 | 完成 | 词元逐个双引号包裹，内部引号转义；限制输入长度。 |
-| FTS 无结果或失败时执行有界 LIKE 兜底，匹配标题和正文 | 完成 | LIKE 转义 `\`、`%`、`_`；诊断日志只记录异常类别，不含搜索原文。 |
-| 单元覆盖特殊字符、英文与中文长度 | 完成 | `tests/unit/test_retrieval_search_special_chars.py`，9 种查询均覆盖。 |
-| 检查其他直接 MATCH 调用 | 完成 | `git grep -n "MATCH" -- backend tests`：唯一执行 MATCH 位于 `backend/runtime/core/paw_retrieval_core.py` 的 `_recall()`。 |
-| 云端已激活验收用例 | 部分完成 | PM-S1-02 与 PM-S1-03 通过；PM-S1-01 未通过，NC-PM-S1 未能按预期失败检查结束；因此 C-11 尚未达到验收通过。 |
+| 激活并保留审核人修订后的 C-11 required cases | 完成 | 审核人提交 `d7a7e79` 修订了 PM-S1-01 页面描述，并撤销 NC-PM-S1；测试判定文件未由执行者修改。 |
+| `_recall()` 安全 FTS 查询、有界 LIKE 兜底和脱敏诊断 | 完成 | 保留前次实现；内存 SQLite/FTS5 单元覆盖 9 种点号、特殊字符、英文和中文长度情形。 |
+| PM-S1-01 核验【资料】页与资料接口 | 完成 | 通过受支持的 `/v1/web/workspace/sources/register` 产品 API 登记虚构文件元数据；检查 `/v1/web/workspace/sources` 返回项，并在 `/app/files` 输入“搜索文件名或分类”后检查 `.source-grid` 渲染文字。 |
+| PM-S1-02、PM-S1-03 及已有检查 | 完成 | 其检查逻辑保持不变；最终 PM09 区块 GREEN。 |
+| 删除已撤销的 NC-PM-S1 执行代码 | 完成 | 从 `tests/run_pm_search_tests.py` 移除负对照执行函数，从 `tests/run_pm_tests.py` 移除调用。 |
 
 ## 2. 改动清单
 
-- `backend/runtime/core/paw_retrieval_core.py`：安全 FTS 查询、任意长度有界 LIKE 兜底及脱敏诊断；检索索引补充可审计的关联来源名称。
-- `tests/unit/test_retrieval_search_special_chars.py`：特殊字符、点号文件名、英文和中英文长度的内存 SQLite/FTS5 回归测试。
-- `tests/run_pm_search_tests.py`：新增 PM-S1-01/02/03 和 NC-PM-S1 的安装版验收步骤。
-- `tests/run_pm_health_tests.py`、`tests/run_pm_tests.py`：将 C-11 验收步骤挂入现有运行器。
-- `tests/required_cases_C-11.json`：通过 git mv 激活；内容保持原样。
+- `tests/run_pm_search_tests.py`：PM-S1-01 改为资料源登记接口、资料列表接口和资料页搜索的双重检查；保留 PM-S1-02/03 检查。
+- `tests/run_pm_tests.py`：删除已撤销的 NC-PM-S1 调用。
+- `backend/runtime/core/paw_retrieval_core.py`、`tests/unit/test_retrieval_search_special_chars.py`：沿用前次提交的修复和单元测试，本次未修改。
+- `tests/required_cases_C-11.json`：由审核人在 `d7a7e79` 修订，本次未修改。
 
-PR：[#12](https://github.com/riser-lang/paw-local-dev/pull/12)，头部提交 `d19c6a37e7595efb56a72b4da0500e4e97eb491b`。
+PR：[#12](https://github.com/riser-lang/paw-local-dev/pull/12)。最终测试头部提交 `f340fcc5625af21a28789673351f80f1a65e778e`。
 
 ## 3. 测试
 
-本地（工作树 `D:\PAW\paw-dev-codex`，头部提交 d19c6a3）：
+本地（`D:\PAW\paw-dev-codex`，最终代码提交 f340fcc）：
 
 - `python tests/paw_lint.py` → `lint clean`
-- `python -m pytest tests/unit -q` → `161 passed in 12.90s`
+- `python -m pytest tests/unit -q` → `161 passed in 14.43s`
+- `git diff --check`、`python -m py_compile tests/run_pm_search_tests.py` → 成功
 
-云端完整流水线（同一头部提交）：
+云端完整流水线（同一 head SHA `f340fcc5625af21a28789673351f80f1a65e778e`）：
 
-- push： [运行 39011832951](https://github.com/riser-lang/paw-local-dev/actions/runs/39011832951) → RED；报告 82 PASS / 1 FAIL / 0 NOT RUN。PM-S1-01 的 `full_filename_search_found` 失败，NC-PM-S1 由于 `exception` 而非预期的 `full_filename_search_found` 失败。
-- PR： [运行 39011837393](https://github.com/riser-lang/paw-local-dev/actions/runs/39011837393) → RED；报告 82 PASS / 1 FAIL / 0 NOT RUN。失败项相同。PR 的 summary.md 内部标识 SHA 为 `13c6d4f931645a9e871507accd2f23e3c3fc1631`（PR 流水线生成的报告文本）；运行本身的 head SHA 是 d19c6a3。
-- 两个任务专用单元工作流均 GREEN：push `39011832952`，PR `39011837379`；PR installer build `39011837350` 成功。
-- PM-S1-01 的云端调试输出为 `C-11 full filename search evidence {"count": 0, "items": []}`。PM-S1-02、PM-S1-03 通过。
+- push：[运行 39019532245](https://github.com/riser-lang/paw-local-dev/actions/runs/39019532245) → GREEN；83 PASS / 0 FAIL / 0 NOT RUN。
+- PR：[运行 39019536499](https://github.com/riser-lang/paw-local-dev/actions/runs/39019536499) → GREEN；83 PASS / 0 FAIL / 0 NOT RUN。PR summary.md 内报告 SHA 为 `c7ce41ab667b25847989abfe95b285f3ba4909c0`；该 PR 运行 head SHA 与 push 一致，为 f340fcc。
+- 两侧 unit 工作流均成功：push `39019532249`、PR `39019536481`；PR 安装包构建 `39019536502` 成功。
+- 中间提交 `5e1dc2b` 的 PR 完整流程曾因扫描夹具未写入资料源注册表而失败；最终提交改由产品源登记 API 准备资料记录，最终 push/PR 均 GREEN。该中间运行不作为最终验收结果。
 
 ### push 运行 summary.md 全文（原样）
 
 ```text
-# Pipeline verdict for d19c6a37e7595efb56a72b4da0500e4e97eb491b
+# Pipeline verdict for f340fcc5625af21a28789673351f80f1a65e778e
 
-Required cases: 83 | PASS 82 | FAIL 1 | NOT RUN 0
+Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
 | Block | Case | Status | Failed check | Model |
 |---|---|---|---|---|
@@ -76,7 +75,6 @@ Required cases: 83 | PASS 82 | FAIL 1 | NOT RUN 0
 | NEGATIVE-CONTROL | NC-02 | FAIL | explainer_fields_filled | mock-llm |
 | NEGATIVE-CONTROL | NC-03 | FAIL | environment_clean | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-GOV | FAIL | formal_fields_unchanged_after_cruise | mock-llm |
-| NEGATIVE-CONTROL | NC-PM-S1 | FAIL | exception | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-C1 | FAIL | cockpit_rendered | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-B2 | FAIL | old_version_superseded | mock-llm |
 | PM02 | PM-B1-01 | PASS |  | mock-llm |
@@ -128,26 +126,24 @@ Required cases: 83 | PASS 82 | FAIL 1 | NOT RUN 0
 | PM08 | PM-E2-02 | PASS |  | mock-llm |
 | PM09 | PM-E3-01 | PASS |  | mock-llm |
 | PM09 | PM-E4-01 | PASS |  | mock-llm |
-| PM09 | PM-S1-01 | FAIL | full_filename_search_found | mock-llm |
+| PM09 | PM-S1-01 | PASS |  | mock-llm |
 | PM09 | PM-S1-02 | PASS |  | mock-llm |
 | PM09 | PM-S1-03 | PASS |  | mock-llm |
 | PM10 | PM-F1-01 | PASS |  | mock-llm |
 | PM10 | PM-F2-01 | PASS |  | mock-llm |
 | PM10 | PM-F3-01 | PASS |  | mock-llm |
 
-## Problems
-- PM-S1-01: FAIL (full_filename_search_found)
-- NC-PM-S1: expected FAIL on full_filename_search_found, got FAIL on exception
+## No problems
 
-VERDICT: RED
+VERDICT: GREEN
 ```
 
 ### PR 运行 summary.md 全文（原样）
 
 ```text
-# Pipeline verdict for 13c6d4f931645a9e871507accd2f23e3c3fc1631
+# Pipeline verdict for c7ce41ab667b25847989abfe95b285f3ba4909c0
 
-Required cases: 83 | PASS 82 | FAIL 1 | NOT RUN 0
+Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
 | Block | Case | Status | Failed check | Model |
 |---|---|---|---|---|
@@ -183,7 +179,6 @@ Required cases: 83 | PASS 82 | FAIL 1 | NOT RUN 0
 | NEGATIVE-CONTROL | NC-02 | FAIL | explainer_fields_filled | mock-llm |
 | NEGATIVE-CONTROL | NC-03 | FAIL | environment_clean | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-GOV | FAIL | formal_fields_unchanged_after_cruise | mock-llm |
-| NEGATIVE-CONTROL | NC-PM-S1 | FAIL | exception | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-C1 | FAIL | cockpit_rendered | mock-llm |
 | NEGATIVE-CONTROL | NC-PM-B2 | FAIL | old_version_superseded | mock-llm |
 | PM02 | PM-B1-01 | PASS |  | mock-llm |
@@ -235,36 +230,33 @@ Required cases: 83 | PASS 82 | FAIL 1 | NOT RUN 0
 | PM08 | PM-E2-02 | PASS |  | mock-llm |
 | PM09 | PM-E3-01 | PASS |  | mock-llm |
 | PM09 | PM-E4-01 | PASS |  | mock-llm |
-| PM09 | PM-S1-01 | FAIL | full_filename_search_found | mock-llm |
+| PM09 | PM-S1-01 | PASS |  | mock-llm |
 | PM09 | PM-S1-02 | PASS |  | mock-llm |
 | PM09 | PM-S1-03 | PASS |  | mock-llm |
 | PM10 | PM-F1-01 | PASS |  | mock-llm |
 | PM10 | PM-F2-01 | PASS |  | mock-llm |
 | PM10 | PM-F3-01 | PASS |  | mock-llm |
 
-## Problems
-- PM-S1-01: FAIL (full_filename_search_found)
-- NC-PM-S1: expected FAIL on full_filename_search_found, got FAIL on exception
+## No problems
 
-VERDICT: RED
+VERDICT: GREEN
 ```
 
 ## 4. 截图
 
-本任务 PM-S1-01 未通过，未产出 C-11 专属截图。两次运行的 `screens-PM09` artifact 含既有 PM-E3-01 / PM-E4-01 截图，文件名为 `screen_PM_E3_01_1440_cockpit.png`、`screen_PM_E3_01_1440_project.png`、`screen_PM_E3_01_390_cockpit.png`、`screen_PM_E3_01_390_project.png`、`screen_PM_E4_01_1440_cockpit.png`、`screen_PM_E4_01_1440_project.png`、`screen_PM_E4_01_390_cockpit.png`、`screen_PM_E4_01_390_project.png`；它们不代表 C-11 通过。
+最终运行的 `screens-PM09` artifact 含 PM-E3-01 与 PM-E4-01 的既有截图：`screen_PM_E3_01_1440_cockpit.png`、`screen_PM_E3_01_1440_project.png`、`screen_PM_E3_01_390_cockpit.png`、`screen_PM_E3_01_390_project.png`、`screen_PM_E4_01_1440_cockpit.png`、`screen_PM_E4_01_1440_project.png`、`screen_PM_E4_01_390_cockpit.png`、`screen_PM_E4_01_390_project.png`。PM-S1-01 未单独生成截图；其页面与接口检查通过。
 
 ## 5. 风险与未确认事项
 
-- 完整文件名搜寻的系统验收仍失败；PM-S1-01 通过正常导入、审核与查询路径后得到 0 条结果，需审核人继续查明正式知识与关联源文件名如何进入可检索索引。
-- 负对照 harness 遇到异常，未证明 2.3.9 恰好在规定检查项失败。
-- 按 `_handoff/CODEX_START_HERE.md` 的同一问题最多自修 3 次规则，本次针对 C-11 云端集成验收已用 3 次修复提交（`511cfe6`、`c425da5`、`d19c6a3`）；停止并交审核人判断后续方向。
-- 未修改判定规则、已有 required cases、考试目录或 `_handoff/STATUS.md`；未合并 PR。
+- 测试通过调用正式支持的 source registry 注册 API 构造页面使用的资料条目；该检查覆盖源注册接口、列表接口和资料页前端筛选，不覆盖监控目录扫描自动创建 source registry 记录的行为。
+- PM-S1-02 与 PM-S1-03 代码未改，最终 PM09 区块通过。
+- 未修改判定规则、考试目录、其他 required cases 或 `_handoff/STATUS.md`；未合并 PR。
 
 ## 6. 大白话摘要
 
-FTS 查询语法错误和兜底已修好，本地 lint 与 161 项单元测试通过。
-云端特殊字符查询和助手来源检查通过。
-完整文件名搜索仍没有结果，负对照也被测试 harness 异常打断。
-push 与 PR 完整流水线都是 RED，需审核人继续定位索引关联问题。
+审核人修订了 PM-S1-01，测试现在检查【资料】页面和资料接口。
+NC-PM-S1 已按审核意见撤销，PM-S1-02/03 保持原有检查。
+本地 lint clean，161 项单元测试通过。
+push 和 PR 完整流水线均为 GREEN，报告附有两份完整 summary。
 
 
