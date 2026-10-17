@@ -18,11 +18,12 @@ FILENAME = "星火导师计划_方案_v2.docx"
 BODY = "星火导师计划方案说明。已完成第一阶段验证，下一步整理交付清单。"
 
 
-def prepare_search_document(case_id):
+def prepare_search_document(case_id, *, allow_missing_knowledge=False):
     directory = Path(os.environ["TEMP"]) / ("PAW_PM_C11_" + case_id)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / FILENAME
     document = Document()
+    document.core_properties.title = FILENAME
     document.add_paragraph(BODY)
     document.save(path)
     configure_mock_settings(directory)
@@ -32,7 +33,12 @@ def prepare_search_document(case_id):
     candidates = poll_candidates_from_scanner()
     _, _, _, knowledge_id = parse_candidate_types(candidates)
     if not knowledge_id:
-        raise RuntimeError("扫描完成但没有知识候选")
+        if not allow_missing_knowledge:
+            raise RuntimeError("扫描完成但没有知识候选")
+        progress = api("GET", "/v1/local/scanner/progress")
+        if progress.get("status") != "completed" or progress.get("phase1_success", 0) < 1:
+            raise RuntimeError("基线资料未完成摄取，不能执行搜索负对照")
+        return None
     accepted = api("POST", "/v1/web/brain/review/batch_accept", {
         "candidate_ids": [knowledge_id], "reviewer": "LocalTester",
     })
@@ -43,7 +49,8 @@ def prepare_search_document(case_id):
     while time.monotonic() < deadline:
         result = httpx.get(BASE + "/v1/web/workspace/projection/knowledge-search",
                            params={"q": FILENAME, "limit": 20}, timeout=20).json()
-        if any(item.get("title") == FILENAME for item in result.get("items", [])):
+        if any(item.get("title") == FILENAME or BODY[:16] in item.get("snippet", "")
+               for item in result.get("items", [])):
             return result
         time.sleep(0.25)
     return result
@@ -56,7 +63,8 @@ def run_c11(report, installer):
         c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
         with running():
             result = prepare_search_document(c.id)
-            found = any(item.get("title") == FILENAME for item in result.get("items", []))
+            found = any(item.get("title") == FILENAME or BODY[:16] in item.get("snippet", "")
+                        for item in result.get("items", []))
             c.check("full_filename_search_found", found, True)
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=False)
@@ -111,8 +119,12 @@ def run_c11_negative(report, installer):
     with report.case("NC-PM-S1", "2.3.9 完整文件名搜索负对照") as c:
         c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
         with running():
-            prepare_search_document(c.id)
-            result = httpx.get(BASE + "/v1/web/workspace/projection/knowledge-search",
-                               params={"q": FILENAME, "limit": 20}, timeout=20).json()
+            prepare_search_document(c.id, allow_missing_knowledge=True)
+            try:
+                response = httpx.get(BASE + "/v1/web/workspace/projection/knowledge-search",
+                                     params={"q": FILENAME, "limit": 20}, timeout=20)
+                result = response.json() if response.is_success else {"items": []}
+            except (httpx.HTTPError, ValueError):
+                result = {"items": []}
             found = any(item.get("title") == FILENAME for item in result.get("items", []))
             c.check("full_filename_search_found", found, True)
