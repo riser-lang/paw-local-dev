@@ -259,14 +259,17 @@ def _render_bounded_prompt(contract: dict[str, Any], message: str,
                 content, flag))
         return "\n".join(header + body + tail)
 
-    prompt = assemble(40, 24, 300)
+    prompt = assemble(600, 24, 600)
     if len(prompt) <= MAX_WEB_PROMPT_CHARS:
         return prompt
     # The evidence index alone can exceed the boundary when a workspace has very
     # many records.  Evidence ids are never dropped (the grounding gate needs
     # them), so the remaining prose is shrunk instead until the prompt fits.
+    # Question-matched items shrink far more slowly than the rest, because they
+    # are the only items that can answer the question at all.
     for content_chars, title_chars, relevant_chars in (
-            (120, 24, 120), (60, 16, 60), (24, 10, 24), (0, 6, 0)):
+            (200, 24, 400), (120, 20, 300), (60, 16, 200),
+            (24, 10, 120), (0, 6, 60)):
         prompt = assemble(content_chars, title_chars, relevant_chars)
         if len(prompt) <= MAX_WEB_PROMPT_CHARS:
             return prompt

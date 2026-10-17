@@ -121,12 +121,18 @@ jobs:
       - name: Start Mock Model Server
         shell: pwsh
         run: |
+          # The standard exam reads documents and must see the kind of answer a
+          # real model gives, so it runs the stand-in in extractive mode.  Every
+          # other block keeps the scripted mode its cases are written against.
+          $mockMode = if ('${{ matrix.block }}' -eq 'PM10') { 'extractive' } else { 'scripted' }
+          Write-Host "Mock mode: $mockMode"
+          $env:PAW_MOCK_MODE = $mockMode
           Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
           $retries = 15
           while ($retries -gt 0) {
             try {
               $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
-              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live!"; break }
+              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live ($mockMode mode)!"; break }
             } catch {}
             Start-Sleep -Seconds 1
             $retries--
