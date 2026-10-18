@@ -72,7 +72,12 @@ def current_target_visible(pid):
                     raise
                 navigation_stage = "wait-project-route-handler"
                 try:
-                    page.locator('button[data-pm-project-route="1"]').wait_for(timeout=10000)
+                    page.wait_for_function(
+                        """() => [...document.querySelectorAll('aside nav button.nav-item')]
+                        .some(button => button.textContent.trim() === '项目' &&
+                          button.dataset.pmProjectRoute === '1')""",
+                        timeout=10000,
+                    )
                 except Exception:
                     print("C-12 project navigation evidence", json.dumps({
                         "stage": navigation_stage,
@@ -157,10 +162,7 @@ def no_internal_terms_visible(case):
     configure_mock_settings(directory)
     api("POST", "/v1/local/scanner/start", {"directory": str(directory), "force_restart": True})
     candidates = poll_candidates_from_scanner()
-    data_candidate = any(str(item.get("candidate_type") or "").lower() == "data"
-                         for item in candidates)
     print("C-12 internal-label fixture evidence", json.dumps({
-        "data_candidate_available": data_candidate,
         "candidate_count": len(candidates),
         "candidate_types": [str(item.get("candidate_type") or "") for item in candidates],
     }, ensure_ascii=False))
@@ -182,11 +184,12 @@ def no_internal_terms_visible(case):
     answer = timed_answer(session, "青禾项目周报记录了什么？", case)
     rendered.append(str(answer.get("response") or ""))
     matches = [{"route": route_names[index] if index < len(route_names) else "assistant",
-                "terms": list(dict.fromkeys(match.group(0).lower() for match in forbidden.finditer(text)))}
+                "terms": list(dict.fromkeys(match.group(0).lower() for match in forbidden.finditer(text))),
+                "lines": [line.strip() for line in text.splitlines() if forbidden.search(line)][:5]}
                for index, text in enumerate(rendered) if forbidden.search(text)]
     if matches:
         print("C-12 visible internal-term check", json.dumps(matches, ensure_ascii=False))
-    return bool(data_candidate) and not matches
+    return bool(candidates) and not matches
 
 
 def scan_metric_candidate(case):
@@ -379,7 +382,7 @@ def run_c12(report, installer):
                             if not project_name.input_value():project_name.fill("青禾项目")
                             page.get_by_role("button", name="保存草稿", exact=True).click()
                             page.get_by_text("草稿已保存", exact=False).wait_for()
-                            page.get_by_role("button", name="接受", exact=True).click()
+                            page.get_by_role("button", name="核准并写入", exact=True).click()
                             page.get_by_text("已提交", exact=False).wait_for()
                             c.check("every_card_resolvable", "标题或项目名称不能为空" not in page.inner_text("body"), True)
                             page.screenshot(path="screenshots/screen_" + case.replace("-", "_") + ".png", full_page=True)
