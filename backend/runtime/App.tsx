@@ -739,11 +739,14 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
   const waitingGpt = submittedLocally || effective === "REVIEWED_WAITING_GPT";
   const clarification = detail.candidateType === "ambiguity" || detail.candidateType === "question";
   const conflict = detail.candidateType === "conflict";
+  const proposal = safeJson(detail.proposedChange);
+  const proposalTargetType = String(proposal.target_type ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
-  const [draft, setDraft] = useState<RecordMap>(() => safeJson(detail.proposedChange));
+  const [draft, setDraft] = useState<RecordMap>(() => safeJson(proposal.payload ?? proposal));
+  useEffect(() => setDraft(safeJson(proposal.payload ?? proposal)), [detail.candidateId, detail.proposedChange]);
   const actions = async (action: () => Promise<unknown>, success: string, leavePending = false) => {
     setBusy(true);
     setError("");
@@ -758,7 +761,7 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
       setBusy(false);
     }
   };
-  const dataCard = ["data", "metric"].includes(String(detail.candidateType));
+  const dataCard = ["data", "metric"].includes(String(detail.candidateType)) || ["data", "metric"].includes(proposalTargetType);
   const accept = () => actions(async () => {
     if (dataCard) {
       if (!String(draft.title ?? "").trim() || !String(draft.project_name ?? draft.project_id ?? "").trim()) {
@@ -776,7 +779,7 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
   const chooseConflict = (option: "A" | "B" | "NEITHER") => actions(() => client.resolveConflict(detail.candidateId, option, note.trim() || undefined), "已提交，等待 AI 巡航。");
   const fields = [...new Set([...Object.keys(draft).filter(key => ["title", "description", "due_at", "priority", "project_id", "project_name", "statement"].includes(key)), ...(dataCard ? ["title", "project_name"] : [])])];
   const fieldLabels: Record<string, string> = { title: "标题", description: "说明", due_at: "截止日期", priority: "优先级", project_id: "项目", project_name: "项目名称", statement: "内容" };
-  const writeIntent = ["todo", "knowledge", "project_update", "data", "metric"].includes(String(detail.candidateType));
+  const writeIntent = dataCard || ["todo", "knowledge", "project_update"].includes(String(detail.candidateType));
   const needsHumanInput = !waitingGpt && effective === "NEEDS_REVIEW";
   return <div className="review-detail">
     <div className="review-detail-toolbar"><button className="secondary-button" onClick={onBack}>‹ 返回列表</button><button className="text-button" onClick={onDone}>刷新</button></div>
