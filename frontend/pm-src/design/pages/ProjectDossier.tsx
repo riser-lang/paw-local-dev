@@ -24,6 +24,11 @@ export const DEFAULT_EMPTY: Record<SectionKind, string> = {
 
 const HALF: SectionKind[] = ["gaps", "next_steps", "list", "sources"];
 
+function displayPendingTargetDate(value: string): string {
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+  return match ? `${match[1]}年${Number(match[2])}月${Number(match[3])}日` : value;
+}
+
 export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLabel = "今日驾驶舱", modelConfigured = false }: {
   vm: ProjectViewModel; cb?: PmCallbacks; initialUnit?: TimeUnit; backHref?: string | null; backLabel?: string; modelConfigured?: boolean;
 }) {
@@ -48,7 +53,7 @@ export function ProjectDossier({ vm, cb, initialUnit = "week", backHref, backLab
           ? <ul className="pm-entries is-summary">{entries.map((e) => <EntryItem key={e.id} entry={e} cb={cb} changes={vm.changes} />)}</ul>
           : <p className="pm-summary-text">{p.one_liner}</p>;
       case "metrics":
-        return <>{entries.length ? <EntryList entries={entries} cb={cb} changes={vm.changes} emptyText={empty} seed={`e-${s.key}`} /> : null}<MetricList metrics={vm.metrics} cb={cb} emptyText={empty} />{vm.pending_targets.map((item) => <p className="pm-notice" key={item.id}>待确认：目标由 {item.previous} 改为 {item.target}{item.effective_date ? `，生效日期 ${item.effective_date}` : ""}{item.source_title ? `（依据：${item.source_title}）` : ""}</p>)}</>;
+        return <>{entries.length ? <EntryList entries={entries} cb={cb} changes={vm.changes} emptyText={empty} seed={`e-${s.key}`} /> : null}<MetricList metrics={vm.metrics} cb={cb} emptyText={empty} />{vm.pending_targets.map((item) => <p className="pm-notice" key={item.id}>{item.pending_label || `待确认：目标由 ${item.previous} 改为 ${item.target}`}{item.effective_date ? `，生效日期 ${displayPendingTargetDate(item.effective_date)}` : ""}{item.source_title ? `（依据：${item.source_title}）` : ""}</p>)}</>;
       case "milestones":
         return <>{entries.length ? <EntryList entries={entries} cb={cb} changes={vm.changes} emptyText={empty} seed={`e-${s.key}`} /> : null}{!vm.milestones.length ? <EmptyState seed="ms-empty" text={empty} /> : phone
           ? <MilestoneTimeline today={vm.today} milestones={vm.milestones} changes={vm.changes} cb={cb} focusChange={focus} onFocusChange={focusChange} />

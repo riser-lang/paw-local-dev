@@ -320,7 +320,7 @@ export interface ProjectViewModel {
   /** 按栏目 key 提供条目（summary/gaps/next_steps/risks/list/sources 使用） */
   entries: Record<string, SectionEntry[]>;
   metrics: Metric[];
-  pending_targets: Array<{id:string;name:string;previous:number|string;target:number|string;effective_date?:string|null;source_title?:string}>;
+  pending_targets: Array<{id:string;name:string;previous:number|string;target:number|string;pending_label?:string;effective_date?:string|null;source_title?:string}>;
   milestones: Milestone[];
   changes: ChangeEntry[];
   conflicts: Conflict[];
