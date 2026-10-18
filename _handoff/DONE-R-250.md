@@ -320,7 +320,7 @@ FRONTEND_FILTER_WOULD_MATCH True
 
 补充说明一处**不影响结论但需交代**的观察：`GET /v1/web/workspace/projection/knowledge-search?q=<完整文件名>` 在开发模式下返回 0 条，因为【知识】检索索引里存的是规范化后的知识标题（如「【知识】星火导师计划 方案 v2」，空格化、无扩展名），而非原始文件名；用"星火""v2"等子串查同一文档能命中。**版本说明第 3 条说的"按完整文件名搜索"指的是【资料】页（PM-S1-01 的判定口径），不是【知识】页检索**，措辞与此一致，未越界承诺。
 
-### 5.2 云端运行（合并 main 之后，四个头部）
+### 5.2 云端运行（合并 main 之后，五个头部）
 
 #### 5.2.1 代码提交 `7b23689`（补第 3 条"修复"的那次）
 
@@ -349,7 +349,7 @@ FRONTEND_FILTER_WOULD_MATCH True
 | push / PR 单元测试 | [39091194976](https://github.com/riser-lang/paw-local-dev/actions/runs/39091194976) / [39091199237](https://github.com/riser-lang/paw-local-dev/actions/runs/39091199237) | 1 | GREEN（169 passed） |
 | PR 安装包构建 | [39091199256](https://github.com/riser-lang/paw-local-dev/actions/runs/39091199256) | 1 | GREEN |
 
-#### 5.2.4 最终头部 `9a772f6`（只改本报告，**以这一轮为准**）
+#### 5.2.4 报告中间版 `9a772f6`（只改本报告）
 
 | 事件 | 运行 | attempt | 结论 |
 |---|---|---|---|
@@ -375,6 +375,24 @@ B1-01 的七项安装检查（含本轮的 `installed_guide_exists`、`installed
 push 与 PR 的 `summary.md` 首行哈希不同属正常：push 运行报的是提交本身，PR 运行报的是 GitHub 生成的合并引用；两者的 `headSha` 相同。
 
 > 口径说明：本报告每改一次推送，头部就前进一次，因此上面列出**全部四个头部**而不是只挑最好的一轮。`9a772f6` 的 push 为 attempt 1 GREEN；其 PR 流水线前两次 RED 的原因如上，最终以 attempt 3 的 GREEN 为准。
+
+#### 5.2.5 合并报告后的头部 `d97c414`（**最终状态**）
+
+为把审核人一侧补写的第 9 节与我的本轮记录合并，我执行 `git merge origin/gemini/R-250`（**合并而非 rebase**），仅 `_handoff/DONE-R-250.md` 第 8 节两行摘要出现冲突，已保留我的版本，**第 9 节与审核人推送的版本逐字节一致（已核对）**。
+
+| 事件 | 运行 | attempt | 结论 |
+|---|---|---|---|
+| push 流水线 | [39094390550](https://github.com/riser-lang/paw-local-dev/actions/runs/39094390550) | **1** | **GREEN**（83/83 PASS） |
+| push 单元测试 | [39094390583](https://github.com/riser-lang/paw-local-dev/actions/runs/39094390583) | 1 | GREEN（169 passed） |
+| PR 单元测试 | [39094393234](https://github.com/riser-lang/paw-local-dev/actions/runs/39094393234) | 1 | GREEN（169 passed） |
+| PR 安装包构建 | [39094393146](https://github.com/riser-lang/paw-local-dev/actions/runs/39094393146) | 1 | GREEN |
+| **PR 流水线** | [39094393109](https://github.com/riser-lang/paw-local-dev/actions/runs/39094393109) | **1** | **RED**：`Test Block PM08` 的 **PM-E1-03** 在最后截图时 `TargetClosedError`（浏览器被关），用例判 FAIL |
+| 同上 | 同上 | **2** | **RED**：`Test Block PM07` 失败（同一类截图/浏览器问题） |
+| 同上 | 同上 | **3** | **GREEN**（83/83 PASS，0 FAIL，0 NOT RUN） |
+
+**如实说明**：`PM-E1-03` 的失败同样是"截图时浏览器被关闭"，其**已记录的全部断言实际值都等于期望值**（`all_three_advice_categories=["gaps","next","risks"]`、`prior_valid_advice_preserved`、`formal_unchanged_after_rejection`、`advice_separate_from_formal_sections=0`、`no_page_overflow_1440=true` 等），只在 `Page.screenshot` 一步抛异常。attempt 2 失败在另一个 block（PM07），说明这是**跨 block 的 Playwright 偶发问题**，而非某个功能不稳定。这三次 attempt 同样**不是我发起的**（我未执行任何 `gh run rerun`），attempt 3 整条重跑后 GREEN。
+
+> 提示：`d97c414` 的 PR 与 `9a772f6` 的 PR 都出现了同类的截图/浏览器偶发失败。这两处失败**都不在**我改动的文件里（我这两个提交只改本 Markdown），也不落在 C-11 或 R-250 的任何新增检查上。建议审核人把它记入既有的"不稳定用例"清单。
 
 ### 5.3 最终头部 `9a772f6` 的 push 运行 `summary.md` 全文（原样粘贴，attempt 1）
 
@@ -663,8 +681,8 @@ DUP 0a3cfaef6173  PM-E1-02 screen_PM_E1_02_390.png
 1. 按 REVIEW 改完 6 项：版本说明"修复"只留有负对照证明的、新增 10 换成特殊字符措辞、删掉未经验证的 2.3.9 回退承诺并写明实际备份位置、【资料】页 200 份上限写进已知问题。
 2. **C-11 合并后已 `git merge origin/main`（合并无冲突，未 rebase、未 force push）**，产品代码全部取 main，本分支只剩 `docs/`、`installer/`、`scripts/package_app.py` 与版本号改动；并把"扫描导入的文件现在会出现在【资料】页，并能按完整文件名（含扩展名）搜索到"补为第 3 条"修复"（依据 NC-PM-S1，云端该负对照恰好 FAIL 在 `scanned_file_listed_in_sources`）。
 3. 完整使用说明装进安装目录：`[Files]` 从 `docs/使用说明.txt` 原样复制，开始菜单加【使用说明】，`package_app.py` 不再生成短版；B1-01 追加三项安装检查、原有检查一行未改。使用说明 Q5 的"原始资料一直留在【资料】里可查"经核对**现在成立**，一字未改（本轮使用说明零改动）。
-4. 云端四个头部（代码 `7b23689`、报告 `ff19a50`/`261f5ec`、最终头部 `9a772f6`）：**push 四次全部 attempt 1 GREEN 83/83**；**PR 前三个头部均 attempt 1 GREEN**，`9a772f6` 的 PR 为 **attempt 1 RED（截图哈希重复）、attempt 2 RED（PM-D1-01 截图时浏览器被关）、attempt 3 GREEN 83/83**——后两次重跑由仓库所有者 `riser-lang` 发起，非我所为，已在第 5.2.4 节逐条记明。单元测试 169 项全过，lint `clean`，`audit_check.py` 版本一致性 PASS，B1-01 七项安装检查全 `true`（含 C-11 的 PM-S1-01/02/03 PASS、NC-PM-S1 按预期 FAIL）。
-5. **未打 tag、未建 Release、未改 STATUS.md（与 main 逐字节一致）、未碰 C-11 目录**；未改动任何测试/断言/截图逻辑。
+4. 云端五个头部（代码 `7b23689`、报告 `ff19a50`/`261f5ec`/`9a772f6`、合并后 `d97c414`）：**push 五次全部 attempt 1 GREEN 83/83**；**PR 前三个头部均 attempt 1 GREEN**；`9a772f6` 的 PR 为 attempt 1 RED（截图哈希重复）→ attempt 2 RED（PM-D1-01 截图时浏览器被关）→ attempt 3 GREEN；`d97c414` 的 PR 为 attempt 1 RED（PM-E1-03 同类截图异常）→ attempt 2 RED（PM07）→ attempt 3 GREEN。这些重跑**全部由仓库所有者 `riser-lang` 发起，非我所为**，已在第 5.2.4、5.2.5 节逐条记明。单元测试 169 项全过，lint `clean`，`audit_check.py` 版本一致性 PASS，B1-01 七项安装检查全 `true`（含 C-11 的 PM-S1-01/02/03 PASS、NC-PM-S1 按预期 FAIL）。
+5. **未打 tag、未建 Release、未改 STATUS.md（与 main 逐字节一致）、未碰 C-11 目录**；未改动任何测试/断言/截图逻辑；与审核人第 9 节合并时只解决了自己那段摘要的冲突，第 9 节逐字节保留。
 
 ---
 
