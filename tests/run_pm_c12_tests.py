@@ -91,7 +91,9 @@ def current_target_visible(pid):
                     }, ensure_ascii=False))
                     raise
                 navigation_stage = "click-project-navigation-button"
-                project_button.click()
+                project_button.click(no_wait_after=True)
+                navigation_stage = "wait-for-project-route"
+                page.wait_for_url("**/app/pm/projects/" + pid, timeout=15000)
                 navigation_stage = "wait-for-project-dossier"
                 try:
                     page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
@@ -169,6 +171,12 @@ def no_internal_terms_visible(case):
     forbidden = re.compile(r"AUTO_WRITE|REVIEW_REQUIRED|data create|create todo|pending|\bcreate\b|\bupdate\b|\btodo\b|\bmetric\b", re.I)
     rendered = []
     route_names = ["/app/review", "/app/todos", "/app/pm/projects/青禾项目"]
+    review_items = api("GET", "/v1/web/brain/review/candidates?status=pending&limit=200").get("items", [])
+    print("C-12 review card text evidence", json.dumps([{
+        "candidate_type": item.get("candidate_type"),
+        "display_title": (item.get("presentation") or {}).get("display_title"),
+        "situation": (item.get("presentation") or {}).get("situation"),
+    } for item in review_items], ensure_ascii=False))
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         try:
@@ -227,6 +235,14 @@ def scan_metric_candidate(case):
         })
         if str(item.get("candidate_type") or "").lower() in {"data", "metric", "data_asset"} \
                 or str(target_type or "").lower() in {"data", "metric", "data_asset"}:
+            payload = change.get("payload") if isinstance(change, dict) else None
+            print("C-12 selected metric candidate evidence", json.dumps({
+                "candidate_type": item.get("candidate_type"),
+                "target_type": target_type,
+                "change_fields": sorted(change.keys()) if isinstance(change, dict) else [],
+                "payload_fields": sorted(payload.keys()) if isinstance(payload, dict) else [],
+                "display_title": (detail.get("presentation") or {}).get("display_title"),
+            }, ensure_ascii=False))
             return {**item, "presentation": detail.get("presentation"), "proposed_change": change}
     print("C-12 data candidate evidence", json.dumps({
         "candidate_count": len(candidates), "observed_types": observed_types,
@@ -377,6 +393,12 @@ def run_c12(report, installer):
                             card.click()
                             title = page.get_by_role("textbox", name="标题", exact=True)
                             project_name = page.get_by_role("textbox", name="项目名称", exact=True)
+                            print("C-12 metric editor evidence", json.dumps({
+                                "candidate_type": candidate.get("candidate_type"),
+                                "title_input_count": title.count(),
+                                "project_name_input_count": project_name.count(),
+                                "review_detail_count": page.locator(".review-detail").count(),
+                            }, ensure_ascii=False))
                             c.check("missing_fields_have_inputs", title.is_visible() and project_name.is_visible(), True)
                             if not title.input_value():title.fill("青禾项目指标")
                             if not project_name.input_value():project_name.fill("青禾项目")
