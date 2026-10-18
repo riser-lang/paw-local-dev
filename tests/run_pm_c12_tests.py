@@ -225,6 +225,9 @@ def run_c12(report, installer):
                         try:
                             page = browser.new_page(viewport={"width": 1440, "height": 900})
                             page.goto(BASE + "/app/files", wait_until="networkidle")
+                            console_overlay = page.locator("#paw-modal-overlay")
+                            if console_overlay.is_visible():
+                                page.locator("#paw-close-btn").click()
                             search = page.get_by_placeholder("搜索文件名或分类", exact=True)
                             search.fill(FILENAME)
                             page.get_by_role("button", name=re.compile(re.escape(FILENAME))).first.click()
