@@ -11,7 +11,7 @@ from tests.run_pm_tests import (
     api, BASE, running, project, INSTALL_DIR, clean_and_record, silent_install,
 )
 from tests.run_pm_versions_tests import import_doc, family
-from tests.run_e2e_tests import parse_candidate_types, timed_answer
+from tests.run_e2e_tests import configure_mock_settings, parse_candidate_types, timed_answer
 
 
 PLAN_V1 = "目标：第一期培养新任导师 30 名。生效日期：2026年9月1日。"
@@ -130,6 +130,7 @@ def scan_metric_candidate(case):
 
     directory = Path(__import__("os").environ["TEMP"]) / ("PAW_C12_METRIC_" + case)
     directory.mkdir(parents=True, exist_ok=True)
+    configure_mock_settings(directory)
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "青禾项目目标"
