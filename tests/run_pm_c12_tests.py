@@ -438,7 +438,7 @@ def run_c12(report, installer):
                             if not title.input_value():title.fill("青禾项目指标")
                             if not project_name.input_value():project_name.fill("青禾项目")
                             page.get_by_role("button", name="核准并写入", exact=True).click()
-                            page.get_by_text("已提交", exact=False).wait_for()
+                            page.get_by_text("已提交，等待 AI 巡航。", exact=True).last.wait_for()
                             c.check("every_card_resolvable", "标题或项目名称不能为空" not in page.inner_text("body"), True)
                             page.screenshot(path="screenshots/screen_" + case.replace("-", "_") + ".png", full_page=True)
                         finally:
