@@ -41,6 +41,10 @@ def current_target_visible(pid):
         data = api("GET", "/v1/pm/view/projects/" + pid)
         body = json.dumps(data, ensure_ascii=False)
         api_expected = "40" in body and "2026-10-08" in body and "待确认：目标由 30 改为 40" in body
+        print("C-12 target API evidence", json.dumps({
+            "api_expected": api_expected,
+            "pending_targets": data.get("pending_targets"),
+        }, ensure_ascii=False))
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=False)
             try:
@@ -49,12 +53,19 @@ def current_target_visible(pid):
                 page.get_by_role("link", name="项目", exact=True).click()
                 page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
                 rendered = page.locator("body").inner_text()
+                print("C-12 target page evidence", json.dumps({
+                    "target_40": "40" in rendered,
+                    "effective_date": "2026年10月8日" in rendered,
+                    "pending_change": "待确认：目标由 30 改为 40" in rendered,
+                    "progress_not_target": "已招募 26 名" not in rendered,
+                }, ensure_ascii=False))
                 page.screenshot(path="screenshots/screen_PM_U1_01.png", full_page=True)
                 return api_expected and "40" in rendered and "2026年10月8日" in rendered \
                     and "待确认：目标由 30 改为 40" in rendered and "已招募 26 名" not in rendered
             finally:
                 browser.close()
-    except Exception:
+    except Exception as exc:
+        print("C-12 target visibility error", type(exc).__name__)
         return False
 
 
