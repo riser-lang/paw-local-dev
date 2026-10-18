@@ -740,13 +740,15 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
   const clarification = detail.candidateType === "ambiguity" || detail.candidateType === "question";
   const conflict = detail.candidateType === "conflict";
   const proposal = safeJson(detail.proposedChange);
-  const proposalTargetType = String(proposal.target_type ?? "");
+  const originalProposal = safeJson(proposal.original_payload ?? proposal);
+  const proposalTargetType = String(originalProposal.target_type ?? proposal.target_type ?? "");
+  const proposalPayload = safeJson(proposal.reviewed_payload ?? originalProposal.payload ?? originalProposal);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
-  const [draft, setDraft] = useState<RecordMap>(() => safeJson(proposal.payload ?? proposal));
-  useEffect(() => setDraft(safeJson(proposal.payload ?? proposal)), [detail.candidateId, detail.proposedChange]);
+  const [draft, setDraft] = useState<RecordMap>(() => proposalPayload);
+  useEffect(() => setDraft(proposalPayload), [detail.candidateId, detail.proposedChange]);
   const actions = async (action: () => Promise<unknown>, success: string, leavePending = false) => {
     setBusy(true);
     setError("");
