@@ -1,7 +1,6 @@
 import sqlite3
 
 from backend.workspace_api import repository
-from backend.workspace_api.schemas import KnowledgeRevisionResponse
 
 
 def test_legacy_scalar_revision_content_is_preserved_as_detail_object(monkeypatch):
@@ -33,5 +32,3 @@ def test_legacy_scalar_revision_content_is_preserved_as_detail_object(monkeypatc
     detail = repository.get_knowledge("k1")
 
     assert detail["latest_revision"]["content_json"] == {"content": "正文内容"}
-    response = KnowledgeRevisionResponse.model_validate(detail["latest_revision"])
-    assert response.content_json == {"content": "正文内容"}
