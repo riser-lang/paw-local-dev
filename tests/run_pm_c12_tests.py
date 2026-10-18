@@ -53,18 +53,19 @@ def current_target_visible(pid):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.goto(BASE + "/app/projects", wait_until="networkidle")
-                navigation_stage = "locate-project-link"
-                project_link = page.get_by_role("link", name="项目", exact=True)
-                project_href = project_link.get_attribute("href")
-                navigation_stage = "click-project-link"
-                project_link.click()
+                navigation_stage = "locate-project-navigation-button"
+                project_button = page.get_by_role("button", name="项目", exact=True)
+                project_button.wait_for(state="visible", timeout=10000)
+                page.locator('[data-pm-project-route="1"]').wait_for(timeout=10000)
+                navigation_stage = "click-project-navigation-button"
+                project_button.click()
                 navigation_stage = "wait-for-project-dossier"
                 try:
                     page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
                 except Exception:
                     print("C-12 project navigation evidence", json.dumps({
                         "route_path": __import__("urllib.parse", fromlist=["urlparse"]).urlparse(page.url).path,
-                        "project_link_href": project_href,
+                        "project_button_count": page.get_by_role("button", name="项目", exact=True).count(),
                         "pm_project_page_count": page.locator(".pm-project-page").count(),
                         "project_heading_count": page.locator(".pm-project-page h1").count(),
                     }, ensure_ascii=False))
@@ -87,7 +88,7 @@ def current_target_visible(pid):
             route_path = urlsplit(page.url).path
             navigation.update({
                 "route_path": route_path,
-                "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                "project_button_count": page.get_by_role("button", name="项目", exact=True).count(),
                 "arrived_at_expected_project": route_path == "/app/pm/projects/" + pid,
             })
         print("C-12 target visibility error", json.dumps(navigation, ensure_ascii=False))
@@ -113,6 +114,10 @@ def no_internal_terms_visible(case):
 
     import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
     pid = c12_project()
+    data_candidate = scan_metric_candidate(case)
+    print("C-12 internal-label fixture evidence", json.dumps({
+        "data_candidate_available": bool(data_candidate),
+    }, ensure_ascii=False))
     forbidden = re.compile(r"AUTO_WRITE|REVIEW_REQUIRED|data create|create todo|pending|\bcreate\b|\bupdate\b|\btodo\b|\bmetric\b", re.I)
     rendered = []
     route_names = ["/app/review", "/app/todos", "/app/pm/projects/青禾项目"]
@@ -135,7 +140,7 @@ def no_internal_terms_visible(case):
                for index, text in enumerate(rendered) if forbidden.search(text)]
     if matches:
         print("C-12 visible internal-term check", json.dumps(matches, ensure_ascii=False))
-    return not matches
+    return bool(data_candidate) and not matches
 
 
 def scan_metric_candidate(case):
@@ -313,6 +318,11 @@ def run_c12(report, installer):
                         try:
                             page = browser.new_page(viewport={"width": 1440, "height": 1000})
                             page.goto(BASE + "/app/review", wait_until="networkidle")
+                            page.wait_for_timeout(750)
+                            overlay = page.locator("#paw-modal-overlay")
+                            if overlay.is_visible():
+                                page.locator("#paw-close-btn").click()
+                                overlay.wait_for(state="hidden", timeout=5000)
                             display_title = str((candidate.get("presentation") or {}).get("display_title") or "")
                             card = page.locator(".review-card").filter(has_text=display_title).first if display_title else page.locator(".review-card").first
                             card.click()

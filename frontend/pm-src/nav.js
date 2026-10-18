@@ -21,7 +21,7 @@
   // The legacy sidebar's 项目 entry used to land on the old project page.
   // Route it to the first current dossier so users open the new project view
   // directly; keep the legacy list as a fallback when the workspace is empty.
-  document.querySelectorAll('aside a, nav a').forEach(a=>{
+  document.querySelectorAll('aside a, nav a, aside button, nav button').forEach(a=>{
    if(a.textContent.trim()!=='项目'||a.dataset.pmProjectRoute==='1')return;
    a.dataset.pmProjectRoute='1';
    a.addEventListener('click',async event=>{
