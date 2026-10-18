@@ -25,6 +25,18 @@ def c12_project():
     return api("POST", "/v1/web/workspace/projects", {"name": "青禾项目"})["id"]
 
 
+def complete_test_onboarding(case):
+    directory = Path(__import__("os").environ["TEMP"]) / ("PAW_C12_ONBOARDING_" + case)
+    directory.mkdir(parents=True, exist_ok=True)
+    status = api("GET", "/v1/local/onboarding")
+    if not status.get("completed"):
+        api("POST", "/v1/local/onboarding", {
+            "work_dir": str(directory),
+            "provider": "offline",
+            "cruise_mode": "manual",
+        })
+
+
 def prepare_versioned_project(case):
     pid = c12_project()
     first, proposals = import_doc(case, "青禾计划_v1.docx", "青禾项目。" + PLAN_V1)
@@ -256,6 +268,7 @@ def run_c12(report, installer):
         with report.case(case, "v2.5.0-rc1 真机验收问题：" + case) as c:
             c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
             with running():
+                complete_test_onboarding(case)
                 if case in {"PM-U1-01", "PM-U1-03", "PM-U4-01"}:
                     pid, first, second = prepare_versioned_project(case)
                     if case == "PM-U1-01":
@@ -434,6 +447,7 @@ def run_c12_negative(report, baseline_installer):
         with report.case(control, "v2.5.0-rc1 安装包负对照：" + runs) as c:
             c.fresh_install(clean_and_record, lambda: silent_install(baseline_installer)[2], INSTALL_DIR)
             with running():
+                complete_test_onboarding(control)
                 # Execute the same product path and named assertion on the baseline.
                 if runs == "PM-U1-01":
                     pid, _, _ = prepare_versioned_project(runs)
