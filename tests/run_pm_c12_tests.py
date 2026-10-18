@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -37,6 +38,8 @@ def prepare_versioned_project(case):
 def current_target_visible(pid):
     from playwright.sync_api import sync_playwright
 
+    navigation_stage = "open-project-list"
+    page = None
     try:
         data = api("GET", "/v1/pm/view/projects/" + pid)
         body = json.dumps(data, ensure_ascii=False)
@@ -50,9 +53,12 @@ def current_target_visible(pid):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.goto(BASE + "/app/projects", wait_until="networkidle")
+                navigation_stage = "locate-project-link"
                 project_link = page.get_by_role("link", name="项目", exact=True)
                 project_href = project_link.get_attribute("href")
+                navigation_stage = "click-project-link"
                 project_link.click()
+                navigation_stage = "wait-for-project-dossier"
                 try:
                     page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
                 except Exception:
@@ -76,7 +82,15 @@ def current_target_visible(pid):
             finally:
                 browser.close()
     except Exception as exc:
-        print("C-12 target visibility error", type(exc).__name__)
+        navigation = {"stage": navigation_stage, "error_type": type(exc).__name__}
+        if page is not None and not page.is_closed():
+            route_path = urlsplit(page.url).path
+            navigation.update({
+                "route_path": route_path,
+                "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                "arrived_at_expected_project": route_path == "/app/pm/projects/" + pid,
+            })
+        print("C-12 target visibility error", json.dumps(navigation, ensure_ascii=False))
         return False
 
 
