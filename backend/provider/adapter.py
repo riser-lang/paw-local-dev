@@ -465,6 +465,32 @@ class UniversalOpenAIProvider(BaseProvider):
                 "请输出符合业务规范的提议列表（JSON数组）："
             )
         text_samples = [f"[{b.get('index')}] {b.get('text', '')[:100]}" for b in evidence.get("text_blocks", [])[:10]]
+        semantics = evidence.get("structured_semantics") or {}
+        sheets = semantics.get("sheets") if isinstance(semantics, dict) else []
+        next_index = len(text_samples)
+        for sheet in (sheets if isinstance(sheets, list) else [])[:8]:
+            if not isinstance(sheet, dict):
+                continue
+            rows: dict[int, dict[int, str]] = {}
+            cells = sheet.get("cells")
+            for cell in (cells if isinstance(cells, list) else [])[:500]:
+                if not isinstance(cell, dict):
+                    continue
+                value = cell.get("display_value")
+                row = cell.get("row")
+                column = cell.get("column")
+                if value in (None, "") or not isinstance(row, int) or not isinstance(column, int):
+                    continue
+                rows.setdefault(row, {})[column] = str(value)[:100]
+            if not rows:
+                continue
+            text_samples.append(f"[{next_index}] 工作表：{str(sheet.get('title') or '')[:80]}")
+            next_index += 1
+            for row_number in sorted(rows)[:10]:
+                values = rows[row_number]
+                row_text = "\t".join(values[column] for column in sorted(values))
+                text_samples.append(f"[{next_index}] {row_text[:500]}")
+                next_index += 1
         return (
             f"文档名称: {evidence.get('display_name', 'untitled')}\n"
             f"已提取文本块样本:\n" + "\n".join(text_samples) + "\n\n"
