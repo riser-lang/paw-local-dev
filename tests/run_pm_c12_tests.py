@@ -50,8 +50,19 @@ def current_target_visible(pid):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.goto(BASE + "/app/projects", wait_until="networkidle")
-                page.get_by_role("link", name="项目", exact=True).click()
-                page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
+                project_link = page.get_by_role("link", name="项目", exact=True)
+                project_href = project_link.get_attribute("href")
+                project_link.click()
+                try:
+                    page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
+                except Exception:
+                    print("C-12 project navigation evidence", json.dumps({
+                        "route_path": __import__("urllib.parse", fromlist=["urlparse"]).urlparse(page.url).path,
+                        "project_link_href": project_href,
+                        "pm_project_page_count": page.locator(".pm-project-page").count(),
+                        "project_heading_count": page.locator(".pm-project-page h1").count(),
+                    }, ensure_ascii=False))
+                    raise
                 rendered = page.locator("body").inner_text()
                 print("C-12 target page evidence", json.dumps({
                     "target_40": "40" in rendered,
