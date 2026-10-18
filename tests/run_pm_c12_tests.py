@@ -128,6 +128,7 @@ def scan_metric_candidate(case):
     api("POST", "/v1/local/scanner/start", {"directory": str(directory), "force_restart": True})
     poll_candidates_from_scanner()
     candidates = api("GET", "/v1/web/brain/review/candidates?status=pending&limit=200").get("items", [])
+    observed_types = []
     for item in candidates:
         candidate_id = item.get("id") or item.get("candidate_id")
         if not candidate_id:
@@ -140,9 +141,16 @@ def scan_metric_candidate(case):
             except ValueError:
                 change = {}
         target_type = change.get("target_type") if isinstance(change, dict) else None
+        observed_types.append({
+            "candidate_type": item.get("candidate_type"),
+            "target_type": target_type,
+        })
         if str(item.get("candidate_type") or "").lower() in {"data", "metric", "data_asset"} \
                 or str(target_type or "").lower() in {"data", "metric", "data_asset"}:
             return {**item, "presentation": detail.get("presentation"), "proposed_change": change}
+    print("C-12 data candidate evidence", json.dumps({
+        "candidate_count": len(candidates), "observed_types": observed_types,
+    }, ensure_ascii=False))
     return None
 
 
