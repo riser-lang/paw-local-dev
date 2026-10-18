@@ -98,3 +98,10 @@
 - C-12 预定用例 blob：1ec5e9e9fa8b92756e301d019bb73df48327988a（tests/pending/required_cases_C-12.json）。负对照安装包：release v2.5.0-rc1-baseline。
 - 新增真实模型测试：硅基流动 DeepSeek V4.1 Flash，secret PAW_TEST_API_KEY 已设置；仅手动和 tag 运行。
 
+
+## C-12 审核（2026-10-19，审核人）：通过，已合并
+- PR #14 head fc5b578 → 合并提交 e4100fb。push 39146720526 / PR 39146724288 均 GREEN，91/91 PASS，13 个负对照全部按预期 FAIL（含 4 个新的 NC-PM-U1..U4）。
+- 用例 blob 1ec5e9e 一致（R100 改名），审核人文件未改动；mock 中无样例/考题文字。
+- real-model 未运行：workflow_dispatch 要求工作流文件在默认分支上（GitHub 404），合并后在 main 上补跑。
+- 已知弱点（不阻塞）：real-model 里 PM-U4-01 只检查"建议"二字和有来源；用的是脚本自带样例而非 C-12 样例。
+- 下一步：Codex 在 main 上手动跑 real-model → GREEN 后打 v2.5.0-rc2 + 草稿 Release → 产品负责人验收。
