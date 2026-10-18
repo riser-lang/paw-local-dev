@@ -54,9 +54,37 @@ def current_target_visible(pid):
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.goto(BASE + "/app/projects", wait_until="networkidle")
                 navigation_stage = "locate-project-navigation-button"
-                project_button = page.get_by_role("button", name="项目", exact=True)
-                project_button.wait_for(state="visible", timeout=10000)
-                page.locator('[data-pm-project-route="1"]').wait_for(timeout=10000)
+                project_button = page.locator("aside nav button.nav-item").filter(
+                    has_text=re.compile(r"^\s*项目\s*$"),
+                ).first
+                try:
+                    project_button.wait_for(state="visible", timeout=10000)
+                except Exception:
+                    print("C-12 project navigation evidence", json.dumps({
+                        "stage": navigation_stage,
+                        "route_path": urlsplit(page.url).path,
+                        "button_count": page.locator("aside nav button.nav-item").filter(
+                            has_text=re.compile(r"^\s*项目\s*$"),
+                        ).count(),
+                        "nav_button_texts": page.locator("aside nav button.nav-item").all_text_contents(),
+                        "nav_script_present": page.locator('script[src="/pm-assets/nav.js"]').count() == 1,
+                    }, ensure_ascii=False))
+                    raise
+                navigation_stage = "wait-project-route-handler"
+                try:
+                    page.locator('button[data-pm-project-route="1"]').wait_for(timeout=10000)
+                except Exception:
+                    print("C-12 project navigation evidence", json.dumps({
+                        "stage": navigation_stage,
+                        "route_path": urlsplit(page.url).path,
+                        "button_count": page.locator("aside nav button.nav-item").filter(
+                            has_text=re.compile(r"^\s*项目\s*$"),
+                        ).count(),
+                        "route_handler_count": page.locator('button[data-pm-project-route="1"]').count(),
+                        "nav_button_texts": page.locator("aside nav button.nav-item").all_text_contents(),
+                        "nav_script_present": page.locator('script[src="/pm-assets/nav.js"]').count() == 1,
+                    }, ensure_ascii=False))
+                    raise
                 navigation_stage = "click-project-navigation-button"
                 project_button.click()
                 navigation_stage = "wait-for-project-dossier"
@@ -88,9 +116,13 @@ def current_target_visible(pid):
             route_path = urlsplit(page.url).path
             navigation.update({
                 "route_path": route_path,
-                "project_button_count": page.get_by_role("button", name="项目", exact=True).count(),
+                "project_button_count": page.locator("aside nav button.nav-item").filter(
+                    has_text=re.compile(r"^\s*项目\s*$"),
+                ).count(),
+                "project_route_handler_count": page.locator('button[data-pm-project-route="1"]').count(),
                 "arrived_at_expected_project": route_path == "/app/pm/projects/" + pid,
             })
+            navigation["nav_button_texts"] = page.locator("aside nav button.nav-item").all_text_contents()
         print("C-12 target visibility error", json.dumps(navigation, ensure_ascii=False))
         return False
 
@@ -114,9 +146,23 @@ def no_internal_terms_visible(case):
 
     import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
     pid = c12_project()
-    data_candidate = scan_metric_candidate(case)
+    from docx import Document
+    from tests.run_pm_tests import poll_candidates_from_scanner
+
+    directory = Path(__import__("os").environ["TEMP"]) / ("PAW_C12_LABEL_" + case)
+    directory.mkdir(parents=True, exist_ok=True)
+    document = Document()
+    document.add_paragraph("青禾项目指标计划。导师培养目标 40 名。")
+    document.save(directory / "青禾项目指标计划.docx")
+    configure_mock_settings(directory)
+    api("POST", "/v1/local/scanner/start", {"directory": str(directory), "force_restart": True})
+    candidates = poll_candidates_from_scanner()
+    data_candidate = any(str(item.get("candidate_type") or "").lower() == "data"
+                         for item in candidates)
     print("C-12 internal-label fixture evidence", json.dumps({
-        "data_candidate_available": bool(data_candidate),
+        "data_candidate_available": data_candidate,
+        "candidate_count": len(candidates),
+        "candidate_types": [str(item.get("candidate_type") or "") for item in candidates],
     }, ensure_ascii=False))
     forbidden = re.compile(r"AUTO_WRITE|REVIEW_REQUIRED|data create|create todo|pending|\bcreate\b|\bupdate\b|\btodo\b|\bmetric\b", re.I)
     rendered = []
