@@ -292,6 +292,25 @@ jobs:
           $baselinePm = (Get-ChildItem -Path baseline_pm\*.exe)[0].FullName
           python tests/run_pm_tests.py --cockpit-negative --installer-exe $baselinePm --commit-sha ${{ github.sha }} --output-report reports/report_negative_pm_cockpit.json
 
+      - name: Switch Mock Server to Generic Freeform Mode for C-12
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+            Where-Object { $_.CommandLine -like '*mock_openai_server.py*--port 18000*' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          $env:PAW_MOCK_MODE = 'freeform'
+          Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
+          $retries = 15
+          while ($retries -gt 0) {
+            try {
+              $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
+              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live (freeform mode)!"; break }
+            } catch {}
+            Start-Sleep -Seconds 1
+            $retries--
+          }
+          if ($retries -eq 0) { throw "Freeform mock server did not start." }
+
       - name: Execute C-12 Baseline Negative Controls
         shell: pwsh
         run: |

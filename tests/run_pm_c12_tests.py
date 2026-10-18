@@ -20,14 +20,42 @@ WEEKLY = "进度：已招募 26 名导师。风险：两个校区尚未提名导
 DETAIL = "C12 正文样本：青禾试点已完成首轮访谈，下一步整理访谈纪要。"
 
 
+def c12_project():
+    return api("POST", "/v1/web/workspace/projects", {"name": "青禾项目"})["id"]
+
+
 def prepare_versioned_project(case):
-    pid = project()
+    pid = c12_project()
     first, proposals = import_doc(case, "青禾计划_v1.docx", "青禾项目。" + PLAN_V1)
     candidate = parse_candidate_types(proposals)[0]
     if candidate:
         api("POST", "/v1/web/brain/review/candidates/" + candidate + "/accept", {})
     second, _ = import_doc(case, "青禾计划_v2.docx", "青禾项目。" + PLAN_V2)
     return pid, first, second
+
+
+def current_target_visible(pid):
+    from playwright.sync_api import sync_playwright
+
+    try:
+        data = api("GET", "/v1/pm/view/projects/" + pid)
+        body = json.dumps(data, ensure_ascii=False)
+        api_expected = "40" in body and "2026-10-08" in body and "待确认：目标由 30 改为 40" in body
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=False)
+            try:
+                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                page.goto(BASE + "/app/projects", wait_until="networkidle")
+                page.get_by_role("link", name="项目", exact=True).click()
+                page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
+                rendered = page.locator("body").inner_text()
+                page.screenshot(path="screenshots/screen_PM_U1_01.png", full_page=True)
+                return api_expected and "40" in rendered and "2026年10月8日" in rendered \
+                    and "待确认：目标由 30 改为 40" in rendered and "已招募 26 名" not in rendered
+            finally:
+                browser.close()
+    except Exception:
+        return False
 
 
 def page_text(url):
@@ -48,7 +76,7 @@ def no_internal_terms_visible(case):
     from playwright.sync_api import sync_playwright
 
     import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
-    pid = project()
+    pid = c12_project()
     forbidden = re.compile(r"AUTO_WRITE|REVIEW_REQUIRED|data create|create todo|pending|\bcreate\b|\bupdate\b|\btodo\b|\bmetric\b", re.I)
     rendered = []
     with sync_playwright() as p:
@@ -78,23 +106,7 @@ def run_c12(report, installer):
                 if case in {"PM-U1-01", "PM-U1-03", "PM-U4-01"}:
                     pid, first, second = prepare_versioned_project(case)
                     if case == "PM-U1-01":
-                        data = api("GET", "/v1/pm/view/projects/" + pid)
-                        body = json.dumps(data, ensure_ascii=False)
-                        api_expected = "40" in body and "2026-10-08" in body and "待确认：目标由 30 改为 40" in body
-                        with sync_playwright() as p:
-                            browser = p.chromium.launch(headless=False)
-                            try:
-                                page = browser.new_page(viewport={"width": 1440, "height": 1000})
-                                page.goto(BASE + "/app/projects", wait_until="networkidle")
-                                page.get_by_role("link", name="项目", exact=True).click()
-                                page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
-                                rendered = page.locator("body").inner_text()
-                                c.check("current_target_visible", api_expected and "40" in rendered
-                                        and "2026年10月8日" in rendered and "待确认：目标由 30 改为 40" in rendered
-                                        and "已招募 26 名" not in rendered, True)
-                                page.screenshot(path="screenshots/screen_" + case.replace("-", "_") + ".png", full_page=True)
-                            finally:
-                                browser.close()
+                        c.check("current_target_visible", current_target_visible(pid), True)
                     elif case == "PM-U1-03":
                         session = api("POST", "/v1/web/agy/chat", {"mode": "chat", "project_id": pid})["session_id"]
                         answer = timed_answer(session, "青禾项目计划目标是多少？", case)
@@ -211,8 +223,8 @@ def run_c12_negative(report, baseline_installer):
                 # Execute the same product path and named assertion on the baseline.
                 if runs == "PM-U1-01":
                     pid, _, _ = prepare_versioned_project(runs)
-                    body = json.dumps(api("GET", "/v1/pm/view/projects/" + pid), ensure_ascii=False)
-                    passed = "待确认：目标由 30 改为 40" in body
+                    passed = current_target_visible(pid)
+                    c.check(expected, passed, True)
                 elif runs == "PM-U2-01":
                     from tests.run_pm_search_tests import scan_file_for_sources, FILENAME
                     items = scan_file_for_sources(runs)
@@ -229,9 +241,10 @@ def run_c12_negative(report, baseline_installer):
                     passed = no_internal_terms_visible(runs)
                     c.check(expected, passed, True)
                 else:
-                    pid = project()
+                    pid = c12_project()
                     import_doc(runs, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
                     session = api("POST", "/v1/web/agy/chat", {"mode": "chat", "project_id": pid})["session_id"]
                     answer = timed_answer(session, "青禾项目后续最好如何优化？", runs)
-                    passed = "建议" in str(answer.get("response") or "")
+                    sources = answer.get("sources") or answer.get("evidence") or answer.get("source_refs") or []
+                    passed = "建议" in str(answer.get("response") or "") and bool(sources)
                     c.check(expected, passed, True)
