@@ -54,26 +54,28 @@ def current_target_visible(pid):
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.goto(BASE + "/app/projects", wait_until="networkidle")
                 navigation_stage = "locate-project-navigation-button"
-                project_button = page.locator("aside nav button.nav-item").filter(
-                    has_text=re.compile(r"^\s*项目\s*$"),
-                ).first
+                project_button = page.get_by_role("link", name="项目", exact=True).first
                 try:
                     project_button.wait_for(state="visible", timeout=10000)
                 except Exception:
                     print("C-12 project navigation evidence", json.dumps({
                         "stage": navigation_stage,
                         "route_path": urlsplit(page.url).path,
-                        "button_count": page.locator("aside nav button.nav-item").filter(
-                            has_text=re.compile(r"^\s*项目\s*$"),
-                        ).count(),
-                        "nav_button_texts": page.locator("aside nav button.nav-item").all_text_contents(),
+                        "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                        "navigation_text": page.locator("nav").all_text_contents(),
+                        "body_text": page.locator("body").inner_text()[:400],
                         "nav_script_present": page.locator('script[src="/pm-assets/nav.js"]').count() == 1,
                     }, ensure_ascii=False))
                     raise
+                legacy_project_button = page.locator("aside nav button.nav-item").filter(
+                    has_text=re.compile(r"^\s*项目\s*$"),
+                ).first
+                if legacy_project_button.count():
+                    project_button = legacy_project_button
                 navigation_stage = "wait-project-route-handler"
                 try:
                     page.wait_for_function(
-                        """() => [...document.querySelectorAll('aside nav button.nav-item')]
+                        """() => [...document.querySelectorAll('a, button')]
                         .some(button => button.textContent.trim() === '项目' &&
                           button.dataset.pmProjectRoute === '1')""",
                         timeout=10000,
@@ -82,11 +84,9 @@ def current_target_visible(pid):
                     print("C-12 project navigation evidence", json.dumps({
                         "stage": navigation_stage,
                         "route_path": urlsplit(page.url).path,
-                        "button_count": page.locator("aside nav button.nav-item").filter(
-                            has_text=re.compile(r"^\s*项目\s*$"),
-                        ).count(),
-                        "route_handler_count": page.locator('button[data-pm-project-route="1"]').count(),
-                        "nav_button_texts": page.locator("aside nav button.nav-item").all_text_contents(),
+                        "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                        "route_handler_count": page.locator('[data-pm-project-route="1"]').count(),
+                        "navigation_text": page.locator("nav").all_text_contents(),
                         "nav_script_present": page.locator('script[src="/pm-assets/nav.js"]').count() == 1,
                     }, ensure_ascii=False))
                     raise
@@ -123,13 +123,11 @@ def current_target_visible(pid):
             route_path = urlsplit(page.url).path
             navigation.update({
                 "route_path": route_path,
-                "project_button_count": page.locator("aside nav button.nav-item").filter(
-                    has_text=re.compile(r"^\s*项目\s*$"),
-                ).count(),
-                "project_route_handler_count": page.locator('button[data-pm-project-route="1"]').count(),
+                "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                "project_route_handler_count": page.locator('[data-pm-project-route="1"]').count(),
                 "arrived_at_expected_project": route_path == "/app/pm/projects/" + pid,
             })
-            navigation["nav_button_texts"] = page.locator("aside nav button.nav-item").all_text_contents()
+            navigation["navigation_text"] = page.locator("nav").all_text_contents()
         print("C-12 target visibility error", json.dumps(navigation, ensure_ascii=False))
         return False
 
@@ -319,14 +317,14 @@ def run_c12(report, installer):
                                     page.locator("#paw-close-btn").click()
                                     overlay.wait_for(state="hidden", timeout=5000)
                             close_startup_overlay()
-                            search = page.get_by_placeholder("搜索文件名或分类", exact=True)
+                            search = page.locator(".source-toolbar input").first
                             search.fill(FILENAME)
                             page.get_by_role("button", name=re.compile(re.escape(FILENAME))).first.click()
                             page.locator(".source-content-card pre").wait_for()
                             rendered_docx = page.locator(".source-content-card pre").inner_text()
                             page.goto(BASE + "/app/files", wait_until="networkidle")
                             close_startup_overlay()
-                            search = page.get_by_placeholder("搜索文件名或分类", exact=True)
+                            search = page.locator(".source-toolbar input").first
                             search.fill(md_path.name)
                             page.get_by_role("button", name=re.compile(re.escape(md_path.name))).first.click()
                             page.locator(".source-content-card pre").wait_for()
@@ -384,12 +382,25 @@ def run_c12(report, installer):
                             page = browser.new_page(viewport={"width": 1440, "height": 1000})
                             page.goto(BASE + "/app/review", wait_until="networkidle")
                             page.wait_for_timeout(750)
+                            cards = page.locator(".review-card")
+                            card_texts = cards.all_text_contents()
+                            print("C-12 metric card list evidence", json.dumps({
+                                "candidate_type": candidate.get("candidate_type"),
+                                "status": candidate.get("status"),
+                                "effective_review_state": candidate.get("effective_review_state"),
+                                "source_label": candidate.get("source_label"),
+                                "display_title": (candidate.get("presentation") or {}).get("display_title"),
+                                "card_count": len(card_texts),
+                                "card_texts": card_texts[:10],
+                            }, ensure_ascii=False))
                             overlay = page.locator("#paw-modal-overlay")
                             if overlay.is_visible():
                                 page.locator("#paw-close-btn").click()
                                 overlay.wait_for(state="hidden", timeout=5000)
                             display_title = str((candidate.get("presentation") or {}).get("display_title") or "")
                             card = page.locator(".review-card").filter(has_text=display_title).first if display_title else page.locator(".review-card").first
+                            if display_title and card.count() == 0 and candidate.get("source_label"):
+                                card = page.locator(".review-card").filter(has_text=str(candidate["source_label"])).first
                             card.click()
                             title = page.get_by_role("textbox", name="标题", exact=True)
                             project_name = page.get_by_role("textbox", name="项目名称", exact=True)
