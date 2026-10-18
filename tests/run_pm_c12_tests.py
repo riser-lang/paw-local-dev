@@ -66,24 +66,24 @@ def current_target_visible(pid):
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.goto(BASE + "/app/projects", wait_until="networkidle")
                 navigation_stage = "locate-project-navigation-button"
-                project_button = page.get_by_role("link", name="项目", exact=True).first
+                project_button = page.locator("a:visible, button:visible").filter(
+                    has_text=re.compile(r"^\s*项目\s*$"),
+                ).first
                 try:
                     project_button.wait_for(state="visible", timeout=10000)
                 except Exception:
                     print("C-12 project navigation evidence", json.dumps({
                         "stage": navigation_stage,
                         "route_path": urlsplit(page.url).path,
-                        "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                        "project_navigation_count": page.locator("a:visible, button:visible").filter(
+                            has_text=re.compile(r"^\s*项目\s*$"),
+                        ).count(),
                         "navigation_text": page.locator("nav").all_text_contents(),
                         "body_text": page.locator("body").inner_text()[:400],
+                        "root_html": page.locator("#root").inner_html()[:500],
                         "nav_script_present": page.locator('script[src="/pm-assets/nav.js"]').count() == 1,
                     }, ensure_ascii=False))
                     raise
-                legacy_project_button = page.locator("aside nav button.nav-item").filter(
-                    has_text=re.compile(r"^\s*项目\s*$"),
-                ).first
-                if legacy_project_button.count():
-                    project_button = legacy_project_button
                 navigation_stage = "wait-project-route-handler"
                 try:
                     page.wait_for_function(
@@ -96,7 +96,9 @@ def current_target_visible(pid):
                     print("C-12 project navigation evidence", json.dumps({
                         "stage": navigation_stage,
                         "route_path": urlsplit(page.url).path,
-                        "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                        "project_navigation_count": page.locator("a:visible, button:visible").filter(
+                            has_text=re.compile(r"^\s*项目\s*$"),
+                        ).count(),
                         "route_handler_count": page.locator('[data-pm-project-route="1"]').count(),
                         "navigation_text": page.locator("nav").all_text_contents(),
                         "nav_script_present": page.locator('script[src="/pm-assets/nav.js"]').count() == 1,
@@ -135,7 +137,9 @@ def current_target_visible(pid):
             route_path = urlsplit(page.url).path
             navigation.update({
                 "route_path": route_path,
-                "project_link_count": page.get_by_role("link", name="项目", exact=True).count(),
+                "project_navigation_count": page.locator("a:visible, button:visible").filter(
+                    has_text=re.compile(r"^\s*项目\s*$"),
+                ).count(),
                 "project_route_handler_count": page.locator('[data-pm-project-route="1"]').count(),
                 "arrived_at_expected_project": route_path == "/app/pm/projects/" + pid,
             })
@@ -181,6 +185,7 @@ def no_internal_terms_visible(case):
     forbidden = re.compile(r"AUTO_WRITE|REVIEW_REQUIRED|data create|create todo|pending|\bcreate\b|\bupdate\b|\btodo\b|\bmetric\b", re.I)
     rendered = []
     route_names = ["/app/review", "/app/todos", "/app/pm/projects/青禾项目"]
+    review_card_count = 0
     review_items = api("GET", "/v1/web/brain/review/candidates?status=pending&limit=200").get("items", [])
     print("C-12 review card text evidence", json.dumps([{
         "candidate_type": item.get("candidate_type"),
@@ -194,6 +199,8 @@ def no_internal_terms_visible(case):
             for route in ("/app/review", "/app/todos", "/app/pm/projects/" + pid):
                 page.goto(BASE + route, wait_until="networkidle")
                 rendered.append(page.locator("body").inner_text())
+                if route == "/app/review":
+                    review_card_count = page.locator(".review-card").count()
                 route_names[len(rendered) - 1] = route
             page.screenshot(path="screenshots/screen_PM_U3_01.png", full_page=True)
         finally:
@@ -207,7 +214,11 @@ def no_internal_terms_visible(case):
                for index, text in enumerate(rendered) if forbidden.search(text)]
     if matches:
         print("C-12 visible internal-term check", json.dumps(matches, ensure_ascii=False))
-    return bool(candidates) and not matches
+    print("C-12 review card visibility evidence", json.dumps({
+        "pending_candidate_count": len(candidates),
+        "rendered_review_card_count": review_card_count,
+    }, ensure_ascii=False))
+    return bool(candidates) and review_card_count > 0 and not matches
 
 
 def scan_metric_candidate(case):
