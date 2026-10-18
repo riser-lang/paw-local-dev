@@ -1,0 +1,19 @@
+{
+  "_note": "Reviewer-owned (C-12), written 2026-10-18 after the product owner's v2.5.0-rc1 acceptance on a real PC with a real model. Every case below reproduces something the owner actually saw. Fixture documents are written by the executor (fictional, not taken from tests/pending/exam/), but must contain: plan v1 with a numeric target and effective date, plan v2 that replaces v1 with a different target and later effective date, and a weekly report with a progress number different from both targets, a stated risk and a next step. All files go through the normal scan flow. Negative controls run on the v2.5.0-rc1 installer (release v2.5.0-rc1-baseline).",
+  "cases": {
+    "PM-U1-01": "扫描方案 v1、方案 v2（替代 v1，目标数字不同）和一份周报后，从左侧导航【项目】进入该项目：页面上能看到 v2 的目标数字和生效日期，并标明它替代了 v1；v1 的目标数字不再作为当前目标出现；周报里的进度数字作为进度显示，不当作目标。如果目标变更需要用户决定，审批前页面要明确显示'待确认：目标由 A 改为 B'，在【需要你决定】批准后显示为当前目标。检查名：current_target_visible",
+    "PM-U1-02": "同一项目中周报写了风险时，项目页的'当前最大问题'不得显示'关键问题尚未记录'，而是显示该风险（可以标注待确认）。检查名：risk_shown_as_top_issue",
+    "PM-U1-03": "向 AI 助手提问'某项目计划培养/达成多少（目标）'，回答给出 v2 的目标数字，不把 v1 的数字或周报里的进度数字当作目标；回答的来源中包含方案 v2。检查名：assistant_uses_current_version",
+    "PM-U2-01": "在【资料】页打开一份经扫描导入的 .md 文件和一份 .docx 文件的详情：都能显示正文（页面中出现该文件里的一句原文），不出现'暂时无法读取正文'。检查名：source_body_readable",
+    "PM-U2-02": "从【知识】页列表点开一条知识，以及从 AI 助手回答中的来源链接点开：详情页都能正常显示标题和内容，不出现'请求失败'，相关接口没有 4xx/5xx。检查名：knowledge_detail_opens",
+    "PM-U3-01": "【需要你决定】、收件箱、项目页、AI 助手回答中，用户可见的文字不出现程序内部代号（至少包括 AUTO_WRITE、REVIEW_REQUIRED、data create、create todo、pending、create、update、todo、metric 这些英文词，大小写不限；用户自己文件里的原文除外）。每张待审核卡片的标题是中文的、说明这张卡要做什么的一句话。检查名：no_internal_terms_visible",
+    "PM-U3-02": "【需要你决定】中的每一种卡片（包括数据/指标类）都能在页面上完成处理：信息齐全的直接批准成功；缺少标题或项目名称的，页面提供可以填写的输入框，填写后批准成功。不允许出现只报'标题或项目名称不能为空'却没有地方填写的情况。检查名：every_card_resolvable",
+    "PM-U4-01": "模型回答不带 EVIDENCE_MAP 等结构化标记、只用自然语言（真实模型常见的写法）时，对一个有风险和下一步记录的项目提问'该项目后续最好如何优化'：不得拒答，回答中有明确标注为'建议'的内容，并给出依据的来源。对一个没有任何资料的项目问同样的问题，仍然如实说明依据不足（不编造）。检查名：advice_not_refused"
+  },
+  "negative_controls": {
+    "NC-PM-U1": {"installer": "v2.5.0-rc1-baseline", "runs": "PM-U1-01", "expect_failed_check": "current_target_visible"},
+    "NC-PM-U2": {"installer": "v2.5.0-rc1-baseline", "runs": "PM-U2-01", "expect_failed_check": "source_body_readable"},
+    "NC-PM-U3": {"installer": "v2.5.0-rc1-baseline", "runs": "PM-U3-01", "expect_failed_check": "no_internal_terms_visible"},
+    "NC-PM-U4": {"installer": "v2.5.0-rc1-baseline", "runs": "PM-U4-01", "expect_failed_check": "advice_not_refused"}
+  }
+}
