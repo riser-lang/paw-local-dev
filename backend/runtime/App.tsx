@@ -758,15 +758,25 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
       setBusy(false);
     }
   };
-  const accept = () => actions(() => client.acceptCandidate(detail.candidateId, note.trim() || undefined), "已提交，等待 AI 巡航。")
+  const dataCard = ["data", "metric"].includes(String(detail.candidateType));
+  const accept = () => actions(async () => {
+    if (dataCard) {
+      if (!String(draft.title ?? "").trim() || !String(draft.project_name ?? draft.project_id ?? "").trim()) {
+        throw new Error("请补充标题和项目名称后再接受。");
+      }
+      await client.editCandidate(detail.candidateId, draft);
+    }
+    return client.acceptCandidate(detail.candidateId, note.trim() || undefined);
+  }, "已提交，等待 AI 巡航。")
   const reject = () => actions(() => client.rejectCandidate(detail.candidateId), "已拒绝，审核记录已保留。");
   const apply = () => actions(() => client.applyCandidate(detail.candidateId), "已写入工作台。", true);
   const saveDraft = () => actions(() => client.editCandidate(detail.candidateId, draft), "草稿已保存，尚未接受，也未写入工作台。", true);
   const clarify = () => actions(() => client.clarifyCandidate(detail.candidateId, note.trim()), "已提交，等待 AI 巡航。");
   const ignore = () => actions(() => client.ignoreCandidate(detail.candidateId), "已暂时忽略。");
   const chooseConflict = (option: "A" | "B" | "NEITHER") => actions(() => client.resolveConflict(detail.candidateId, option, note.trim() || undefined), "已提交，等待 AI 巡航。");
-  const fields = Object.keys(draft).filter(key => ["title", "description", "due_at", "priority", "project_id", "statement"].includes(key));
-  const writeIntent = ["todo", "knowledge", "project_update"].includes(String(detail.candidateType));
+  const fields = [...new Set([...Object.keys(draft).filter(key => ["title", "description", "due_at", "priority", "project_id", "project_name", "statement"].includes(key)), ...(dataCard ? ["title", "project_name"] : [])])];
+  const fieldLabels: Record<string, string> = { title: "标题", description: "说明", due_at: "截止日期", priority: "优先级", project_id: "项目", project_name: "项目名称", statement: "内容" };
+  const writeIntent = ["todo", "knowledge", "project_update", "data", "metric"].includes(String(detail.candidateType));
   const needsHumanInput = !waitingGpt && effective === "NEEDS_REVIEW";
   return <div className="review-detail">
     <div className="review-detail-toolbar"><button className="secondary-button" onClick={onBack}>‹ 返回列表</button><button className="text-button" onClick={onDone}>刷新</button></div>
@@ -778,7 +788,7 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
     <ReviewSection title="原始来源 / 证据摘要"><p><strong>{humanSourceLabel(pres.source_label || detail.sourceLabel)}</strong></p>{(pres.evidence_items || []).map((item, i) => <p key={i}>{item}</p>)}</ReviewSection>
     {clarification && needsHumanInput && <ReviewSection title="补充说明"><textarea rows={4} value={note} onChange={e => setNote(e.target.value)} placeholder="请补充事实、上下文或你希望系统继续核对的内容。" /><div className="review-action-bar"><button className="secondary-button" onClick={() => void ignore()} disabled={busy}>暂时忽略</button><button className="primary-button" onClick={() => void clarify()} disabled={busy || !note.trim()}>提交说明</button></div></ReviewSection>}
     {conflict && needsHumanInput && <ReviewSection title="冲突处理"><textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="请写明正确事实或处理规则。" /><div className="review-action-bar"><button className="primary-button" onClick={() => void chooseConflict("NEITHER")} disabled={busy || !note.trim()}>提交处理说明</button></div></ReviewSection>}
-    {writeIntent && needsHumanInput && detail.status === "pending" && !clarification && !conflict && fields.length > 0 && <ReviewSection title="编辑草稿"><p className="muted">编辑只会保存候选草稿，不会写入工作台。</p><div className="review-edit-grid">{fields.map(field => <label key={field}><span>{field}</span><input value={String(draft[field] ?? "")} onChange={e => setDraft(prev => ({ ...prev, [field]: e.target.value }))} /></label>)}</div><button className="secondary-button" onClick={() => void saveDraft()} disabled={busy}>保存草稿</button></ReviewSection>}
+    {writeIntent && needsHumanInput && detail.status === "pending" && !clarification && !conflict && fields.length > 0 && <ReviewSection title="编辑草稿"><p className="muted">编辑只会保存候选草稿，不会写入工作台。</p><div className="review-edit-grid">{fields.map(field => <label key={field}><span>{fieldLabels[field] ?? "补充信息"}</span><input aria-label={fieldLabels[field] ?? "补充信息"} value={String(draft[field] ?? "")} onChange={e => setDraft(prev => ({ ...prev, [field]: e.target.value }))} /></label>)}</div><button className="secondary-button" onClick={() => void saveDraft()} disabled={busy}>保存草稿</button></ReviewSection>}
     {writeIntent && needsHumanInput && detail.status === "pending" && <ReviewSection title="审核意见（可选）"><textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="告诉 AI 巡航你希望保留的意图、项目归属或处理方式。" /></ReviewSection>}
     {error && <div className="state-message state-message-error" role="alert"><p>{error}</p></div>}{message && <p className="review-note review-note-success" role="status">{message}</p>}
     <div className="review-action-bar">{needsHumanInput && detail.status === "pending" && !clarification && !conflict && <><button className="danger-button" disabled={busy} onClick={() => void reject()}>拒绝</button><button className="primary-button" disabled={busy} onClick={() => void accept()}>{busy ? "处理中…" : "接受"}</button></>}{effective === "ACCEPTED_WAITING_COMMIT" && <button className="primary-button" disabled={busy} onClick={() => void apply()}>写入工作台</button>}{waitingGpt && <button className="secondary-button" onClick={() => navigate("/review")}>返回审核列表</button>}</div>

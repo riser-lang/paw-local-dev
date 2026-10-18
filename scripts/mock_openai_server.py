@@ -328,11 +328,18 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
         # 4. Grounded Q&A (Assistant)
         else:
-            try:
-                from scripts.mock_grounded_answer import answer
-            except ModuleNotFoundError:
-                from mock_grounded_answer import answer
-            reply_content=answer(all_text)
+            if MOCK_MODE == "freeform":
+                try:
+                    from scripts.mock_grounded_answer import freeform_answer
+                except ModuleNotFoundError:
+                    from mock_grounded_answer import freeform_answer
+                reply_content = freeform_answer(all_text)
+            else:
+                try:
+                    from scripts.mock_grounded_answer import answer
+                except ModuleNotFoundError:
+                    from mock_grounded_answer import answer
+                reply_content=answer(all_text)
             if req_data.get('model')=='fault-advice-entities' and '<<<EVIDENCE_MAP' in reply_content:
                 try:
                     from scripts.mock_grounded_answer import inject_unbacked_advice

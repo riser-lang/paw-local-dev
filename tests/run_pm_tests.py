@@ -227,12 +227,16 @@ if __name__ == '__main__':
     parser.add_argument('--output-report', required=True)
     parser.add_argument('--version-negative',action='store_true')
     parser.add_argument('--cockpit-negative',action='store_true')
+    parser.add_argument('--c12-negative',action='store_true')
     args=parser.parse_args()
     installer=Path(args.installer_exe)
     report=Report('NEGATIVE-CONTROL', args.commit_sha, 'mock-llm', get_file_sha256(installer))
     if args.cockpit_negative:
         from tests.run_pm_frontend_tests import run_c06_negative
         run_c06_negative(report,installer)
+    elif args.c12_negative:
+        from tests.run_pm_c12_tests import run_c12_negative
+        run_c12_negative(report,installer)
     elif args.version_negative:
         from tests.run_pm_versions_tests import run_c03_negative
         run_c03_negative(report,installer)
@@ -240,5 +244,5 @@ if __name__ == '__main__':
         run_governance_negative(report, installer)
     report.save(args.output_report)
     expected=report.cases[0]
-    check='cockpit_rendered' if args.cockpit_negative else 'old_version_superseded' if args.version_negative else 'formal_fields_unchanged_after_cruise'
+    check='cockpit_rendered' if args.cockpit_negative else 'old_version_superseded' if args.version_negative else 'current_target_visible' if args.c12_negative else 'formal_fields_unchanged_after_cruise'
     sys.exit(0 if expected.status == 'FAIL' and expected.failed_check == check else 1)

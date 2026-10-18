@@ -1,0 +1,237 @@
+"""C-12 installed-app acceptance and baseline negative controls."""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import httpx
+
+from tests.run_pm_tests import (
+    api, BASE, running, project, INSTALL_DIR, clean_and_record, silent_install,
+)
+from tests.run_pm_versions_tests import import_doc, family
+from tests.run_e2e_tests import parse_candidate_types, timed_answer
+
+
+PLAN_V1 = "目标：第一期培养新任导师 30 名。生效日期：2026年9月1日。"
+PLAN_V2 = "目标调整：第一期培养新任导师 40 名。生效日期：2026年10月8日。本版替代 v1。"
+WEEKLY = "进度：已招募 26 名导师。风险：两个校区尚未提名导师人选。下一步：完成剩余 14 名导师招募。"
+DETAIL = "C12 正文样本：青禾试点已完成首轮访谈，下一步整理访谈纪要。"
+
+
+def prepare_versioned_project(case):
+    pid = project()
+    first, proposals = import_doc(case, "青禾计划_v1.docx", "青禾项目。" + PLAN_V1)
+    candidate = parse_candidate_types(proposals)[0]
+    if candidate:
+        api("POST", "/v1/web/brain/review/candidates/" + candidate + "/accept", {})
+    second, _ = import_doc(case, "青禾计划_v2.docx", "青禾项目。" + PLAN_V2)
+    return pid, first, second
+
+
+def page_text(url):
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        try:
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.goto(BASE + url, wait_until="networkidle")
+            page.locator("body").wait_for()
+            return page, browser, page.inner_text("body")
+        except Exception:
+            browser.close()
+            raise
+
+
+def no_internal_terms_visible(case):
+    from playwright.sync_api import sync_playwright
+
+    import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
+    pid = project()
+    forbidden = re.compile(r"AUTO_WRITE|REVIEW_REQUIRED|data create|create todo|pending|\bcreate\b|\bupdate\b|\btodo\b|\bmetric\b", re.I)
+    rendered = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        try:
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            for route in ("/app/review", "/app/todos", "/app/pm/projects/" + pid):
+                page.goto(BASE + route, wait_until="networkidle")
+                rendered.append(page.locator("body").inner_text())
+            page.screenshot(path="screenshots/screen_PM_U3_01.png", full_page=True)
+        finally:
+            browser.close()
+    session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
+    answer = timed_answer(session, "青禾项目周报记录了什么？", case)
+    rendered.append(str(answer.get("response") or ""))
+    return not any(forbidden.search(text) for text in rendered)
+
+
+def run_c12(report, installer):
+    from playwright.sync_api import sync_playwright
+
+    ids = ["PM-U1-01", "PM-U1-02", "PM-U1-03", "PM-U2-01", "PM-U2-02", "PM-U3-01", "PM-U3-02", "PM-U4-01"]
+    for case in ids:
+        with report.case(case, "v2.5.0-rc1 真机验收问题：" + case) as c:
+            c.fresh_install(clean_and_record, lambda: silent_install(installer)[2], INSTALL_DIR)
+            with running():
+                if case in {"PM-U1-01", "PM-U1-03", "PM-U4-01"}:
+                    pid, first, second = prepare_versioned_project(case)
+                    if case == "PM-U1-01":
+                        data = api("GET", "/v1/pm/view/projects/" + pid)
+                        body = json.dumps(data, ensure_ascii=False)
+                        api_expected = "40" in body and "2026-10-08" in body and "待确认：目标由 30 改为 40" in body
+                        with sync_playwright() as p:
+                            browser = p.chromium.launch(headless=False)
+                            try:
+                                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                                page.goto(BASE + "/app/projects", wait_until="networkidle")
+                                page.get_by_role("link", name="项目", exact=True).click()
+                                page.locator(".pm-project-page h1").filter(has_text="青禾项目").wait_for(timeout=15000)
+                                rendered = page.locator("body").inner_text()
+                                c.check("current_target_visible", api_expected and "40" in rendered
+                                        and "2026年10月8日" in rendered and "待确认：目标由 30 改为 40" in rendered
+                                        and "已招募 26 名" not in rendered, True)
+                                page.screenshot(path="screenshots/screen_" + case.replace("-", "_") + ".png", full_page=True)
+                            finally:
+                                browser.close()
+                    elif case == "PM-U1-03":
+                        session = api("POST", "/v1/web/agy/chat", {"mode": "chat", "project_id": pid})["session_id"]
+                        answer = timed_answer(session, "青禾项目计划目标是多少？", case)
+                        sources = answer.get("sources") or answer.get("evidence") or answer.get("source_refs") or []
+                        c.check("assistant_uses_current_version", "40" in str(answer.get("response") or "") and "青禾计划_v2.docx" in json.dumps(sources, ensure_ascii=False), True)
+                    else:
+                        import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
+                        session = api("POST", "/v1/web/agy/chat", {"mode": "chat", "project_id": pid})["session_id"]
+                        answer = timed_answer(session, "青禾项目后续最好如何优化？", case)
+                        text = str(answer.get("response") or "")
+                        c.check("advice_not_refused", "建议" in text and bool(answer.get("sources") or answer.get("evidence") or answer.get("source_refs")), True)
+                elif case == "PM-U1-02":
+                    pid, _, _ = prepare_versioned_project(case)
+                    import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
+                    vm = api("GET", "/v1/pm/view/projects/" + pid)
+                    rendered = json.dumps(vm, ensure_ascii=False)
+                    c.check("risk_shown_as_top_issue", "校区" in rendered and "关键问题尚未记录" not in rendered, True)
+                elif case == "PM-U2-01":
+                    from tests.run_pm_search_tests import scan_file_for_sources, FILENAME, BODY
+                    items = scan_file_for_sources(case)
+                    source = next((item for item in items if item.get("title") == FILENAME), None)
+                    md_dir = Path(__import__("os").environ["TEMP"]) / ("PAW_PM_C11_" + case)
+                    md_path = md_dir / FILENAME
+                    # C-11's scan helper registers a docx. Add a scanned Markdown
+                    # file through the same watcher and assert the source details API.
+                    md_path.write_text(DETAIL, encoding="utf-8")
+                    api("POST", "/v1/local/scanner/start", {"directory": str(md_dir), "force_restart": True})
+                    from tests.run_pm_tests import poll_candidates_from_scanner
+                    poll_candidates_from_scanner()
+                    files = api("GET", "/v1/web/workspace/sources?limit=500")["items"]
+                    markdown = next((item for item in files if item.get("title") == md_path.name), None)
+                    markdown_content = api("GET", "/v1/web/workspace/sources/" + markdown["id"]).get("content") if markdown else None
+                    docx_content = api("GET", "/v1/web/workspace/sources/" + source["id"]).get("content") if source else None
+                    c.check("source_body_readable", bool(source and markdown and DETAIL in str(markdown_content)
+                            and BODY in str(docx_content) and "暂时无法读取正文" not in str(markdown_content)), True)
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=False)
+                        try:
+                            page = browser.new_page(viewport={"width": 1440, "height": 900})
+                            page.goto(BASE + "/app/files", wait_until="networkidle")
+                            search = page.get_by_placeholder("搜索文件名或分类", exact=True)
+                            search.fill(FILENAME)
+                            page.get_by_role("button", name=re.compile(re.escape(FILENAME))).first.click()
+                            page.locator(".source-content-card pre").wait_for()
+                            rendered_docx = page.locator(".source-content-card pre").inner_text()
+                            page.goto(BASE + "/app/files", wait_until="networkidle")
+                            search = page.get_by_placeholder("搜索文件名或分类", exact=True)
+                            search.fill(md_path.name)
+                            page.get_by_role("button", name=re.compile(re.escape(md_path.name))).first.click()
+                            page.locator(".source-content-card pre").wait_for()
+                            rendered_md = page.locator(".source-content-card pre").inner_text()
+                            c.check("source_body_rendered", BODY in rendered_docx and DETAIL in rendered_md
+                                    and "暂时无法读取正文" not in page.inner_text("body"), True)
+                        finally:
+                            browser.close()
+                elif case == "PM-U2-02":
+                    from tests.run_pm_search_tests import prepare_search_document, FILENAME
+                    prepare_search_document(case)
+                    knowledge = api("GET", "/v1/web/workspace/knowledge?limit=100").get("items", [])
+                    details = []
+                    for item in knowledge[:5]:
+                        kid = item.get("id")
+                        if not kid:
+                            continue
+                        response = httpx.get(BASE + "/v1/web/workspace/knowledge/" + kid, timeout=20)
+                        projection = httpx.get(BASE + "/v1/web/workspace/projection/knowledge/" + kid, timeout=20)
+                        details.append(response.status_code == 200 and projection.status_code == 200)
+                    session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
+                    answer = timed_answer(session, FILENAME + " 里写了什么？", case)
+                    refs = answer.get("sources") or []
+                    source_details = [httpx.get(BASE + "/v1/web/workspace/knowledge/" + str(ref.get("id")), timeout=20).status_code == 200
+                                      for ref in refs if isinstance(ref, dict) and ref.get("id") in {item.get("id") for item in knowledge}]
+                    c.check("knowledge_detail_opens", bool(details) and all(details) and all(source_details), True)
+                elif case == "PM-U3-01":
+                    c.check("no_internal_terms_visible", no_internal_terms_visible(case), True)
+                else:
+                    import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
+                    from tests.run_pm_tests import api
+                    candidates = api("GET", "/v1/web/brain/review/candidates?status=pending&limit=200").get("items", [])
+                    data_cards = [item for item in candidates if str(item.get("candidate_type") or item.get("target_type") or "").lower() in {"data", "metric", "data_asset"}]
+                    c.check("data_metric_card_available", bool(data_cards), True)
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=False)
+                        try:
+                            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                            page.goto(BASE + "/app/review", wait_until="networkidle")
+                            page.locator(".review-card").first.click()
+                            title = page.get_by_role("textbox", name="标题", exact=True)
+                            project_name = page.get_by_role("textbox", name="项目名称", exact=True)
+                            c.check("missing_fields_have_inputs", title.is_visible() and project_name.is_visible(), True)
+                            if not title.input_value():title.fill("青禾项目指标")
+                            if not project_name.input_value():project_name.fill("青禾项目")
+                            page.get_by_role("button", name="保存草稿", exact=True).click()
+                            page.get_by_text("草稿已保存", exact=False).wait_for()
+                            page.get_by_role("button", name="接受", exact=True).click()
+                            page.get_by_text("已提交", exact=False).wait_for()
+                            c.check("every_card_resolvable", "标题或项目名称不能为空" not in page.inner_text("body"), True)
+                            page.screenshot(path="screenshots/screen_" + case.replace("-", "_") + ".png", full_page=True)
+                        finally:
+                            browser.close()
+
+
+def run_c12_negative(report, baseline_installer):
+    controls = [
+        ("NC-PM-U1", "PM-U1-01", "current_target_visible"),
+        ("NC-PM-U2", "PM-U2-01", "source_body_readable"),
+        ("NC-PM-U3", "PM-U3-01", "no_internal_terms_visible"),
+        ("NC-PM-U4", "PM-U4-01", "advice_not_refused"),
+    ]
+    for control, runs, expected in controls:
+        with report.case(control, "v2.5.0-rc1 安装包负对照：" + runs) as c:
+            c.fresh_install(clean_and_record, lambda: silent_install(baseline_installer)[2], INSTALL_DIR)
+            with running():
+                # Execute the same product path and named assertion on the baseline.
+                if runs == "PM-U1-01":
+                    pid, _, _ = prepare_versioned_project(runs)
+                    body = json.dumps(api("GET", "/v1/pm/view/projects/" + pid), ensure_ascii=False)
+                    passed = "待确认：目标由 30 改为 40" in body
+                elif runs == "PM-U2-01":
+                    from tests.run_pm_search_tests import scan_file_for_sources, FILENAME
+                    items = scan_file_for_sources(runs)
+                    source = next((item for item in items if item.get("title") == FILENAME), None)
+                    body = None
+                    if source:
+                        try:
+                            body = api("GET", "/v1/web/workspace/sources/" + source["id"]).get("content")
+                        except Exception:
+                            body = None
+                    passed = bool(source and body and BODY in str(body) and "暂时无法读取正文" not in str(body))
+                    c.check(expected, passed, True)
+                elif runs == "PM-U3-01":
+                    passed = no_internal_terms_visible(runs)
+                    c.check(expected, passed, True)
+                else:
+                    pid = project()
+                    import_doc(runs, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
+                    session = api("POST", "/v1/web/agy/chat", {"mode": "chat", "project_id": pid})["session_id"]
+                    answer = timed_answer(session, "青禾项目后续最好如何优化？", runs)
+                    passed = "建议" in str(answer.get("response") or "")
+                    c.check(expected, passed, True)

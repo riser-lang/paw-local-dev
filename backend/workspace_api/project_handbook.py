@@ -710,12 +710,49 @@ def read_project_explainer(project_id: str, *, db_path: str | None = None) -> di
     conn = sqlite3.connect(db_path or str(DB_PATH))
     conn.row_factory = sqlite3.Row
     try:
+        def include_recorded_risk(result):
+            if not isinstance(result, dict):
+                return result
+            explainer = result.get("explainer")
+            if not isinstance(explainer, dict):
+                explainer = {}
+            if str(explainer.get("key_open_issue") or "").strip() not in {
+                "", "关键问题尚未记录", "关键问题尚未记录。", "暂无风险", "暂无已知风险",
+            }:
+                return result
+            try:
+                risk = conn.execute(
+                    "SELECT r.text FROM pm_section_current c JOIN pm_section_revision r "
+                    "ON r.id=c.revision_id WHERE c.project_id=? AND c.section_id IN ('risks','risk') "
+                    "ORDER BY r.created_at DESC LIMIT 1", (project_id,)
+                ).fetchone()
+            except sqlite3.OperationalError:
+                risk = None
+            pending = False
+            if not risk:
+                try:
+                    risk = conn.execute(
+                        "SELECT text FROM pm_section_assessment WHERE project_id=? "
+                        "AND section_id IN ('risks','risk') AND status IN ('needs_user','conflict') "
+                        "ORDER BY created_at DESC LIMIT 1", (project_id,)
+                    ).fetchone()
+                    pending = bool(risk)
+                except sqlite3.OperationalError:
+                    risk = None
+            if risk and str(risk[0] or "").strip():
+                result = {**result, "explainer": {**explainer,
+                    "key_open_issue": ("待确认：" if pending else "") + str(risk[0]).strip()},
+                    "risk_source": "pm_section_assessment" if pending else "pm_section_current"}
+            elif not result.get("explainer"):
+                return None
+            return result
+
         from backend.pm.storage import derived
         drafts = derived(conn, project_id)
         if drafts:
-            return {'explainer': {k: 'AI 生成：' + v for k, v in drafts[0]['content'].items()},
+            return include_recorded_risk({'explainer': {k: 'AI 生成：' + v for k, v in drafts[0]['content'].items()},
                     'updated_at': drafts[0]['created_at'], 'authority': 'ai_generated',
-                    'formal_state': False, 'source': 'pm_ai_explainer', 'label': 'AI 生成'}
+                    'formal_state': False, 'source': 'pm_ai_explainer', 'label': 'AI 生成'})
         handbook = conn.execute(
             "SELECT sections_json, updated_at FROM project_handbook WHERE project_id=?",
             (project_id,),
@@ -724,13 +761,13 @@ def read_project_explainer(project_id: str, *, db_path: str | None = None) -> di
             sections = _json(handbook["sections_json"], {})
             explainer = sections.get("project_explainer") if isinstance(sections, dict) else None
             if isinstance(explainer, dict) and explainer:
-                return {
+                return include_recorded_risk({
                     "explainer": explainer,
                     "updated_at": handbook["updated_at"],
                     "authority": explainer.get("authority") or "analysis_plane_semantic_artifact",
                     "formal_state": False,
                     "source": "project_handbook.sections.project_explainer",
-                }
+                })
         try:
             row = conn.execute("SELECT * FROM project_explainer WHERE project_id=?", (project_id,)).fetchone()
         except sqlite3.OperationalError as exc:
@@ -739,13 +776,13 @@ def read_project_explainer(project_id: str, *, db_path: str | None = None) -> di
             row = None
         if row is None:
             return None
-        return {
+        return include_recorded_risk({
             "explainer": _json(row["explainer_json"], {}),
             "updated_at": row["updated_at"],
             "authority": "analysis_plane_semantic_artifact",
             "formal_state": False,
             "source": "project_explainer",
-        }
+        })
     finally:
         conn.close()
 

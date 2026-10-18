@@ -1,0 +1,66 @@
+name: PAW Real Model Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  real-model:
+    if: github.event_name != 'pull_request' && github.repository == 'riser-lang/paw-local-dev'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install build and test dependencies
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.12.0 python-docx openpyxl python-pptx pypdf pillow httpx
+      - name: Build the current installer
+        run: python scripts/package_app.py
+      - name: Resolve the provider model ID from its authenticated model catalog
+        id: model
+        shell: pwsh
+        env:
+          PAW_TEST_API_KEY: ${{ secrets.PAW_TEST_API_KEY }}
+          PAW_TEST_MODEL: ${{ vars.PAW_TEST_MODEL }}
+        run: |
+          if (-not $env:PAW_TEST_API_KEY) { throw 'PAW_TEST_API_KEY secret is unavailable.' }
+          $headers = @{ Authorization = "Bearer $env:PAW_TEST_API_KEY" }
+          $catalog = Invoke-RestMethod -Uri 'https://api.siliconflow.cn/v1/models' -Headers $headers -TimeoutSec 30
+          $matches = @($catalog.data | Where-Object { $_.id -match 'DeepSeek-V4[.]1-Flash' })
+          if ($matches.Count -eq 0) { throw 'The provider model catalog did not return DeepSeek V4.1 Flash.' }
+          $selected = $env:PAW_TEST_MODEL
+          if (-not $selected) { $selected = $matches[0].id }
+          if (-not (@($matches | Where-Object { $_.id -eq $selected }).Count)) { throw 'PAW_TEST_MODEL does not match the catalog entry for DeepSeek V4.1 Flash.' }
+          "model_id=$selected" >> $env:GITHUB_OUTPUT
+          "Resolved SiliconFlow model ID: $selected" | Write-Host
+      - name: Run installed-app real-model acceptance
+        shell: pwsh
+        env:
+          PAW_TEST_API_KEY: ${{ secrets.PAW_TEST_API_KEY }}
+          PAW_TEST_MODEL: ${{ steps.model.outputs.model_id }}
+        run: |
+          python tests/run_real_model_acceptance.py --installer dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe --report reports/real-model-report.json
+      - name: Upload real-model report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-model-report
+          path: reports/real-model-report.json
+          if-no-files-found: warn
+          retention-days: 30

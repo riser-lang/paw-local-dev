@@ -354,6 +354,13 @@ def answer(prompt):
     return '资料摘录（非正式资料保留待确认属性）：\n'+'\n'.join(lines)+'\n<<<EVIDENCE_MAP\n'+json.dumps({'claims':claims},ensure_ascii=False)+'\nEVIDENCE_MAP>>>'
 
 
+def freeform_answer(prompt):
+    """Generic natural-language mode: preserve extracted text and citations, omit the machine map."""
+    response = answer(prompt)
+    marker = '\n<<<EVIDENCE_MAP'
+    return response.split(marker, 1)[0].strip()
+
+
 def section_consistency(value):
     """Compare explicit opposite predicates, only in supplied section excerpts."""
     sections=value['sections'];pairs=[]

@@ -563,7 +563,7 @@
 
     "ProjectViewModel": {
       "type": "object",
-      "required": ["schema", "generated_at", "today", "project", "sections", "entries", "metrics", "milestones", "changes", "conflicts", "sources", "receipts"],
+      "required": ["schema", "generated_at", "today", "project", "sections", "entries", "metrics", "pending_targets", "milestones", "changes", "conflicts", "sources", "receipts"],
       "properties": {
         "health_checks": {"type":"array","items":{"$ref":"#/$defs/HealthCheck"}},
         "knowledge_gaps": {"type":"array","items":{"$ref":"#/$defs/KnowledgeGap"}},
@@ -587,6 +587,7 @@
         "sections": { "type": "array", "items": { "$ref": "#/$defs/SectionConfig" } },
         "entries": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/SectionEntry" } } },
         "metrics": { "type": "array", "items": { "$ref": "#/$defs/Metric" } },
+        "pending_targets": { "type": "array", "items": { "type": "object", "required": ["id", "name", "previous", "target"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "previous": { "type": ["number", "string"] }, "target": { "type": ["number", "string"] }, "effective_date": { "$ref": "#/$defs/NullableString" }, "source_title": { "type": "string" } }, "additionalProperties": false } },
         "milestones": { "type": "array", "items": { "$ref": "#/$defs/Milestone" } },
         "changes": { "type": "array", "items": { "$ref": "#/$defs/ChangeEntry" } },
         "conflicts": { "type": "array", "items": { "$ref": "#/$defs/Conflict" } },
