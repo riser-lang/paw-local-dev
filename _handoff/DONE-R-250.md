@@ -1,9 +1,9 @@
 # DONE-R-250 — 准备 v2.5.0-rc1（参赛候选版本）
 
 - 执行者：DeepSeek v4.1 flash ｜ 审核人：Claude Code
-- 分支：`gemini/R-250`，PR **#13**（合入 main）
-- 本报告对应头部提交 **`7b23689`**（已按 REVIEW-C-11 的 R-250 一节改完 6 项，**并已合并 main、补上第 3 条"修复"**）
-- **已 `git merge origin/main`**（把已合并的 C-11 带进来），合并无冲突
+- 分支：`gemini/R-250`，PR **#13**（合入 main，OPEN / MERGEABLE）
+- 本报告对应头部提交 **`ff19a50`**；代码提交为 **`7b23689`**（已按 REVIEW-C-11 的 R-250 一节改完 6 项，**并已合并 main、补上第 3 条"修复"**）
+- **已 `git merge origin/main`**（把已合并的 C-11 带进来），**合并无冲突**，未 rebase、未 force push
 - **未打 tag，未建 Release**（按指示由审核人来做）
 
 ---
@@ -320,27 +320,41 @@ FRONTEND_FILTER_WOULD_MATCH True
 
 补充说明一处**不影响结论但需交代**的观察：`GET /v1/web/workspace/projection/knowledge-search?q=<完整文件名>` 在开发模式下返回 0 条，因为【知识】检索索引里存的是规范化后的知识标题（如「【知识】星火导师计划 方案 v2」，空格化、无扩展名），而非原始文件名；用"星火""v2"等子串查同一文档能命中。**版本说明第 3 条说的"按完整文件名搜索"指的是【资料】页（PM-S1-01 的判定口径），不是【知识】页检索**，措辞与此一致，未越界承诺。
 
-### 5.2 云端运行（本轮头部提交 `7b23689`，合并 main 之后）
+### 5.2 云端运行（合并 main 之后，两轮全绿）
+
+#### 5.2.1 代码提交 `7b23689`（补第 3 条"修复"的那次）
 
 | 事件 | 运行 | attempt | 结论 |
 |---|---|---|---|
 | push 流水线 | [39089026564](https://github.com/riser-lang/paw-local-dev/actions/runs/39089026564) | **1**（未重跑） | **GREEN**（83/83 PASS，0 FAIL，0 NOT RUN） |
 | pull_request 流水线 | [39089030009](https://github.com/riser-lang/paw-local-dev/actions/runs/39089030009) | **1**（未重跑） | **GREEN**（83/83 PASS，0 FAIL，0 NOT RUN） |
-| push 单元测试 | [39089026565](https://github.com/riser-lang/paw-local-dev/actions/runs/39089026565) | 1 | GREEN（**169 passed**） |
-| PR 单元测试 | [39089030004](https://github.com/riser-lang/paw-local-dev/actions/runs/39089030004) | 1 | GREEN（**169 passed**） |
-| PR 安装包构建 | [39089030016](https://github.com/riser-lang/paw-local-dev/actions/runs/39089030016) | 1 | GREEN（产物 `PAW_Personal_Work_OS_Setup_v2.5.0`，33.5 MB） |
+| push 单元测试 | [39089026565](https://github.com/riser-lang/paw-local-dev/actions/runs/39089026565) | 1 | GREEN（169 passed） |
+| PR 单元测试 | [39089030004](https://github.com/riser-lang/paw-local-dev/actions/runs/39089030004) | 1 | GREEN（169 passed） |
+| PR 安装包构建 | [39089030016](https://github.com/riser-lang/paw-local-dev/actions/runs/39089030016) | 1 | GREEN（`PAW_Personal_Work_OS_Setup_v2.5.0`，33.5 MB） |
 
-用例数由上轮的 **80 增至 83**：合并进来的 C-11 带来 PM-S1-01、PM-S1-02、PM-S1-03 三条，并新增负对照 **NC-PM-S1**。
-负对照按设计 FAIL（NC-01、NC-02、NC-03、NC-PM-GOV、NC-PM-S1、NC-PM-C1、NC-PM-B2），其中 **NC-PM-S1 恰好 FAIL 在 `scanned_file_listed_in_sources`**，正是版本说明第 3 条"修复"的证明项。三条 C-11 正向用例 `PM-S1-01 / PM-S1-02 / PM-S1-03` 本次均为 PASS。
+#### 5.2.2 最终头部 `ff19a50`（只改本报告，**以这一轮为准**）
 
-**本轮没有任何 flaky 失败**：两条流水线都在**第 1 次**尝试即全绿，未触发"整条流水线重跑"。
+| 事件 | 运行 | attempt | 结论 |
+|---|---|---|---|
+| push 流水线 | [39090252128](https://github.com/riser-lang/paw-local-dev/actions/runs/39090252128) | **1**（未重跑） | **GREEN**（83/83 PASS，0 FAIL，0 NOT RUN） |
+| pull_request 流水线 | [39090255614](https://github.com/riser-lang/paw-local-dev/actions/runs/39090255614) | **1**（未重跑） | **GREEN**（83/83 PASS，0 FAIL，0 NOT RUN） |
+| push 单元测试 | [39090252118](https://github.com/riser-lang/paw-local-dev/actions/runs/39090252118) | 1 | GREEN（169 passed） |
+| PR 单元测试 | [39090255553](https://github.com/riser-lang/paw-local-dev/actions/runs/39090255553) | 1 | GREEN（169 passed） |
+| PR 安装包构建 | [39090255823](https://github.com/riser-lang/paw-local-dev/actions/runs/39090255823) | 1 | GREEN（`PAW_Personal_Work_OS_Setup_v2.5.0`，33.5 MB） |
 
-push 与 PR 的 `summary.md` 首行哈希不同属正常：push 运行报的是提交本身 `7b23689…`，PR 运行报的是 GitHub 生成的合并引用 `6a25a6a…`；两者的 `headSha` 都是 `7b236892421742b491e309455108dbbb213f3703`（上面运行表已核对）。
+两轮的用例数均为 **83**（上轮 80，合并进来的 C-11 带来 PM-S1-01、PM-S1-02、PM-S1-03 三条，并新增负对照 **NC-PM-S1**）。
+负对照按设计 FAIL（NC-01、NC-02、NC-03、NC-PM-GOV、**NC-PM-S1**、NC-PM-C1、NC-PM-B2），其中 **NC-PM-S1 恰好 FAIL 在 `scanned_file_listed_in_sources`**，正是版本说明第 3 条"修复"的证明项；三条 C-11 正向用例 `PM-S1-01 / PM-S1-02 / PM-S1-03` 均为 PASS。
 
-### 5.3 push 运行的 `summary.md` 全文（原样粘贴）
+B1-01 的七项安装检查在最终头部 `ff19a50` 的 `report_B1.json` 里全部为 `true`（含本轮的 `installed_guide_exists`、`installed_guide_matches_docs`、`start_menu_guide_shortcut_exists`）。
+
+**本轮没有任何 flaky 失败**：上表两轮合计 **10 条云端运行**（每个头部 5 条）全部在**第 1 次**尝试即全绿，未触发重跑，更未出现上一轮那种截图哈希重复。
+
+push 与 PR 的 `summary.md` 首行哈希不同属正常：push 运行报的是提交本身，PR 运行报的是 GitHub 生成的合并引用；两者的 `headSha` 相同（`7b236892421742b491e309455108dbbb213f3703` / `ff19a5028533b6e424c07ce283a2b629fbafb940`）。
+
+### 5.3 push 运行（`ff19a50`）的 `summary.md` 全文（原样粘贴）
 
 ```markdown
-# Pipeline verdict for 7b236892421742b491e309455108dbbb213f3703
+# Pipeline verdict for ff19a5028533b6e424c07ce283a2b629fbafb940
 
 Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
@@ -441,10 +455,10 @@ Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
 ```
 
-### 5.4 PR 运行的 `summary.md` 全文（原样粘贴）
+### 5.4 PR 运行（`ff19a50`）的 `summary.md` 全文（原样粘贴）
 
 ```markdown
-# Pipeline verdict for 6a25a6ad78e8f05c5d61fe1bcb40aa2983874377
+# Pipeline verdict for 4c2a52d63c30f63041db8db3222d43078e6ee07a
 
 Required cases: 83 | PASS 83 | FAIL 0 | NOT RUN 0
 
@@ -585,7 +599,7 @@ DUP 0a3cfaef6173  PM-E1-02 screen_PM_E1_02_390.png
 
 这两条是 **C-08 的既有用例，本轮未改动**；同一提交的 push 运行里它们是 PASS。判断属于"截图时机"这一类偶发问题（页面尚未渲染出各自内容就截图，两张图都一样），已在审核人的不稳定记录同类项中。**没有改动 PM-E1-02/PM-E1-03 的检查或截图逻辑**，只是整条重跑；重跑即通过。
 
-> 说明：以上两次 RED 都发生在"只改本报告"的提交上，代码提交 `350d16a` 的 push 与 PR 均为首次 GREEN。**按第 6 项，最终以 C-11 合并后那一轮全量运行为准**——那一轮即第 5.2 节的 `7b23689`，push 与 PR 均 attempt 1 GREEN 83/83，无任何 flaky。
+> 说明：以上两次 RED 都发生在"只改本报告"的提交上，代码提交 `350d16a` 的 push 与 PR 均为首次 GREEN。**按第 6 项，最终以 C-11 合并后的全量运行为准**——那一轮即第 5.2 节的 `7b23689` 与最终头部 `ff19a50`，共 10 条运行全部 attempt 1 GREEN 83/83，无任何 flaky。
 
 ---
 ## 6. 我在 C-11 分支上做过的部分工作（已按要求停下）
@@ -619,7 +633,7 @@ DUP 0a3cfaef6173  PM-E1-02 screen_PM_E1_02_390.png
 ## 8. 五行摘要
 
 1. 按 REVIEW 改完 6 项：版本说明"修复"只留有负对照证明的、新增 10 换成特殊字符措辞、删掉未经验证的 2.3.9 回退承诺并写明实际备份位置、【资料】页 200 份上限写进已知问题。
-2. **C-11 合并后已 `git merge origin/main`：(合并无冲突)**，产品代码全部取 main，本分支只剩 `docs/`、`installer/`、`scripts/package_app.py` 与版本号改动；并把"扫描导入的文件现在会出现在【资料】页，并能按完整文件名（含扩展名）搜索到"补为第 3 条"修复"（依据 NC-PM-S1）。
-3. 完整使用说明装进安装目录：`[Files]` 从 `docs/使用说明.txt` 原样复制，开始菜单加【使用说明】，`package_app.py` 不再生成短版；B1-01 追加三项安装检查、原有检查一行未改。使用说明 Q5 的"原始资料一直留在【资料】里可查"经核对**现在成立**，一字未改。
-4. 云端本轮（头部 `7b23689`）push 与 PR 两条流水线**均 attempt 1 GREEN 83/83**（新增 C-11 的 PM-S1-01/02/03，NC-PM-S1 按预期 FAIL），单元测试 169 项全过，lint `clean`，`audit_check.py` 版本一致性 PASS。
-5. **未打 tag、未建 Release、未改 STATUS.md、未碰 C-11 目录**；合并无冲突，无 flaky，未重跑流水线。
+2. **C-11 合并后已 `git merge origin/main`（合并无冲突，未 rebase、未 force push）**，产品代码全部取 main，本分支只剩 `docs/`、`installer/`、`scripts/package_app.py` 与版本号改动；并把"扫描导入的文件现在会出现在【资料】页，并能按完整文件名（含扩展名）搜索到"补为第 3 条"修复"（依据 NC-PM-S1，云端该负对照恰好 FAIL 在 `scanned_file_listed_in_sources`）。
+3. 完整使用说明装进安装目录：`[Files]` 从 `docs/使用说明.txt` 原样复制，开始菜单加【使用说明】，`package_app.py` 不再生成短版；B1-01 追加三项安装检查、原有检查一行未改。使用说明 Q5 的"原始资料一直留在【资料】里可查"经核对**现在成立**，一字未改（本轮使用说明零改动）。
+4. 云端两轮（代码 `7b23689`、最终头部 `ff19a50`）push 与 PR **共 10 条运行全部 attempt 1 GREEN 83/83**（含 C-11 的 PM-S1-01/02/03，NC-PM-S1 按预期 FAIL），单元测试 169 项全过，lint `clean`，`audit_check.py` 版本一致性 PASS，B1-01 七项安装检查全 `true`。
+5. **未打 tag、未建 Release、未改 STATUS.md（与 main 逐字节一致）、未碰 C-11 目录**；无 flaky、未重跑流水线。
