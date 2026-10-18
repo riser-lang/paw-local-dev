@@ -827,10 +827,20 @@ def evidence_id_set(bundle: Mapping[str, Any]) -> set[str]:
 
 
 def format_evidence_block(bundle: Mapping[str, Any]) -> str:
+    layer_labels = {
+        "SOURCE": "资料", "KNOWLEDGE": "知识", "PROJECT": "项目档案",
+        "CAPTURE": "随手记", "PROJECT_HANDBOOK": "项目档案",
+        "CONFIRMED_KNOWLEDGE": "已确认知识",
+    }
+    authority_labels = {
+        "formal": "正式记录", "canonical": "规范记录", "evidence": "资料证据",
+        "user_input": "用户输入", "draft": "待确认草稿",
+        "A_EVIDENCE": "资料证据", "A_CANONICAL": "正式记录",
+    }
+    temporal_labels = {"current": "当前有效", "superseded": "已被替代", "historical": "历史资料"}
     lines = [
-        f"合约：{bundle.get('contract')}",
-        f"extension_allowed：{'true' if bundle.get('extension_allowed') else 'false'}",
-        f"project_id：{bundle.get('project_id') or '(none)'}",
+        "回答规则：依据已检索资料；建议权限已由系统按问题判定。",
+        f"项目范围：{'已指定项目' if bundle.get('project_id') else '未指定项目'}",
         f"证据条数：{bundle.get('evidence_count', 0)}",
     ]
     if bundle.get("authority_conflict"):
@@ -842,8 +852,9 @@ def format_evidence_block(bundle: Mapping[str, Any]) -> str:
     lines.append("\n--- 证据清单（回答时必须引用 evidence_id）---")
     for item in bundle.get("evidence") or []:
         lines.append(
-            f"[{item['evidence_id']}] layer={item['layer']} "
-            f"authority={item.get('authority_state')} temporal={item.get('temporal_state')}\n"
+            f"[{item['evidence_id']}] 类型={layer_labels.get(str(item.get('layer')), '工作台记录')} "
+            f"依据={authority_labels.get(str(item.get('authority_state')), '资料记录')} "
+            f"时效={temporal_labels.get(str(item.get('temporal_state')), '状态待确认')}\n"
             f"  标题：{item.get('title')}\n"
             f"  内容：{item.get('content')}"
         )
@@ -867,15 +878,16 @@ def build_grounded_system_instruction(mode: str, bundle: Mapping[str, Any]) -> s
         "3. 证据不足时明确说明缺少什么，不要猜测。",
         "4. 证据冲突时披露冲突与各方 authority/temporal 状态，不得自行调和。",
         "5. 推断须标注为「推断」；draft/provisional 内容须标注为非正式事实。",
+        "6. 用户询问目标或计划指标时，以当前有效版本为准，明确区分计划目标与周报进度；不得把已招募、已完成等进度数字当作目标。版本变更仍待用户决定时，明确说明待确认并列出新旧目标。",
     ]
     if extension:
         rules.append(
-            "6. 用户已请求建议/方案：可提供「建议/推演/方案」段落，"
+            "7. 用户已请求建议/方案：可提供「建议/推演/方案」段落，"
             "但必须与事实分段、基于证据推导，且不得引入无证据的 PAW 特定事实。"
         )
     else:
         rules.append(
-            "6. extension_allowed=false：禁止主动给出建议、下一步、推荐、方案、"
+            "7. extension_allowed=false：禁止主动给出建议、下一步、推荐、方案、"
             "「可以考虑」「不妨」「我认为应该」等延伸性内容。只回答证据支持的事实。"
         )
     return "\n".join(rules)

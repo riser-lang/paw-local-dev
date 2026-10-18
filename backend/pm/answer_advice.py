@@ -29,9 +29,61 @@ def unsupported(text,basis):
     return None
 
 
+def _natural_evidence_map(text,contract):
+    """Map plain model sentences to retrieved excerpts by lexical overlap."""
+    context={str(i.get('layer'))+':'+str(i.get('item_id')):str(i.get('title',''))+'\n'+str(i.get('content',''))
+             for i in contract.get('context_items',[]) if isinstance(i,dict)}
+    known={str(i.get('evidence_id')) for i in contract.get('evidence_index',[]) if isinstance(i,dict)}
+    context={key:value for key,value in context.items() if key in known}
+    if not context:return None
+    def lexical_tokens(value):
+        words=re.findall(r'[a-z0-9_]+|[\u3400-\u4dbf\u4e00-\u9fff]+',(value or '').lower())
+        return {token for word in words for token in ([word] if not re.search(r'[\u3400-\u4dbf\u4e00-\u9fff]',word) else [word[i:i+2] for i in range(len(word)-1)])}
+    sentences=[s.strip() for s in re.split(r'(?<=[。！？])\s*|\n+',text) if s.strip()]
+    claims=[];source_titles={}
+    for entry in contract.get('evidence_index',[]):
+        if isinstance(entry,dict):source_titles[str(entry.get('evidence_id'))]=str(entry.get('title') or '')
+    for sentence in sentences:
+        query=lexical_tokens(sentence)
+        ranked=[]
+        for ident,body in context.items():
+            overlap=query & lexical_tokens(body)
+            score=sum(len(term) for term in overlap)
+            if score>=2:ranked.append((score,ident,body))
+        ranked.sort(reverse=True)
+        if not ranked:return None
+        refs=[entry[1] for entry in ranked[:3]]
+        advice=bool(re.search(r'建议|应该|可以考虑|不妨|最好|优化',sentence))
+        basis='\n'.join(context[ref] for ref in refs)
+        if advice:
+            if unsupported(sentence,basis):return None
+            claims.append({'kind':'recommendation','text':sentence,'derived_from':refs})
+        else:
+            claims.append({'kind':'fact','text':sentence,'evidence':refs})
+    if not claims:return None
+    if not any(c['kind']=='recommendation' for c in claims) and re.search(r'建议|应该|可以考虑|不妨|最好|优化',text):
+        return None
+    if not any(c['kind']=='fact' for c in claims):return None
+    visible=text.strip()
+    if contract.get('advice_allowed') and any(c['kind']=='recommendation' for c in claims) and not re.search(r'(^|\n)建议',visible):
+        visible='建议（基于已检索资料）\n'+visible
+    for claim in claims:
+        if claim['kind']=='fact':
+            labels=list(dict.fromkeys(source_titles.get(ref,'') for ref in claim['evidence'] if source_titles.get(ref,'')))
+            if labels:visible=visible.replace(claim['text'],claim['text']+'〔依据：'+'、'.join(labels)+'〕',1)
+    return visible,{'claims':claims}
+
+
 def clean(raw,contract,kind_of=None):
     if not contract.get('advice_allowed'):return raw,{'removed':0,'reasons':{}}
     visible,mapping=extract(raw)
+    if mapping is None:
+        natural=_natural_evidence_map(visible,contract)
+        if natural:
+            rendered,claims=natural
+            encoded=json.dumps(claims,ensure_ascii=False)
+            return rendered+'\n'+OPEN+'\n'+encoded+'\n'+CLOSE,{'removed':0,'reasons':{},'status':'natural_language_grounded'}
+        return raw,{'removed':0,'reasons':{},'status':'unverified_map'}
     if not isinstance(mapping,dict) or not isinstance(mapping.get('claims'),list):
         return raw,{'removed':0,'reasons':{},'status':'unverified_map'}
     context={str(i['layer'])+':'+str(i['item_id']):str(i.get('title',''))+'\n'+str(i.get('content','')) for i in contract.get('context_items',[])}

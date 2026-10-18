@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09, PM10]
+        block: [B1, B2, B3, B4, B5, B6, B7, B8, PM02, PM03, PM04, PM05, PM06, PM07, PM08, PM09, PM10, PM12]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -124,7 +124,7 @@ jobs:
           # The standard exam reads documents and must see the kind of answer a
           # real model gives, so it runs the stand-in in extractive mode.  Every
           # other block keeps the scripted mode its cases are written against.
-          $mockMode = if ('${{ matrix.block }}' -eq 'PM10') { 'extractive' } else { 'scripted' }
+          $mockMode = if ('${{ matrix.block }}' -eq 'PM10') { 'extractive' } elseif ('${{ matrix.block }}' -eq 'PM12') { 'freeform' } else { 'scripted' }
           Write-Host "Mock mode: $mockMode"
           $env:PAW_MOCK_MODE = $mockMode
           Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
@@ -233,6 +233,12 @@ jobs:
           New-Item -ItemType Directory -Path baseline_pm -Force | Out-Null
           gh release download v2.3.9-baseline --repo ${{ github.repository }} --pattern '*.exe' --dir baseline_pm
 
+      - name: Download v2.5.0-rc1 Negative Control Baseline
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path baseline_c12 -Force | Out-Null
+          gh release download v2.5.0-rc1-baseline --repo ${{ github.repository }} --pattern '*.exe' --dir baseline_c12
+
       - name: Download Built Installer
         uses: actions/download-artifact@v4
         with:
@@ -285,6 +291,31 @@ jobs:
         run: |
           $baselinePm = (Get-ChildItem -Path baseline_pm\*.exe)[0].FullName
           python tests/run_pm_tests.py --cockpit-negative --installer-exe $baselinePm --commit-sha ${{ github.sha }} --output-report reports/report_negative_pm_cockpit.json
+
+      - name: Switch Mock Server to Generic Freeform Mode for C-12
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+            Where-Object { $_.CommandLine -like '*mock_openai_server.py*--port 18000*' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          $env:PAW_MOCK_MODE = 'freeform'
+          Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
+          $retries = 15
+          while ($retries -gt 0) {
+            try {
+              $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
+              if ($res.status -eq "ok") { Write-Host "Mock OpenAI Server is live (freeform mode)!"; break }
+            } catch {}
+            Start-Sleep -Seconds 1
+            $retries--
+          }
+          if ($retries -eq 0) { throw "Freeform mock server did not start." }
+
+      - name: Execute C-12 Baseline Negative Controls
+        shell: pwsh
+        run: |
+          $baselineC12 = (Get-ChildItem -Path baseline_c12\*.exe)[0].FullName
+          python tests/run_pm_tests.py --c12-negative --installer-exe $baselineC12 --commit-sha ${{ github.sha }} --output-report reports/report_negative_c12.json
 
       - name: Scan Artifacts for Credential Leaks
         if: always()

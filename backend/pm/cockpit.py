@@ -1,5 +1,6 @@
 """Local view-model assembly. Read-only: page requests never call a model."""
 import json
+import sqlite3
 from pathlib import Path
 from datetime import datetime,timedelta,timezone
 from . import storage,dossier,receipts,updates,decision_copy
@@ -130,7 +131,7 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
                 gap={'id':'date-gap:'+t['id'],'text':t['title']+'：日期待补','kind':'fact','sources':[ref],'updated_at':stamp(t['updated_at'])}
                 for s in data['sections']:
                     if s.get('view_kind')=='gaps' or s['id']=='gaps':entries[s['id']].append(gap)
-    metrics=[]
+    metrics=[];pending_targets=[]
     if table(conn,'knowledge_page') and table(conn,'knowledge_project_link'):
         for k in conn.execute('SELECT k.* FROM knowledge_page k JOIN knowledge_project_link l ON l.knowledge_id=k.id WHERE l.project_id=?',(pid,)):
             ref={'id':'knowledge:'+k['id'],'title':k['title'],'kind':'knowledge','href':'/app/knowledge/'+k['id'],
@@ -144,6 +145,73 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
                 'target':{'value':m['target_value'],'period':None} if m['target_value'] is not None else None,
                 'trend':[{'period':o['observed_at'],'value':o['value']} for o in reversed(observations)],
                 'higher_is_better':True if m['direction']=='higher_better' else False if m['direction']=='lower_better' else None,'source':None})
+    if table(conn,'candidate'):
+        candidate_columns={row[1] for row in conn.execute('PRAGMA table_info(candidate)')}
+        type_column='candidate_type' if 'candidate_type' in candidate_columns else 'target_type' if 'target_type' in candidate_columns else None
+        if not type_column:
+            candidate_columns=set()
+        if type_column:
+            source_column='source_refs' if 'source_refs' in candidate_columns else "'[]'"
+            excerpt_column='raw_excerpt' if 'raw_excerpt' in candidate_columns else "''"
+            sql=f"SELECT id,{type_column} AS candidate_type,proposed_change,{excerpt_column} AS raw_excerpt,{source_column} AS source_refs FROM candidate WHERE status='pending' ORDER BY created_at,id"
+        else:
+            sql=None
+        previous_by_label={}
+        for raw in (conn.execute(sql) if sql else ()):
+            try:
+                proposed=json.loads(raw['proposed_change'] or '{}')
+            except (ValueError,TypeError):
+                continue
+            payload=proposed.get('payload') if isinstance(proposed,dict) else None
+            if not isinstance(payload,dict):payload=proposed if isinstance(proposed,dict) else {}
+            project_ref=payload.get('project_id') or payload.get('resolved_project_id')
+            project_name=payload.get('project_name') or payload.get('project')
+            if project_ref and str(project_ref)!=pid:continue
+            if project_name and str(project_name).strip()!=p['name']:continue
+            target=payload.get('target_value',payload.get('target'))
+            label=str(payload.get('metric_name') or payload.get('name') or payload.get('title') or raw['raw_excerpt'] or '').strip()
+            if str(raw['candidate_type'] or '').lower() not in {'metric','data','data_asset'} and target is None:continue
+            if target is None:continue
+            previous=payload.get('previous_target',payload.get('current_target'))
+            if previous is None and table(conn,'metric_definition'):
+                match=conn.execute('SELECT target_value FROM metric_definition WHERE project_id=? AND name=? ORDER BY id LIMIT 1',(pid,label)).fetchone()
+                previous=match[0] if match else None
+            if previous is None:
+                previous=previous_by_label.get(label)
+            previous_by_label.setdefault(label,target)
+            if previous is None:continue
+            source_label=''
+            try:
+                refs_value=json.loads(raw['source_refs'] or '[]')
+                refs=refs_value.get('refs',[]) if isinstance(refs_value,dict) else refs_value
+                if refs:
+                    ref=conn.execute('SELECT title FROM pm_source WHERE source_version_id=?',(str(refs[0]),)).fetchone()
+                    source_label=ref[0] if ref else ''
+            except (ValueError,TypeError,sqlite3.Error):
+                pass
+            pending_targets.append({'id':str(raw['id']),'name':label or '项目目标','previous':previous,
+                'target':target,'pending_label':f'待确认：目标由 {previous:g} 改为 {target:g}' if isinstance(previous,(int,float)) and isinstance(target,(int,float)) else f'待确认：目标由 {previous} 改为 {target}','effective_date':payload.get('effective_date') or payload.get('valid_from'),
+                'source_title':source_label})
+        # A pending risk in a scanned weekly report should be visible in the
+        # dossier's risk section while the user reviews the source evidence.
+        if 'risks' in entries and sql:
+            for raw in (conn.execute(sql) if sql else ()):
+                excerpt=str(raw['raw_excerpt'] or '').strip()
+                if not excerpt or not any(word in excerpt for word in ('风险','阻碍','问题','尚未','延期')):
+                    continue
+                try:
+                    proposed=json.loads(raw['proposed_change'] or '{}')
+                except (ValueError,TypeError):
+                    continue
+                payload=proposed.get('payload') if isinstance(proposed,dict) else None
+                payload=payload if isinstance(payload,dict) else proposed if isinstance(proposed,dict) else {}
+                project_ref=payload.get('project_id') or payload.get('resolved_project_id')
+                project_name=payload.get('project_name') or payload.get('project')
+                if project_ref and str(project_ref)!=pid:continue
+                if project_name and str(project_name).strip()!=p['name']:continue
+                entries['risks'].append({'id':'pending-risk:'+str(raw['id']),'text':excerpt,
+                    'kind':'fact','sources':[],'updated_at':None,
+                    'tag':{'text':'待确认','tone':'warning'}})
     titles={s['id']:s['title'] for s in data['sections']}
     conflicts=[]
     for c in updates.read_conflicts(conn,pid):
@@ -170,7 +238,7 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
             'one_liner':next((e['text'] for s in data['sections'] if s['id']=='status' for e in entries[s['id']]),None),
             'updated_at':stamp(p.get('updated_at'))},
         'sections':[{'key':s['id'],'title':s['title'],'kind':configured[s['id']],'empty_text':None} for s in data['sections']],
-        'entries':entries,'metrics':metrics,'milestones':milestones,'changes':sorted(changes.values(),key=lambda c:c['at'],reverse=True),
+        'entries':entries,'metrics':metrics,'pending_targets':pending_targets,'milestones':milestones,'changes':sorted(changes.values(),key=lambda c:c['at'],reverse=True),
         'conflicts':conflicts,'sources':list(all_sources.values()),'receipts':[receipt_vm(r) for r in receipts.read(conn,pid)],
         'ai_suggestions':suggestion_vm(conn,pid), 'weekly_report':weekly_rep, **health_vm(conn,pid,health_run)}
 

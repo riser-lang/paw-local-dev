@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from pydantic import ValidationError
 
 from .db import status as db_status
 from .schemas import (
@@ -29,6 +30,7 @@ from .schemas import (
 from . import repository as repo
 from .daily_sync import DEVICE_ID, DailySyncError, _run_job, sync_capture
 from . import daily_sync as _daily_sync_mod
+from .source_content import local_scan_source_content as _local_scan_source_content
 from .snapshot_export import export_workspace_snapshot
 
 router = APIRouter()
@@ -480,10 +482,27 @@ def knowledge(
 
 @router.get("/knowledge/{knowledge_id}", operation_id="getWorkspaceKnowledgeItem", response_model=KnowledgeDetailResponse)
 def knowledge_item(knowledge_id: str):
-    data = repo.get_knowledge(knowledge_id)
+    try:
+        data = repo.get_knowledge(knowledge_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=[{"loc": ["repository"], "type": type(exc).__name__}],
+        ) from None
     if data is None:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
-    return data
+    try:
+        return KnowledgeDetailResponse.model_validate(data)
+    except ValidationError as exc:
+        # Keep the detail API's failure diagnostic bounded and free of the
+        # Knowledge body, filesystem paths, or other input values.
+        raise HTTPException(
+            status_code=500,
+            detail=[
+                {"loc": list(error.get("loc", ())), "type": str(error.get("type", "validation_error"))}
+                for error in exc.errors(include_input=False)
+            ],
+        ) from None
 
 
 @router.post(
@@ -531,6 +550,8 @@ def source_item(page_id: str):
     data = repo.get_wiki(page_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Source item not found")
+    if data.get("source_origin") == "local_scan":
+        data["content"] = _local_scan_source_content(data)
     return data
 
 

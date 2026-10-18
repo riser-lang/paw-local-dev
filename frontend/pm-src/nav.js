@@ -18,6 +18,24 @@
    const match=a.getAttribute('href').match(/^\/app\/projects\/([^/?#]+)$/);
    if(match&&!a.parentElement.querySelector('[data-pm-dossier]')){const b=link('项目档案','/app/pm/projects/'+match[1]);b.dataset.pmDossier='1';a.after(b);}
   });
+  // The legacy sidebar's 项目 entry used to land on the old project page.
+  // Route it to the first current dossier so users open the new project view
+  // directly; keep the legacy list as a fallback when the workspace is empty.
+  document.querySelectorAll('aside a, nav a, aside button, nav button').forEach(a=>{
+   if(a.textContent.trim()!=='项目'||a.dataset.pmProjectRoute==='1')return;
+   a.dataset.pmProjectRoute='1';
+   a.addEventListener('click',async event=>{
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try{
+     const response=await fetch('/v1/web/workspace/projects',{credentials:'include'});
+     if(!response.ok)throw new Error('projects unavailable');
+     const payload=await response.json();const first=(payload.items||[])[0];
+     if(first?.id){location.href='/app/pm/projects/'+encodeURIComponent(first.id);return;}
+    }catch{}
+    location.href=a.getAttribute('href')||'/app/projects';
+   });
+  });
  }
  new MutationObserver(connect).observe(document.body,{childList:true,subtree:true});connect();
 })();

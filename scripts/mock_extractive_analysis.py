@@ -117,6 +117,9 @@ _HEADING_NOISE_RE = re.compile(r"^(?:工作表|[A-Z]\d+[:：]|表头|行数据|h
 # A row of column labels is a header, not content: it is short tokens separated
 # only by whitespace, with no sentence structure.
 _COLUMN_HEADER_RE = re.compile(r"^\S+(?:\s{1,}\S+){1,}$")
+_TARGET_VALUE_RE = re.compile(r"(?:目标|指标|计划|培养|达成)[^。；;]{0,50}?([0-9]+(?:\.[0-9]+)?)\s*(名|人|个|项|次|%|％|万元|元|天|月|年)?")
+_NUMBER_VALUE_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*(名|人|个|项|次|%|％|万元|元|天|月|年)?")
+_EFFECTIVE_DATE_RE = re.compile(r"(?:(?:生效|实施|开始)(?:日期|时间))[:：]?\s*(\d{4}年\d{1,2}月\d{1,2}日|\d{4}[-/]\d{1,2}[-/]\d{1,2})")
 
 
 def _project_for(title: str, blocks: List[str], active: List[str]) -> str:
@@ -191,6 +194,81 @@ def analyse(text: str) -> Dict[str, Any]:
                                 "priority": "medium"},
         })
 
+    # Keep explicit numeric targets separate from progress sentences.  This
+    # is a generic extractive candidate: every value and label comes from the
+    # document text and remains a draft for user review.
+    data_candidates: List[Dict[str, Any]] = []
+    for sentence in sentences:
+        if not _GOAL_RE.search(sentence):
+            continue
+        match = _TARGET_VALUE_RE.search(sentence)
+        if not match:
+            continue
+        number = _NUMBER_VALUE_RE.search(sentence)
+        if not number:
+            continue
+        metric_name = sentence[:number.start()].strip(" ：:，,。；;")
+        metric_name = re.sub(r"^(?:(?:目标)?(?:调整)?|计划|指标|目标值)[:：]?\s*", "", metric_name).strip()
+        if project and metric_name.startswith(project):
+            metric_name = metric_name[len(project):].strip(" ：:，,。；;")
+        if not metric_name:
+            continue
+        effective = _EFFECTIVE_DATE_RE.search("\n".join(blocks))
+        target_value: int | float = float(match.group(1))
+        if target_value.is_integer():
+            target_value = int(target_value)
+        payload = {
+            "project_name": project,
+            "metric_name": metric_name,
+            "name": metric_name,
+            "target_value": target_value,
+            "target": target_value,
+            "unit": match.group(2) or None,
+        }
+        if effective:
+            date_text = effective.group(1)
+            if "年" in date_text:
+                year, month, day = re.findall(r"\d+", date_text)
+                date_text = f"{year}-{int(month):02d}-{int(day):02d}"
+            else:
+                date_text = date_text.replace("/", "-")
+            payload["effective_date"] = date_text
+        data_candidates.append({
+            "target_type": "data", "operation": "create",
+            "candidate_type": "data", "payload": payload,
+            "raw_excerpt": sentence, "evidence_locators": ["text_blocks[0]"],
+            "confidence": "HIGH", "summary": sentence[:120],
+        })
+    # Spreadsheet readers may expose rows without sentence punctuation. When
+    # the extracted document also names a target-value column, treat the
+    # first value in a numeric row as its target and keep the remaining cells
+    # in the source excerpt for human review.
+    has_target_column = any(re.search(r"目标值|目标数|target\s*value", block, re.I) for block in blocks)
+    if has_target_column:
+        for block in blocks:
+            for line in block.splitlines():
+                numbers = list(_NUMBER_VALUE_RE.finditer(line))
+                if len(numbers) < 2:
+                    continue
+                label = line[:numbers[0].start()].strip(" ：:，,。；;\t")
+                if not label or len(label) > 80 or any(c in label for c in "[]{}"):
+                    continue
+                if any(item.get("payload", {}).get("metric_name") == label for item in data_candidates):
+                    continue
+                value: int | float = float(numbers[0].group(1))
+                if value.is_integer():
+                    value = int(value)
+                data_candidates.append({
+                    "target_type": "data", "operation": "create",
+                    "candidate_type": "data",
+                    "payload": {"project_name": project, "metric_name": label,
+                                "name": label, "target_value": value,
+                                "target": value, "unit": numbers[0].group(2) or None},
+                    "raw_excerpt": line.strip(),
+                    "evidence_locators": ["text_blocks[0]"],
+                    "confidence": "HIGH", "summary": line.strip()[:120],
+                })
+
     facts = [{"statement": b[:300], "confidence": "HIGH", "inference_level": "EXPLICIT"}
              for b in blocks[:4]]
 
@@ -205,6 +283,18 @@ def analyse(text: str) -> Dict[str, Any]:
             "confidence": "HIGH",
             "summary": update["proposed_change"]["new_summary"][:120],
         })
+    # Preserve an explicit risk sentence as its own reviewable project draft.
+    # It stays pending until a person decides whether it belongs in Formal State.
+    risk_sentence = _first(sentences, _RISK_RE)
+    if project and risk_sentence:
+        candidates.append({
+            "target_type": "project", "operation": "update",
+            "candidate_type": "project_update",
+            "payload": {"project_name": project, "new_summary": risk_sentence},
+            "raw_excerpt": risk_sentence,
+            "evidence_locators": ["text_blocks[0]"],
+            "confidence": "HIGH", "summary": risk_sentence[:120],
+        })
     for todo in todos:
         candidates.append({
             "target_type": "todo", "operation": "create", "candidate_type": "todo",
@@ -212,6 +302,7 @@ def analyse(text: str) -> Dict[str, Any]:
             "evidence_locators": ["text_blocks[0]"], "confidence": "HIGH",
             "summary": "待办：" + todo["proposed_change"]["title"][:80],
         })
+    candidates.extend(data_candidates)
 
     return {
         "facts": facts,

@@ -98,6 +98,15 @@ def _display_has_untranslated_prose(value: Any) -> bool:
     return False
 
 
+def _user_facing_review_title(candidate_type: Any, value: Any) -> str:
+    """Keep legacy English brief titles from leaking into the review UI."""
+    title = _display_text(value)
+    if not title or _display_has_untranslated_prose(title):
+        label = TYPE_LABELS.get(str(candidate_type or ""), "待确认")
+        return f"{label}待确认事项"
+    return title
+
+
 def _review_display_validation_errors(display: Any) -> list[str]:
     """Validate the stored zh-CN display without changing the candidate."""
     if not isinstance(display, Mapping):
@@ -640,7 +649,7 @@ def _from_review_display(
         "candidate_id": candidate.get("id"),
         "presentation_status": "VALID",
         "category_label": TYPE_LABELS.get(candidate.get("candidate_type", ""), candidate.get("candidate_type", "")),
-        "display_title": display.get("title", ""),
+        "display_title": _user_facing_review_title(candidate.get("candidate_type"), display.get("title")),
         "situation": display.get("situation", ""),
         "decision_question": display.get("decision_question", ""),
         "proposed_actions": proposed_actions,
@@ -765,7 +774,7 @@ def present_candidate(candidate: dict | sqlite3.Row, db_path: str = PRODUCTION_D
                     "candidate_id": candidate_id,
                     "presentation_status": "VALID",
                     "category_label": category_label,
-                    "display_title": brief.get("title", ""),
+                    "display_title": _user_facing_review_title(candidate.get("candidate_type"), brief.get("title")),
                     "situation": brief.get("situation", ""),
                     "decision_question": brief.get("decision_question", ""),
                     "proposed_actions": [item.get("proposed_state", "") for item in affected_items if isinstance(item, dict) and item.get("proposed_state")],

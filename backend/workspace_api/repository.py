@@ -932,7 +932,12 @@ def get_knowledge(knowledge_id: str) -> dict[str, Any] | None:
             try:
                 content = json.loads(revision["content_json"])
             except (TypeError, json.JSONDecodeError):
-                content = {}
+                content = {"content": revision["content_json"] or ""}
+            if not isinstance(content, dict):
+                # Older revisions may contain a JSON scalar rather than the
+                # object shape required by KnowledgeDetailResponse. Preserve
+                # the original value under a stable content key.
+                content = {"content": content}
             revision_data = dict(revision)
             revision_data["content_json"] = content
         return {

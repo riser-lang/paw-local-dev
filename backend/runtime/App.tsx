@@ -55,6 +55,12 @@ function dateText(value?: string | null, includeTime = false) {
 }
 function humanStatus(value?: string | null) { return ({ active: "进行中", in_progress: "进行中", planning: "计划中", paused: "暂停", archived: "已归档", done: "已完成", completed: "已完成", open: "未完成", in_progress_todo: "进行中", cancelled: "已取消", draft: "草稿", current: "有效", needs_review: "待复核", deprecated: "已过期", working: "处理中", captured: "已记录" } as Record<string, string>)[value ?? ""] ?? (value ? "状态待确认" : "未标注"); }
 function humanType(value?: string | null) { return ({ todo: "待办调整", knowledge: "知识调整", project_update: "项目更新", ambiguity: "需要补充信息", conflict: "冲突需要解决", question: "需要回答问题", fact: "事实确认" } as Record<string, string>)[value ?? ""] ?? "待确认"; }
+function humanReviewTitle(value: unknown, candidateType?: string | null) {
+  const title = String(value ?? "").trim();
+  return title && /[\u3400-\u9fff]/.test(title) && !/[A-Za-z]{3,}/.test(title)
+    ? title
+    : `${humanType(candidateType)}待确认事项`;
+}
 function humanReviewState(value?: string | null) { return ({ NEEDS_REVIEW: "待确认", RESOLVED: "方向已确认", ACCEPTED_WAITING_COMMIT: "已接受·待写入", REVIEWED_WAITING_GPT: "已审核·待最终复核", APPLIED_OR_COMMITTED: "已写入工作台", COMMITTED: "已写入工作台", REJECTED: "已拒绝" } as Record<string, string>)[value ?? ""] ?? "待确认"; }
 function humanDraftStatus(value?: string | null) { return ({ LUNA_UNREVIEWED: "待确认", GPT_ACCEPTED: "已接受", GPT_REVISED: "已修订", GPT_REJECTED: "已拒绝", OPUS_PENDING: "待复核", USER_DECISION_REQUIRED: "待你决策", CANONICALIZED: "已正式沉淀", NO_SEMANTIC: "暂无可读内容", PROJECTION_ONLY: "仅作背景参考" } as Record<string, string>)[value ?? ""] ?? "待确认"; }
 function draftStatusTone(value?: string | null) { return value === "GPT_ACCEPTED" || value === "GPT_REVISED" || value === "CANONICALIZED" ? "success" : value === "GPT_REJECTED" ? "danger" : value === "OPUS_PENDING" || value === "USER_DECISION_REQUIRED" ? "warning" : "neutral"; }
@@ -62,7 +68,7 @@ function humanMode(value?: string | null) { return value === "DECISION_ONLY" ? "
 function mappedLabel(value: string | null | undefined, labels: Record<string, string>, fallback: string) {
   if (!value) return fallback;
   if (labels[value]) return labels[value];
-  return /[\u3400-\u9fff\s·]/.test(value) && !/^[A-Z][A-Z0-9_:-]*$/.test(value) ? value : fallback;
+  return /[\u3400-\u9fff]/.test(value) && !/^[A-Z][A-Z0-9_:-]*$/.test(value) ? value : fallback;
 }
 function humanPriority(value?: string | null) { return mappedLabel(value, { low: "低", normal: "普通", medium: "中", high: "高", urgent: "紧急" }, "已设置"); }
 function humanStage(value?: string | null) { return mappedLabel(value, { discovery: "探索", planning: "规划", execution: "执行", review: "复盘", delivery: "交付", maintenance: "维护" }, "阶段已记录"); }
@@ -731,7 +737,7 @@ function ReviewPage({ navigate, backTo, initialCandidateId }: {navigate: (path: 
   };
   return <div className="page-stack review-page"><PageHeader eyebrow="AI 候选确认" title="待确认" description="审阅 AI 分析产生的候选内容。接受不等于写入，任何写入都需要你显式确认。" illustration="review" action={backTo ? <button className="secondary-button" onClick={() => navigate(backTo)}>‹ 返回今日</button> : undefined} /><div className="review-tabs" role="tablist" aria-label="候选状态">{([["pending", "待确认"], ["accepted", "方向已确认 / 待写入"], ["rejected", "已拒绝"]] as const).map(([key, label]) => <button key={key} role="tab" aria-selected={status === key} className={status === key ? "active" : ""} onClick={() => { setStatus(key); setSelected(null); }}>{label}</button>)}</div><div className={`review-layout ${selected ? "has-selected" : ""}`}><section className="review-list-panel"><StateBoundary resource={list}>{() => visible.length ? visible.map(item => <ReviewCard key={item.candidateId} candidate={item} active={selected === item.candidateId} onClick={() => setSelected(item.candidateId)} />) : <Empty message={status === "pending" ? "暂无待确认内容。" : status === "accepted" ? "暂无已接受内容。" : "暂无已拒绝内容。"} />}</StateBoundary></section><section className="review-detail-panel">{selected ? <StateBoundary resource={detail} empty={<Loading label="正在加载详情…" skeleton />}>{item => item ? <ReviewDetailView detail={item} submittedLocally={!!dismissed[item.candidateId]} onDone={reload} onSubmitted={() => markSubmitted(item.candidateId)} navigate={navigate} onBack={() => setSelected(null)} /> : null}</StateBoundary> : <Empty message="从左侧选择一条候选内容开始查看。" />}</section></div></div>;
 }
-function ReviewCard({ candidate, active, onClick }: {candidate: ReviewCandidate; active: boolean; onClick: () => void}) { const presentation = candidate.presentation ?? {}; return <button className={`review-card ${active ? "active" : ""}`} onClick={onClick} aria-pressed={active}><div className="review-card-head"><StatusBadge label={mappedLabel(presentation.category_label, {}, humanType(candidate.candidateType))} tone="neutral" />{presentation.confidence_label && <StatusBadge label={mappedLabel(presentation.confidence_label, { HIGH: "高置信度", MEDIUM: "中等置信度", LOW: "低置信度" }, "置信度待确认")} tone="neutral" />}{presentation.review_mode_label && <StatusBadge label={humanMode(presentation.review_mode)} tone="warning" />}</div><strong>{presentation.display_title || "审核信息不足"}</strong><p>{presentation.situation || "这条审核信息暂不能进行确认。"}</p><footer><span>{humanSourceLabel(presentation.source_label || candidate.sourceLabel)}</span><time>{dateText(candidate.createdAt, true)}</time></footer></button>; }
+function ReviewCard({ candidate, active, onClick }: {candidate: ReviewCandidate; active: boolean; onClick: () => void}) { const presentation = candidate.presentation ?? {}; return <button className={`review-card ${active ? "active" : ""}`} onClick={onClick} aria-pressed={active}><div className="review-card-head"><StatusBadge label={mappedLabel(presentation.category_label, {}, humanType(candidate.candidateType))} tone="neutral" />{presentation.confidence_label && <StatusBadge label={mappedLabel(presentation.confidence_label, { HIGH: "高置信度", MEDIUM: "中等置信度", LOW: "低置信度" }, "置信度待确认")} tone="neutral" />}{presentation.review_mode_label && <StatusBadge label={humanMode(presentation.review_mode)} tone="warning" />}</div><strong>{humanReviewTitle(presentation.display_title, candidate.candidateType)}</strong><p>{presentation.situation || "这条审核信息暂不能进行确认。"}</p><footer><span>{humanSourceLabel(presentation.source_label || candidate.sourceLabel)}</span><time>{dateText(candidate.createdAt, true)}</time></footer></button>; }
 
 function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = false, navigate, onBack }: {detail: ReviewDetail; onDone: () => void; onSubmitted?: () => void; submittedLocally?: boolean; navigate: (path: string) => void; onBack: () => void}) {
   const pres = detail.presentation ?? {};
@@ -739,11 +745,16 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
   const waitingGpt = submittedLocally || effective === "REVIEWED_WAITING_GPT";
   const clarification = detail.candidateType === "ambiguity" || detail.candidateType === "question";
   const conflict = detail.candidateType === "conflict";
+  const proposal = safeJson(detail.proposedChange);
+  const originalProposal = safeJson(proposal.original_payload ?? proposal);
+  const proposalTargetType = String(originalProposal.target_type ?? proposal.target_type ?? "");
+  const proposalPayload = safeJson(proposal.reviewed_payload ?? originalProposal.payload ?? originalProposal);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
-  const [draft, setDraft] = useState<RecordMap>(() => safeJson(detail.proposedChange));
+  const [draft, setDraft] = useState<RecordMap>(() => proposalPayload);
+  useEffect(() => setDraft(proposalPayload), [detail.candidateId, detail.proposedChange]);
   const actions = async (action: () => Promise<unknown>, success: string, leavePending = false) => {
     setBusy(true);
     setError("");
@@ -758,19 +769,29 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
       setBusy(false);
     }
   };
-  const accept = () => actions(() => client.acceptCandidate(detail.candidateId, note.trim() || undefined), "已提交，等待 AI 巡航。")
+  const dataCard = ["data", "metric"].includes(String(detail.candidateType)) || ["data", "metric"].includes(proposalTargetType);
+  const accept = () => actions(async () => {
+    if (dataCard) {
+      if (!String(draft.title ?? "").trim() || !String(draft.project_name ?? draft.project_id ?? "").trim()) {
+        throw new Error("请补充标题和项目名称后再接受。");
+      }
+      await client.editCandidate(detail.candidateId, draft);
+    }
+    return client.acceptCandidate(detail.candidateId, note.trim() || undefined);
+  }, "已提交，等待 AI 巡航。")
   const reject = () => actions(() => client.rejectCandidate(detail.candidateId), "已拒绝，审核记录已保留。");
   const apply = () => actions(() => client.applyCandidate(detail.candidateId), "已写入工作台。", true);
   const saveDraft = () => actions(() => client.editCandidate(detail.candidateId, draft), "草稿已保存，尚未接受，也未写入工作台。", true);
   const clarify = () => actions(() => client.clarifyCandidate(detail.candidateId, note.trim()), "已提交，等待 AI 巡航。");
   const ignore = () => actions(() => client.ignoreCandidate(detail.candidateId), "已暂时忽略。");
   const chooseConflict = (option: "A" | "B" | "NEITHER") => actions(() => client.resolveConflict(detail.candidateId, option, note.trim() || undefined), "已提交，等待 AI 巡航。");
-  const fields = Object.keys(draft).filter(key => ["title", "description", "due_at", "priority", "project_id", "statement"].includes(key));
-  const writeIntent = ["todo", "knowledge", "project_update"].includes(String(detail.candidateType));
+  const fields = [...new Set([...Object.keys(draft).filter(key => ["title", "description", "due_at", "priority", "project_id", "project_name", "statement"].includes(key)), ...(dataCard ? ["title", "project_name"] : [])])];
+  const fieldLabels: Record<string, string> = { title: "标题", description: "说明", due_at: "截止日期", priority: "优先级", project_id: "项目", project_name: "项目名称", statement: "内容" };
+  const writeIntent = dataCard || ["todo", "knowledge", "project_update"].includes(String(detail.candidateType));
   const needsHumanInput = !waitingGpt && effective === "NEEDS_REVIEW";
   return <div className="review-detail">
     <div className="review-detail-toolbar"><button className="secondary-button" onClick={onBack}>‹ 返回列表</button><button className="text-button" onClick={onDone}>刷新</button></div>
-    <div className="review-title-block"><h2>{pres.display_title || "审核信息不足"}</h2><div className="badge-row"><StatusBadge label={mappedLabel(pres.category_label, {}, humanType(detail.candidateType))} /><StatusBadge label={humanReviewState(waitingGpt ? "REVIEWED_WAITING_GPT" : effective)} tone={effective === "REJECTED" ? "danger" : "warning"} /></div></div>
+    <div className="review-title-block"><h2>{humanReviewTitle(pres.display_title, detail.candidateType)}</h2><div className="badge-row"><StatusBadge label={mappedLabel(pres.category_label, {}, humanType(detail.candidateType))} /><StatusBadge label={humanReviewState(waitingGpt ? "REVIEWED_WAITING_GPT" : effective)} tone={effective === "REJECTED" ? "danger" : "warning"} /></div></div>
     {waitingGpt && <p className="review-note review-note-success">已提交，等待 AI 巡航。用户审核已保存；内部重分析失败也不会再次询问同一问题。</p>}
     {clarification && needsHumanInput && <p className="review-note">这条内容需要你补充说明，你的说明将作为更高优先级事实参与 AI 巡航重分析。</p>}
     <ReviewSection title="Agy 发现了什么"><p className="review-lead">{pres.situation || "审核信息不足，暂不能进行确认。"}</p></ReviewSection>
@@ -778,7 +799,7 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
     <ReviewSection title="原始来源 / 证据摘要"><p><strong>{humanSourceLabel(pres.source_label || detail.sourceLabel)}</strong></p>{(pres.evidence_items || []).map((item, i) => <p key={i}>{item}</p>)}</ReviewSection>
     {clarification && needsHumanInput && <ReviewSection title="补充说明"><textarea rows={4} value={note} onChange={e => setNote(e.target.value)} placeholder="请补充事实、上下文或你希望系统继续核对的内容。" /><div className="review-action-bar"><button className="secondary-button" onClick={() => void ignore()} disabled={busy}>暂时忽略</button><button className="primary-button" onClick={() => void clarify()} disabled={busy || !note.trim()}>提交说明</button></div></ReviewSection>}
     {conflict && needsHumanInput && <ReviewSection title="冲突处理"><textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="请写明正确事实或处理规则。" /><div className="review-action-bar"><button className="primary-button" onClick={() => void chooseConflict("NEITHER")} disabled={busy || !note.trim()}>提交处理说明</button></div></ReviewSection>}
-    {writeIntent && needsHumanInput && detail.status === "pending" && !clarification && !conflict && fields.length > 0 && <ReviewSection title="编辑草稿"><p className="muted">编辑只会保存候选草稿，不会写入工作台。</p><div className="review-edit-grid">{fields.map(field => <label key={field}><span>{field}</span><input value={String(draft[field] ?? "")} onChange={e => setDraft(prev => ({ ...prev, [field]: e.target.value }))} /></label>)}</div><button className="secondary-button" onClick={() => void saveDraft()} disabled={busy}>保存草稿</button></ReviewSection>}
+    {writeIntent && needsHumanInput && detail.status === "pending" && !clarification && !conflict && fields.length > 0 && <ReviewSection title="编辑草稿"><p className="muted">编辑只会保存候选草稿，不会写入工作台。</p><div className="review-edit-grid">{fields.map(field => <label key={field}><span>{fieldLabels[field] ?? "补充信息"}</span><input aria-label={fieldLabels[field] ?? "补充信息"} value={String(draft[field] ?? "")} onChange={e => setDraft(prev => ({ ...prev, [field]: e.target.value }))} /></label>)}</div><button className="secondary-button" onClick={() => void saveDraft()} disabled={busy}>保存草稿</button></ReviewSection>}
     {writeIntent && needsHumanInput && detail.status === "pending" && <ReviewSection title="审核意见（可选）"><textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="告诉 AI 巡航你希望保留的意图、项目归属或处理方式。" /></ReviewSection>}
     {error && <div className="state-message state-message-error" role="alert"><p>{error}</p></div>}{message && <p className="review-note review-note-success" role="status">{message}</p>}
     <div className="review-action-bar">{needsHumanInput && detail.status === "pending" && !clarification && !conflict && <><button className="danger-button" disabled={busy} onClick={() => void reject()}>拒绝</button><button className="primary-button" disabled={busy} onClick={() => void accept()}>{busy ? "处理中…" : "接受"}</button></>}{effective === "ACCEPTED_WAITING_COMMIT" && <button className="primary-button" disabled={busy} onClick={() => void apply()}>写入工作台</button>}{waitingGpt && <button className="secondary-button" onClick={() => navigate("/review")}>返回审核列表</button>}</div>

@@ -320,7 +320,7 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
         # 3. Structured Analysis (Document ingest / Engine analysis / Planner proposals)
         elif any(k in all_text for k in ["请分析以下内容", "todo_candidates", "阅读高保真文档证据", "认知治理专家", "现有活跃项目"]):
-            if MOCK_MODE == 'extractive':
+            if MOCK_MODE in {'extractive', 'freeform'}:
                 analysis_dict = extractive_analysis(all_text)
             else:
                 analysis_dict = generate_structured_analysis(all_text)
@@ -328,11 +328,18 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
         # 4. Grounded Q&A (Assistant)
         else:
-            try:
-                from scripts.mock_grounded_answer import answer
-            except ModuleNotFoundError:
-                from mock_grounded_answer import answer
-            reply_content=answer(all_text)
+            if MOCK_MODE == "freeform":
+                try:
+                    from scripts.mock_grounded_answer import freeform_answer
+                except ModuleNotFoundError:
+                    from mock_grounded_answer import freeform_answer
+                reply_content = freeform_answer(all_text)
+            else:
+                try:
+                    from scripts.mock_grounded_answer import answer
+                except ModuleNotFoundError:
+                    from mock_grounded_answer import answer
+                reply_content=answer(all_text)
             if req_data.get('model')=='fault-advice-entities' and '<<<EVIDENCE_MAP' in reply_content:
                 try:
                     from scripts.mock_grounded_answer import inject_unbacked_advice
