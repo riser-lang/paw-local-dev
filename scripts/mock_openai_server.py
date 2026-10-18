@@ -320,7 +320,7 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
         # 3. Structured Analysis (Document ingest / Engine analysis / Planner proposals)
         elif any(k in all_text for k in ["请分析以下内容", "todo_candidates", "阅读高保真文档证据", "认知治理专家", "现有活跃项目"]):
-            if MOCK_MODE == 'extractive':
+            if MOCK_MODE in {'extractive', 'freeform'}:
                 analysis_dict = extractive_analysis(all_text)
             else:
                 analysis_dict = generate_structured_analysis(all_text)

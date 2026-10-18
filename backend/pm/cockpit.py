@@ -156,6 +156,7 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
             sql=f"SELECT id,{type_column} AS candidate_type,proposed_change,{excerpt_column} AS raw_excerpt,{source_column} AS source_refs FROM candidate WHERE status='pending' ORDER BY created_at,id"
         else:
             sql=None
+        previous_by_label={}
         for raw in (conn.execute(sql) if sql else ()):
             try:
                 proposed=json.loads(raw['proposed_change'] or '{}')
@@ -175,6 +176,9 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
             if previous is None and table(conn,'metric_definition'):
                 match=conn.execute('SELECT target_value FROM metric_definition WHERE project_id=? AND name=? ORDER BY id LIMIT 1',(pid,label)).fetchone()
                 previous=match[0] if match else None
+            if previous is None:
+                previous=previous_by_label.get(label)
+            previous_by_label.setdefault(label,target)
             if previous is None:continue
             source_label=''
             try:
@@ -186,8 +190,28 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
             except (ValueError,TypeError,sqlite3.Error):
                 pass
             pending_targets.append({'id':str(raw['id']),'name':label or '项目目标','previous':previous,
-                'target':target,'effective_date':payload.get('effective_date') or payload.get('valid_from'),
+                'target':target,'pending_label':f'待确认：目标由 {previous:g} 改为 {target:g}' if isinstance(previous,(int,float)) and isinstance(target,(int,float)) else f'待确认：目标由 {previous} 改为 {target}','effective_date':payload.get('effective_date') or payload.get('valid_from'),
                 'source_title':source_label})
+        # A pending risk in a scanned weekly report should be visible in the
+        # dossier's risk section while the user reviews the source evidence.
+        if 'risks' in entries and sql:
+            for raw in (conn.execute(sql) if sql else ()):
+                excerpt=str(raw['raw_excerpt'] or '').strip()
+                if not excerpt or not any(word in excerpt for word in ('风险','阻碍','问题','尚未','延期')):
+                    continue
+                try:
+                    proposed=json.loads(raw['proposed_change'] or '{}')
+                except (ValueError,TypeError):
+                    continue
+                payload=proposed.get('payload') if isinstance(proposed,dict) else None
+                payload=payload if isinstance(payload,dict) else proposed if isinstance(proposed,dict) else {}
+                project_ref=payload.get('project_id') or payload.get('resolved_project_id')
+                project_name=payload.get('project_name') or payload.get('project')
+                if project_ref and str(project_ref)!=pid:continue
+                if project_name and str(project_name).strip()!=p['name']:continue
+                entries['risks'].append({'id':'pending-risk:'+str(raw['id']),'text':excerpt,
+                    'kind':'fact','sources':[],'updated_at':None,
+                    'tag':{'text':'待确认','tone':'warning'}})
     titles={s['id']:s['title'] for s in data['sections']}
     conflicts=[]
     for c in updates.read_conflicts(conn,pid):

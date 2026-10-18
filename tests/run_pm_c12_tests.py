@@ -167,6 +167,14 @@ def run_c12(report, installer):
                     markdown = next((item for item in files if item.get("title") == md_path.name), None)
                     markdown_content = api("GET", "/v1/web/workspace/sources/" + markdown["id"]).get("content") if markdown else None
                     docx_content = api("GET", "/v1/web/workspace/sources/" + source["id"]).get("content") if source else None
+                    print("C-12 source detail evidence", json.dumps({
+                        "docx_source_found": bool(source),
+                        "markdown_source_found": bool(markdown),
+                        "docx_content_length": len(str(docx_content or "")),
+                        "markdown_content_length": len(str(markdown_content or "")),
+                        "docx_body_found": BODY in str(docx_content),
+                        "markdown_body_found": DETAIL in str(markdown_content),
+                    }, ensure_ascii=False))
                     c.check("source_body_readable", bool(source and markdown and DETAIL in str(markdown_content)
                             and BODY in str(docx_content) and "暂时无法读取正文" not in str(markdown_content)), True)
                     with sync_playwright() as p:
@@ -201,11 +209,21 @@ def run_c12(report, installer):
                         response = httpx.get(BASE + "/v1/web/workspace/knowledge/" + kid, timeout=20)
                         projection = httpx.get(BASE + "/v1/web/workspace/projection/knowledge/" + kid, timeout=20)
                         details.append(response.status_code == 200 and projection.status_code == 200)
+                        if not details[-1]:
+                            print("C-12 knowledge detail endpoint evidence", json.dumps({
+                                "knowledge_id": kid, "detail_status": response.status_code,
+                                "projection_status": projection.status_code,
+                            }, ensure_ascii=False))
                     session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
                     answer = timed_answer(session, FILENAME + " 里写了什么？", case)
                     refs = answer.get("sources") or []
                     source_details = [httpx.get(BASE + "/v1/web/workspace/knowledge/" + str(ref.get("id")), timeout=20).status_code == 200
                                       for ref in refs if isinstance(ref, dict) and ref.get("id") in {item.get("id") for item in knowledge}]
+                    if not all(details) or not all(source_details):
+                        print("C-12 knowledge detail evidence", json.dumps({
+                            "knowledge_count": len(knowledge), "checked_details": details,
+                            "source_refs": refs, "source_detail_checks": source_details,
+                        }, ensure_ascii=False))
                     c.check("knowledge_detail_opens", bool(details) and all(details) and all(source_details), True)
                 elif case == "PM-U3-01":
                     c.check("no_internal_terms_visible", no_internal_terms_visible(case), True)

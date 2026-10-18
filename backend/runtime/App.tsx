@@ -62,7 +62,7 @@ function humanMode(value?: string | null) { return value === "DECISION_ONLY" ? "
 function mappedLabel(value: string | null | undefined, labels: Record<string, string>, fallback: string) {
   if (!value) return fallback;
   if (labels[value]) return labels[value];
-  return /[\u3400-\u9fff\s·]/.test(value) && !/^[A-Z][A-Z0-9_:-]*$/.test(value) ? value : fallback;
+  return /[\u3400-\u9fff]/.test(value) && !/^[A-Z][A-Z0-9_:-]*$/.test(value) ? value : fallback;
 }
 function humanPriority(value?: string | null) { return mappedLabel(value, { low: "低", normal: "普通", medium: "中", high: "高", urgent: "紧急" }, "已设置"); }
 function humanStage(value?: string | null) { return mappedLabel(value, { discovery: "探索", planning: "规划", execution: "执行", review: "复盘", delivery: "交付", maintenance: "维护" }, "阶段已记录"); }
