@@ -180,7 +180,7 @@ def run_c12(report, installer):
                     items = scan_file_for_sources(case)
                     source = next((item for item in items if item.get("title") == FILENAME), None)
                     md_dir = Path(__import__("os").environ["TEMP"]) / ("PAW_PM_C11_" + case)
-                    md_path = md_dir / FILENAME
+                    md_path = md_dir / (Path(FILENAME).stem + ".md")
                     # C-11's scan helper registers a docx. Add a scanned Markdown
                     # file through the same watcher and assert the source details API.
                     md_path.write_text(DETAIL, encoding="utf-8")
@@ -234,9 +234,19 @@ def run_c12(report, installer):
                         projection = httpx.get(BASE + "/v1/web/workspace/projection/knowledge/" + kid, timeout=20)
                         details.append(response.status_code == 200 and projection.status_code == 200)
                         if not details[-1]:
+                            try:
+                                error_body = response.json()
+                            except ValueError:
+                                error_body = {}
+                            errors = error_body.get("detail", []) if isinstance(error_body, dict) else []
+                            safe_errors = [
+                                {key: entry.get(key) for key in ("loc", "type", "msg") if key in entry}
+                                for entry in errors if isinstance(entry, dict)
+                            ]
                             print("C-12 knowledge detail endpoint evidence", json.dumps({
                                 "knowledge_id": kid, "detail_status": response.status_code,
                                 "projection_status": projection.status_code,
+                                "detail_errors": safe_errors,
                             }, ensure_ascii=False))
                     session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
                     answer = timed_answer(session, FILENAME + " 里写了什么？", case)
