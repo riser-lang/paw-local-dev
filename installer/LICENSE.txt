@@ -1,4 +1,4 @@
-PAW Personal Work OS 最终用户许可与隐私说明 (v2.4.0)
+PAW Personal Work OS 最终用户许可与隐私说明 (v2.5.0)
 
 1. 本地优先与隐私安全 (Local-First Security)
 PAW Personal Work OS 专为严肃工作场景设计。您的 Word、Excel、PPT、PDF 文件默认完全留在本地电脑处理。

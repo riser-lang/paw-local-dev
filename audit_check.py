@@ -1,9 +1,9 @@
 """
-PAW Personal Work OS v2.4.0 - Automated Audit Verification Suite
+PAW Personal Work OS v2.5.0 - Automated Audit Verification Suite
 Target: Validate compliance against External Judge Audit Criteria.
 
 Verifies:
-1. Version Uniformity (v2.4.0 across all files, no legacy 2.2/2.1 references)
+1. Version Uniformity (v2.5.0 across all files, no legacy 2.2/2.1 references)
 2. Formal State Governance & Write Points (AI points, User points, Committer points, idempotence)
 3. DPAPI Security & Failure Behavior (Mock failure raises DPAPIProtectionError, no base64 fallback)
 4. Database Audit Tables (audit_event and derived_update_record existence and schema integrity)
@@ -38,7 +38,7 @@ sys.path.insert(0, str(BASE_DIR / "backend" / "runtime" / "core"))
 
 def run_version_check() -> bool:
     print("\n" + "=" * 60)
-    print("CHECK 1: Version Uniformity Check (Target: v2.4.0)")
+    print("CHECK 1: Version Uniformity Check (Target: v2.5.0)")
     print("=" * 60)
 
     files_to_check = {
@@ -60,12 +60,12 @@ def run_version_check() -> bool:
 
         content = path.read_text(encoding="utf-8", errors="ignore")
 
-        # Must contain 2.4.0
-        if "2.4.0" not in content:
-            print(f"  [FAIL] {name}: Missing '2.4.0' version identifier")
+        # Must contain 2.5.0
+        if "2.5.0" not in content:
+            print(f"  [FAIL] {name}: Missing '2.5.0' version identifier")
             all_passed = False
         else:
-            print(f"  [OK] {name}: Contains target version 2.4.0")
+            print(f"  [OK] {name}: Contains target version 2.5.0")
 
         # Must not contain banned legacy versions
         for banned in banned_versions:
@@ -350,7 +350,7 @@ def run_packaging_hygiene_check() -> bool:
 
 def main():
     print("#" * 70)
-    print("# PAW Personal Work OS v2.4.0 - 外部 Judge 审计合规性自动化核验套件")
+    print("# PAW Personal Work OS v2.5.0 - 外部 Judge 审计合规性自动化核验套件")
     print("#" * 70)
 
     results = [
