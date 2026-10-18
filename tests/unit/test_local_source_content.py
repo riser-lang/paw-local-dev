@@ -1,14 +1,14 @@
 import hashlib
 import json
 
-from backend.workspace_api import router
+from backend.workspace_api import source_content
 
 
 def test_local_scan_markdown_detail_reads_original_text(tmp_path):
     path = tmp_path / "说明.md"
     path.write_text("扫描资料正文原文。", encoding="utf-8")
 
-    assert router._local_scan_source_content({
+    assert source_content.local_scan_source_content({
         "source_origin": "local_scan",
         "source_path": str(path),
         "content_hash": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -25,9 +25,9 @@ def test_local_scan_office_detail_reads_hash_verified_extraction(tmp_path, monke
         "raw_artifact_sha256": digest,
         "text_blocks": [{"text": "已扫描提取的正文"}],
     }, ensure_ascii=False), encoding="utf-8")
-    monkeypatch.setattr("backend.core.config.EVIDENCE_DIR", tmp_path)
+    monkeypatch.setattr(source_content, "EVIDENCE_DIR", tmp_path)
 
-    assert router._local_scan_source_content({
+    assert source_content.local_scan_source_content({
         "source_origin": "local_scan",
         "source_path": str(path),
         "content_hash": digest,
@@ -44,9 +44,9 @@ def test_local_scan_office_detail_rejects_wrong_hash(tmp_path, monkeypatch):
         "raw_artifact_sha256": "0" * 64,
         "text_blocks": [{"text": "must not be served"}],
     }), encoding="utf-8")
-    monkeypatch.setattr("backend.core.config.EVIDENCE_DIR", tmp_path)
+    monkeypatch.setattr(source_content, "EVIDENCE_DIR", tmp_path)
 
-    assert router._local_scan_source_content({
+    assert source_content.local_scan_source_content({
         "source_origin": "local_scan",
         "source_path": str(path),
         "content_hash": digest,
