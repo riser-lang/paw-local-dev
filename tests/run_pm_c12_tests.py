@@ -79,6 +79,7 @@ def no_internal_terms_visible(case):
     pid = c12_project()
     forbidden = re.compile(r"AUTO_WRITE|REVIEW_REQUIRED|data create|create todo|pending|\bcreate\b|\bupdate\b|\btodo\b|\bmetric\b", re.I)
     rendered = []
+    route_names = ["/app/review", "/app/todos", "/app/pm/projects/青禾项目"]
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         try:
@@ -86,13 +87,39 @@ def no_internal_terms_visible(case):
             for route in ("/app/review", "/app/todos", "/app/pm/projects/" + pid):
                 page.goto(BASE + route, wait_until="networkidle")
                 rendered.append(page.locator("body").inner_text())
+                route_names[len(rendered) - 1] = route
             page.screenshot(path="screenshots/screen_PM_U3_01.png", full_page=True)
         finally:
             browser.close()
     session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
     answer = timed_answer(session, "青禾项目周报记录了什么？", case)
     rendered.append(str(answer.get("response") or ""))
-    return not any(forbidden.search(text) for text in rendered)
+    matches = [{"route": route_names[index] if index < len(route_names) else "assistant",
+                "terms": list(dict.fromkeys(match.group(0).lower() for match in forbidden.finditer(text)))}
+               for index, text in enumerate(rendered) if forbidden.search(text)]
+    if matches:
+        print("C-12 visible internal-term check", json.dumps(matches, ensure_ascii=False))
+    return not matches
+
+
+def scan_metric_candidate(case):
+    from openpyxl import Workbook
+    from tests.run_pm_tests import poll_candidates_from_scanner
+
+    directory = Path(__import__("os").environ["TEMP"]) / ("PAW_C12_METRIC_" + case)
+    directory.mkdir(parents=True, exist_ok=True)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "青禾项目目标"
+    sheet.append(["指标", "目标值", "当前进度"])
+    sheet.append(["导师培养人数", 40, 26])
+    workbook.save(directory / "青禾项目量化数据.xlsx")
+    api("POST", "/v1/local/scanner/start", {"directory": str(directory), "force_restart": True})
+    poll_candidates_from_scanner()
+    candidates = api("GET", "/v1/web/brain/review/candidates?status=pending&limit=200").get("items", [])
+    return next((item for item in candidates
+                 if str(item.get("candidate_type") or item.get("target_type") or "").lower()
+                 in {"data", "metric", "data_asset"}), None)
 
 
 def run_c12(report, installer):
@@ -183,17 +210,16 @@ def run_c12(report, installer):
                 elif case == "PM-U3-01":
                     c.check("no_internal_terms_visible", no_internal_terms_visible(case), True)
                 else:
-                    import_doc(case, "青禾项目周报.docx", "青禾项目。" + WEEKLY)
-                    from tests.run_pm_tests import api
-                    candidates = api("GET", "/v1/web/brain/review/candidates?status=pending&limit=200").get("items", [])
-                    data_cards = [item for item in candidates if str(item.get("candidate_type") or item.get("target_type") or "").lower() in {"data", "metric", "data_asset"}]
-                    c.check("data_metric_card_available", bool(data_cards), True)
+                    candidate = scan_metric_candidate(case)
+                    c.check("data_metric_card_available", bool(candidate), True)
                     with sync_playwright() as p:
                         browser = p.chromium.launch(headless=False)
                         try:
                             page = browser.new_page(viewport={"width": 1440, "height": 1000})
                             page.goto(BASE + "/app/review", wait_until="networkidle")
-                            page.locator(".review-card").first.click()
+                            display_title = str((candidate.get("presentation") or {}).get("display_title") or "")
+                            card = page.locator(".review-card").filter(has_text=display_title).first if display_title else page.locator(".review-card").first
+                            card.click()
                             title = page.get_by_role("textbox", name="标题", exact=True)
                             project_name = page.get_by_role("textbox", name="项目名称", exact=True)
                             c.check("missing_fields_have_inputs", title.is_visible() and project_name.is_visible(), True)

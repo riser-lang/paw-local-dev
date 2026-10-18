@@ -243,6 +243,18 @@ if __name__ == '__main__':
     else:
         run_governance_negative(report, installer)
     report.save(args.output_report)
+    if args.c12_negative:
+        expected_checks = {
+            'NC-PM-U1': 'current_target_visible',
+            'NC-PM-U2': 'source_body_readable',
+            'NC-PM-U3': 'no_internal_terms_visible',
+            'NC-PM-U4': 'advice_not_refused',
+        }
+        controls_ok = len(report.cases) == len(expected_checks) and all(
+            case.status == 'FAIL' and case.failed_check == expected_checks.get(case.id)
+            for case in report.cases
+        )
+        sys.exit(0 if controls_ok else 1)
     expected=report.cases[0]
-    check='cockpit_rendered' if args.cockpit_negative else 'old_version_superseded' if args.version_negative else 'current_target_visible' if args.c12_negative else 'formal_fields_unchanged_after_cruise'
+    check='cockpit_rendered' if args.cockpit_negative else 'old_version_superseded' if args.version_negative else 'formal_fields_unchanged_after_cruise'
     sys.exit(0 if expected.status == 'FAIL' and expected.failed_check == check else 1)
