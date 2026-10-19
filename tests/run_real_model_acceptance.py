@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import time
 import uuid
@@ -38,6 +39,36 @@ def create_samples(directory: Path) -> None:
     (directory / "青禾试点详情.md").write_text(DETAIL_SENTENCE, encoding="utf-8")
 
 
+def _safe_progress_text(value: object, key: str) -> str:
+    text = re.sub(r"[\r\n\t]+", " ", str(value or "")).strip()
+    if key:
+        text = text.replace(key, "[REDACTED]")
+    text = re.sub(r"(?i)(Bearer\s+)[^\s,;]+", r"\1[REDACTED]", text)
+    text = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]", text)
+    return text[:240]
+
+
+def _progress_line(progress: dict, key: str) -> str:
+    status = _safe_progress_text(progress.get("status") or "unknown", key)
+    phase = progress.get("current_phase") or status
+    if phase == "phase2_analyzing" or status == "phase2_analyzing":
+        completed = progress.get("phase2_processed", 0)
+    else:
+        completed = progress.get("phase1_processed", 0)
+    total = progress.get("total_files", 0)
+    current_file = _safe_progress_text(progress.get("current_file") or "-", key)
+    failures = progress.get("failed_items") or []
+    if failures:
+        last_failure = failures[-1] if isinstance(failures[-1], dict) else {}
+        error_type = _safe_progress_text(last_failure.get("error_type") or "error", key)
+        error_message = _safe_progress_text(last_failure.get("error_message") or "", key)
+        recent_error = error_type + (f": {error_message}" if error_message else "")
+    else:
+        recent_error = "none"
+    return (f"Scan progress: status={status} completed={completed}/{total} "
+            f"current_file={current_file} recent_error={recent_error}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--installer", required=True)
@@ -54,7 +85,21 @@ def main() -> int:
         "result": "NOT_RUN",
         "issues": [],
         "questions": [],
+        "last_scan_progress": "",
+        "scan_file_timings": [],
     }
+    exam = json.loads(Path("tests/pending/exam/questions.json").read_text(encoding="utf-8"))
+    exam_questions = {item["id"]: item for item in exam["questions"]}
+    prompts = [
+        ("PM-U1-03", "青禾试点计划目标是多少？"),
+        ("PM-U4-01", "青禾试点后续最好如何优化？"),
+        ("PM-S1-03", "青禾试点详情.md 里写了什么？"),
+        *((ident, exam_questions[ident]["q"]) for ident in ("X01", "X02", "X18", "X19", "X20")),
+    ]
+    report["questions"] = [
+        {"id": ident, "question": question, "answer": "", "sources": [], "status": "未能运行"}
+        for ident, question in prompts
+    ]
     key = "mock" if args.mock_smoke else os.environ.get("PAW_TEST_API_KEY")
     if not key:
         report["issues"].append({"state": "未能运行", "reason": "PAW_TEST_API_KEY secret is unavailable"})
@@ -85,29 +130,52 @@ def main() -> int:
                                   json={"directory": str(sample_dir), "force_restart": True}, timeout=30)
             response.raise_for_status()
             deadline = time.monotonic() + 240
+            next_log = 0.0
+            current_segment = None
+            segment_started = None
+            segment_times = []
+            terminal_states = {"completed", "failed", "stopped", "daily_limit_reached"}
             while time.monotonic() < deadline:
                 progress = httpx.get(BASE + "/v1/local/scanner/progress", timeout=5).json()
-                if progress.get("status") in {"completed", "failed"}:
+                now = time.monotonic()
+                phase = str(progress.get("current_phase") or progress.get("status") or "unknown")
+                current_file = str(progress.get("current_file") or "")
+                segment = (phase, current_file) if current_file else None
+                if segment != current_segment:
+                    if current_segment and segment_started is not None:
+                        segment_times.append({"phase": current_segment[0], "file": current_segment[1],
+                                              "seconds": round(now - segment_started, 1)})
+                    current_segment = segment
+                    segment_started = now if segment else None
+                active_timing = []
+                if current_segment and segment_started is not None:
+                    active_timing.append({"phase": current_segment[0], "file": current_segment[1],
+                                          "seconds": round(now - segment_started, 1)})
+                report["scan_file_timings"] = [*segment_times, *active_timing]
+
+                line = _progress_line(progress, key or "")
+                report["last_scan_progress"] = line
+                is_terminal = progress.get("status") in terminal_states
+                if now >= next_log or is_terminal:
+                    print(line, flush=True)
+                    next_log = now + 10
+                if is_terminal:
                     if progress.get("status") != "completed":
-                        raise RuntimeError("样例文件扫描未完成")
+                        raise RuntimeError(f"样例文件扫描以状态 {progress.get('status')} 结束")
                     break
                 time.sleep(1)
             else:
                 raise TimeoutError("等待样例文件扫描超时")
+            if current_segment and segment_started is not None:
+                segment_times.append({"phase": current_segment[0], "file": current_segment[1],
+                                      "seconds": round(time.monotonic() - segment_started, 1)})
+            report["scan_file_timings"] = segment_times
 
             from tests.run_pm_tests import api
             from tests.run_e2e_tests import timed_answer
-            exam = json.loads(Path("tests/pending/exam/questions.json").read_text(encoding="utf-8"))
-            exam_questions = {item["id"]: item for item in exam["questions"]}
             from scripts.build_exam_corpus import evaluate_semantics
-            prompts = [
-                ("PM-U1-03", "青禾试点计划目标是多少？"),
-                ("PM-U4-01", "青禾试点后续最好如何优化？"),
-                ("PM-S1-03", "青禾试点详情.md 里写了什么？"),
-                *((ident, exam_questions[ident]["q"]) for ident in ("X01", "X02", "X18", "X19", "X20")),
-            ]
-            for ident, question in prompts:
-                item = {"id": ident, "question": question, "answer": "", "sources": [], "status": "未能运行"}
+            for item in report["questions"]:
+                ident, question = item["id"], item["question"]
                 try:
                     session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
                     answer = timed_answer(session, question, "real-model-" + ident)
@@ -128,10 +196,10 @@ def main() -> int:
                     item["status"] = "PASS" if passed else "FAIL"
                 except Exception as exc:  # report only exception class; never serialize request details
                     item["error"] = type(exc).__name__
-                report["questions"].append(item)
             report["result"] = "GREEN" if len(report["questions"]) == 8 and all(q["status"] == "PASS" for q in report["questions"]) else "RED"
         except Exception as exc:
-            report["issues"].append({"state": "未能运行", "reason": type(exc).__name__})
+            report["issues"].append({"state": "未能运行", "reason": type(exc).__name__,
+                                      "last_scan_progress": report["last_scan_progress"]})
             report["result"] = "RED"
         finally:
             if proc is not None:
