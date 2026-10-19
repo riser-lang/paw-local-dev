@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import shutil
@@ -15,6 +16,9 @@ from docx import Document
 from pptx import Presentation
 
 from tests.run_e2e_tests import INSTALL_DIR, silent_install, start_paw, stop_paw
+
+# Keep the scan monitor's output to its explicit, redacted 10-second snapshot.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 BASE = "http://127.0.0.1:8800"
 DETAIL_SENTENCE = "本地扫描正文样本：青禾试点已完成首轮访谈，下一步整理访谈纪要。"
@@ -163,7 +167,7 @@ def main() -> int:
                     if progress.get("status") != "completed":
                         raise RuntimeError(f"样例文件扫描以状态 {progress.get('status')} 结束")
                     break
-                time.sleep(1)
+                time.sleep(0.1)
             else:
                 raise TimeoutError("等待样例文件扫描超时")
             if current_segment and segment_started is not None:
