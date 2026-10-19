@@ -55,7 +55,7 @@ jobs:
           PAW_TEST_API_KEY: ${{ secrets.PAW_TEST_API_KEY }}
           PAW_TEST_MODEL: ${{ steps.model.outputs.model_id }}
         run: |
-          python tests/run_real_model_acceptance.py --installer dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe --report reports/real-model-report.json
+          python -m tests.run_real_model_acceptance --installer dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe --report reports/real-model-report.json
       - name: Upload real-model report
         if: always()
         uses: actions/upload-artifact@v4

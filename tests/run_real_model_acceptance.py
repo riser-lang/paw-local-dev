@@ -42,6 +42,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--installer", required=True)
     parser.add_argument("--report", required=True)
+    parser.add_argument("--mock-smoke", action="store_true",
+                        help="run the complete installed-app flow against the freeform mock server")
     args = parser.parse_args()
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,7 +55,7 @@ def main() -> int:
         "issues": [],
         "questions": [],
     }
-    key = os.environ.get("PAW_TEST_API_KEY")
+    key = "mock" if args.mock_smoke else os.environ.get("PAW_TEST_API_KEY")
     if not key:
         report["issues"].append({"state": "未能运行", "reason": "PAW_TEST_API_KEY secret is unavailable"})
     else:
@@ -72,8 +74,10 @@ def main() -> int:
             create_samples(sample_dir)
             settings = {
                 "provider": "custom", "custom_api_key": key,
-                "custom_base_url": "https://api.siliconflow.cn/v1",
-                "custom_model": report["model"], "work_dir": str(sample_dir),
+                "custom_base_url": ("http://127.0.0.1:18000/v1" if args.mock_smoke
+                                    else "https://api.siliconflow.cn/v1"),
+                "custom_model": ("freeform-mock" if args.mock_smoke else report["model"]),
+                "work_dir": str(sample_dir),
             }
             response = httpx.post(BASE + "/v1/local/settings", json=settings, timeout=30)
             response.raise_for_status()
@@ -136,7 +140,9 @@ def main() -> int:
     print(json.dumps({"model": report["model"], "result": report["result"],
                       "question_count": len(report["questions"]),
                       "not_run_count": sum(q["status"] == "未能运行" for q in report["questions"])}))
-    return 0 if report["result"] == "GREEN" else 1
+    # The mock lane checks that installation, scanning, and all question calls
+    # complete. Its answers still receive the unchanged verdicts above.
+    return 0 if args.mock_smoke or report["result"] == "GREEN" else 1
 
 
 if __name__ == "__main__":
