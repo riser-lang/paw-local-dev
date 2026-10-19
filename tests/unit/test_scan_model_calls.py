@@ -166,3 +166,121 @@ def test_nothing_is_recorded_outside_a_scan_file_context(provider):
     provider.chat_completion(messages=[{"role": "user", "content": "hi"}], temperature=0.1)
     assert model_calls.snapshot() == []
     assert model_calls.summary()["calls"] == 0
+
+
+def test_propose_disables_thinking_and_bounds_output(provider, stub):
+    with model_calls.begin_file("样例文档.docx"):
+        provider.propose(_evidence(), [], [])
+
+    sent = stub.state["requests"][0]
+    assert sent["enable_thinking"] is False
+    assert sent["max_tokens"] == adapter.SCAN_MAX_TOKENS
+    assert adapter.SCAN_MAX_TOKENS <= 1500
+    assert model_calls.snapshot()[0]["thinking_disabled"] is True
+
+
+def test_chat_completion_outside_scan_keeps_the_chat_request_shape(provider, stub):
+    text, usage, error = provider.chat_completion(
+        messages=[{"role": "user", "content": "聊天问题"}], temperature=0.1
+    )
+    assert error is None
+    sent = stub.state["requests"][0]
+    assert "enable_thinking" not in sent
+    assert sent["max_tokens"] == 2048
+
+
+def test_scan_chat_completion_disables_thinking(provider, stub):
+    with model_calls.begin_file("样例文档.docx"):
+        with model_calls.begin_task("section_update"):
+            text, usage, error = provider.chat_completion(
+                messages=[{"role": "user", "content": "只回复 ok"}], temperature=0.1
+            )
+    assert error is None
+    sent = stub.state["requests"][0]
+    assert sent["enable_thinking"] is False
+    assert sent["max_tokens"] == adapter.SCAN_MAX_TOKENS
+
+
+def test_propose_timeout_is_not_resent_and_falls_back_to_rules(provider, stub, monkeypatch):
+    monkeypatch.setattr(adapter, "SCAN_CALL_TIMEOUT_SECONDS", 0.2)
+    stub.state["delay"] = 1.0
+
+    with model_calls.begin_file("样例文档.docx"):
+        items = provider.propose(_evidence(), [], [])
+
+    assert len(stub.state["requests"]) == 1, "a timed-out request must not be repeated"
+    assert items and items[0]["source_generation"] == "rule"
+    rows = model_calls.snapshot()
+    assert len(rows) == 1
+    assert rows[0]["timed_out"] is True
+    assert rows[0]["status"] is None
+    assert rows[0]["fallback_rule"] is True
+
+
+def test_scan_section_update_timeout_is_not_resent(provider, stub, monkeypatch):
+    monkeypatch.setattr(adapter, "SCAN_CALL_TIMEOUT_SECONDS", 0.2)
+    stub.state["delay"] = 1.0
+
+    with model_calls.begin_file("样例文档.docx"):
+        with model_calls.begin_task("section_update"):
+            text, usage, error = provider.chat_completion(
+                messages=[{"role": "user", "content": "只回复 ok"}], temperature=0.1
+            )
+
+    assert text is None and error == "TIMEOUT"
+    assert len(stub.state["requests"]) == 1, "a timed-out request must not be repeated"
+    rows = model_calls.snapshot()
+    assert len(rows) == 1
+    assert rows[0]["source"] == "section_update"
+    assert rows[0]["timed_out"] is True
+
+
+def test_propose_retries_rate_limit_and_temporary_unavailability(provider, stub, monkeypatch):
+    monkeypatch.setattr(adapter.time, "sleep", lambda _seconds: None)
+    statuses = {0: 429, 1: 503}
+    stub.state["respond"] = lambda index, body: (
+        (statuses[index], {"error": "busy"}) if index in statuses else (200, _candidate_payload())
+    )
+
+    with model_calls.begin_file("样例文档.docx"):
+        items = provider.propose(_evidence(), [], [])
+
+    assert len(stub.state["requests"]) == 3
+    assert items and items[0]["source_generation"] == "ai"
+    rows = model_calls.snapshot()
+    assert [row["status"] for row in rows] == [429, 503, 200]
+    assert [row["attempt"] for row in rows] == [1, 2, 3]
+    assert rows[-1]["fallback_rule"] is False
+
+
+def test_propose_does_not_retry_after_a_server_error(provider, stub):
+    stub.state["respond"] = lambda index, body: (500, {"error": "boom"})
+
+    with model_calls.begin_file("样例文档.docx"):
+        items = provider.propose(_evidence(), [], [])
+
+    assert len(stub.state["requests"]) == 1
+    assert items and items[0]["source_generation"] == "rule"
+    rows = model_calls.snapshot()
+    assert rows[0]["status"] == 500
+    assert rows[0]["fallback_rule"] is True
+
+
+def test_propose_drops_unsupported_thinking_parameter_instead_of_failing(provider, stub):
+    def respond(index, body):
+        if "enable_thinking" in body:
+            return 400, {"error": "unknown parameter enable_thinking"}
+        return 200, _candidate_payload()
+
+    stub.state["respond"] = respond
+
+    with model_calls.begin_file("样例文档.docx"):
+        items = provider.propose(_evidence(), [], [])
+
+    assert len(stub.state["requests"]) == 2
+    assert "enable_thinking" not in stub.state["requests"][1]
+    assert items and items[0]["source_generation"] == "ai"
+    rows = model_calls.snapshot()
+    assert rows[0].get("thinking_param_fallback") is True
+    assert rows[-1]["thinking_disabled"] is False
+    assert rows[-1]["fallback_rule"] is False
