@@ -22,6 +22,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 BASE = "http://127.0.0.1:8800"
 DETAIL_SENTENCE = "本地扫描正文样本：青禾试点已完成首轮访谈，下一步整理访谈纪要。"
+# The scan wait stays at 240 s. Only the answer read wait differs from the
+# offline blocks: one real answer call already takes 9-15 s (R-263 measurement),
+# so the questions need room to come back; questions and verdicts are unchanged.
+ANSWER_TIMEOUT_SECONDS = 60.0
 
 
 def create_samples(directory: Path) -> None:
@@ -141,6 +145,7 @@ def main() -> int:
         "scan_seconds": None,
         "model_calls": [],
         "model_call_summary": {},
+        "answer_timeout_seconds": ANSWER_TIMEOUT_SECONDS,
     }
     exam = json.loads(Path("tests/pending/exam/questions.json").read_text(encoding="utf-8"))
     exam_questions = {item["id"]: item for item in exam["questions"]}
@@ -230,13 +235,16 @@ def main() -> int:
             from tests.run_pm_tests import api
             from tests.run_e2e_tests import timed_answer
             from scripts.build_exam_corpus import evaluate_semantics
+            print(f"Answer wait per question: {ANSWER_TIMEOUT_SECONDS}s", flush=True)
             for item in report["questions"]:
                 ident, question = item["id"], item["question"]
                 try:
                     session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
-                    answer = timed_answer(session, question, "real-model-" + ident)
+                    answer = timed_answer(session, question, "real-model-" + ident,
+                                          timeout=ANSWER_TIMEOUT_SECONDS)
                     item["answer"] = str(answer.get("response") or "")
                     item["sources"] = answer.get("sources") or answer.get("evidence") or answer.get("source_refs") or []
+                    item["timings"] = answer.get("timings") or {}
                     text = item["answer"]
                     if ident == "PM-U1-03":
                         passed = "18" in text and "青禾试点计划_v2.docx" in json.dumps(item["sources"], ensure_ascii=False)
@@ -252,6 +260,13 @@ def main() -> int:
                     item["status"] = "PASS" if passed else "FAIL"
                 except Exception as exc:  # report only exception class; never serialize request details
                     item["error"] = type(exc).__name__
+            for item in report["questions"]:
+                timings = item.get("timings") or {}
+                print(f"Question {item['id']}: {item['status']} "
+                      f"answer_chars={len(item['answer'])} sources={len(item['sources'])} "
+                      f"model_seconds={timings.get('model_seconds')} "
+                      f"total_seconds={timings.get('total_seconds')} "
+                      f"error={item.get('error') or '-'}", flush=True)
             report["result"] = "GREEN" if len(report["questions"]) == 8 and all(q["status"] == "PASS" for q in report["questions"]) else "RED"
         except Exception as exc:
             report["issues"].append({"state": "未能运行", "reason": type(exc).__name__,

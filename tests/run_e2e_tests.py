@@ -1059,11 +1059,17 @@ def run_b7(report: Report, installer_exe: Path):
         stop_paw(proc)
 
 
-def timed_answer(session_id, message, label):
+def timed_answer(session_id, message, label, timeout=15.0):
+    """Ask the assistant one question and log how long the answer took.
+
+    ``timeout`` stays 15 s for every offline block. The real-model acceptance
+    passes a larger value because one real answer call already takes 9-15 s
+    (measured in R-263); the questions and their verdicts are unchanged.
+    """
     started=time.perf_counter()
     result=None
     try:
-        response=httpx.post(f"http://127.0.0.1:8800/v1/web/agy/chat/{session_id}/messages",json={'message':message},timeout=15.0)
+        response=httpx.post(f"http://127.0.0.1:8800/v1/web/agy/chat/{session_id}/messages",json={'message':message},timeout=timeout)
         response.raise_for_status()
         result=response.json()
         return result
