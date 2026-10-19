@@ -30,6 +30,10 @@ SCAN_MAX_TOKENS = 1500
 SCAN_MAX_RETRIES = 2
 SCAN_RETRY_STATUSES = (429, 503)
 
+# Chat answers are short grounded prose. R-264 turns chain-of-thought off for
+# them too and bounds the output; the acceptance keeps its 60 s read wait.
+ANSWER_MAX_TOKENS = 2000
+
 
 class ChatCompletionResult(tuple):
     """3-tuple compatible with (content, usage, error) plus .search_info attribute."""
@@ -609,12 +613,16 @@ class UniversalOpenAIProvider(BaseProvider):
             body["enable_search"] = True
 
         # Phase 2 analysis calls come from the scanner through the semantic
-        # boundary. They answer with a small JSON contract, so they get a bounded
-        # output, no chain-of-thought and a short timeout; chat Q&A calls keep
-        # their existing request shape.
+        # boundary; assistant answers come from the chat facade. Both answer with
+        # short, bounded output and no chain-of-thought. Other internal calls
+        # (cruise advice, semantic drafts) keep their existing request shape.
         scan_mode = model_calls.in_scan()
+        answer_mode = model_calls.in_answer()
         if scan_mode:
             body["max_tokens"] = SCAN_MAX_TOKENS
+            body["enable_thinking"] = False
+        elif answer_mode:
+            body["max_tokens"] = ANSWER_MAX_TOKENS
             body["enable_thinking"] = False
         timeout = (httpx.Timeout(SCAN_CALL_TIMEOUT_SECONDS, connect=10.0) if scan_mode
                    else httpx.Timeout(120.0, connect=10.0))
@@ -655,7 +663,7 @@ class UniversalOpenAIProvider(BaseProvider):
                         prompt_chars=prompt_chars,
                         thinking_disabled=thinking_off,
                     )
-                    if resp.status_code == 400 and body.get("enable_thinking"):
+                    if resp.status_code == 400 and "enable_thinking" in body:
                         # Unsupported parameter: retry once without it, never fail.
                         body.pop("enable_thinking", None)
                         if call_row is not None:

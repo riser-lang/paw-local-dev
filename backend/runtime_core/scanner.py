@@ -765,8 +765,8 @@ class PawScanner:
             "resumable_files": resumable,
             # Phase 2 model-call detail: file, source, attempt, seconds, status,
             # timeout, prompt characters, usage tokens, rule-fallback flag.
-            "model_calls": model_calls.snapshot(),
-            "model_call_summary": model_calls.summary(),
+            "model_calls": model_calls.snapshot("scan"),
+            "model_call_summary": model_calls.summary("scan"),
         }
 
     def get_grouped_candidates(self) -> Dict[str, Any]:

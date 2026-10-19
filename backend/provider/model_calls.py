@@ -26,13 +26,25 @@ _scan_file: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 _task: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "paw_scan_task", default=None
 )
+# Answer turn (chat session id) while one assistant answer is being produced.
+_answer: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "paw_answer_turn", default=None
+)
+# Stage of the answer turn: "first" or "gate_retry", plus the attempt offset so a
+# retry is reported as attempt 2 instead of restarting at 1.
+_stage: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "paw_answer_stage", default=None
+)
+_attempt_base: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "paw_answer_attempt_base", default=0
+)
 
 _rows: List[Dict[str, Any]] = []
 _lock = threading.Lock()
 
 
 class _Scope:
-    """Context-manager wrapper around a contextvars token."""
+    """Context-manager wrapper around one or more contextvars tokens."""
 
     __slots__ = ("token", "_reset")
 
@@ -75,6 +87,60 @@ def end_file(scope) -> None:
 def begin_task(name: str):
     """Enter a semantic-task context; use it as a context manager or pass it to :func:`end_task`."""
     return _Scope(_task.set(str(name or "")), _reset_task)
+
+
+def _reset_answer(token) -> None:
+    try:
+        _answer.reset(token)
+    except (ValueError, RuntimeError):
+        pass
+
+
+def _reset_call(tokens) -> None:
+    stage_token, base_token = tokens
+    for var, token in ((_stage, stage_token), (_attempt_base, base_token)):
+        try:
+            var.reset(token)
+        except (ValueError, RuntimeError):
+            pass
+
+
+def begin_answer(answer_id: str):
+    """Enter the answer-turn context (the chat session id)."""
+    return _Scope(_answer.set(str(answer_id or "")), _reset_answer)
+
+
+def end_answer(scope) -> None:
+    token = getattr(scope, "token", scope)
+    _reset_answer(token)
+
+
+def begin_call(stage: str, attempt_base: int = 0):
+    """Label the call about to run: stage name and the attempt number it starts at."""
+    return _Scope((_stage.set(str(stage or "")), _attempt_base.set(int(attempt_base))),
+                  _reset_call)
+
+
+def end_call(scope) -> None:
+    token = getattr(scope, "token", scope)
+    _reset_call(token)
+
+
+def in_answer() -> bool:
+    """True while one assistant answer is being produced."""
+    return bool(_answer.get())
+
+
+def count() -> int:
+    """Number of recorded rows so far (a marker for :func:`rows_since`)."""
+    with _lock:
+        return len(_rows)
+
+
+def rows_since(mark: int) -> List[Dict[str, Any]]:
+    """Rows recorded after ``mark`` (used to attribute calls to one answer turn)."""
+    with _lock:
+        return [dict(row) for row in _rows[max(0, int(mark)):]]
 
 
 def end_task(scope) -> None:
@@ -138,15 +204,19 @@ def record(
     fallback_rule: bool = False,
     thinking_disabled: Optional[bool] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Append one telemetry row. Outside a scan context nothing is recorded."""
+    """Append one telemetry row. Outside a scan file or answer turn nothing is recorded."""
     file_name = _scan_file.get()
-    if not file_name:
+    answer_id = _answer.get()
+    if not file_name and not answer_id:
         return None
     tokens = usage_tokens(usage)
     row: Dict[str, Any] = {
-        "file": file_name,
+        "file": file_name or "",
+        "answer": answer_id or "",
+        "channel": "scan" if file_name else "chat",
         "source": source,
-        "attempt": int(attempt),
+        "stage": _stage.get() or "",
+        "attempt": int(attempt) + int(_attempt_base.get() or 0),
         "seconds": round(float(seconds), 2),
         "status": int(status) if status is not None else None,
         "timed_out": bool(timed_out),
@@ -178,9 +248,13 @@ def mark_usage(row: Optional[Dict[str, Any]], usage: Any) -> None:
     row.update(tokens)
 
 
-def snapshot() -> List[Dict[str, Any]]:
+def snapshot(channel: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Recorded rows, optionally limited to one channel ("scan" or "chat")."""
     with _lock:
-        return [dict(row) for row in _rows]
+        rows = [dict(row) for row in _rows]
+    if channel:
+        return [row for row in rows if row.get("channel") == channel]
+    return rows
 
 
 def reset() -> None:
@@ -188,8 +262,8 @@ def reset() -> None:
         _rows.clear()
 
 
-def summary() -> Dict[str, Any]:
-    rows = snapshot()
+def summary(channel: Optional[str] = None) -> Dict[str, Any]:
+    rows = snapshot(channel)
     return {
         "calls": len(rows),
         "timeouts": sum(1 for row in rows if row.get("timed_out")),

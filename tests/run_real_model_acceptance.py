@@ -21,14 +21,27 @@ from tests.run_e2e_tests import INSTALL_DIR, silent_install, start_paw, stop_paw
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 BASE = "http://127.0.0.1:8800"
-DETAIL_SENTENCE = "本地扫描正文样本：青禾试点已完成首轮访谈，下一步整理访谈纪要。"
-# The scan wait stays at 240 s. Only the answer read wait differs from the
-# offline blocks: one real answer call already takes 9-15 s (R-263 measurement),
-# so the questions need room to come back; questions and verdicts are unchanged.
+# R-264: the reviewer's exam corpus is copied (read-only source) next to the four
+# samples so the exam questions have evidence in the workspace.
+EXAM_CORPUS_DIR = Path("tests/fixtures/exam")
+EXAM_PROJECTS = ("星火导师计划", "人才盘点", "年度预算")
+# PM-S1-03 accepts the core sentence with other punctuation and without the
+# "本地扫描正文样本：" prefix, plus the source file name.
+DETAIL_CORE_SENTENCE = "青禾试点已完成首轮访谈，下一步整理访谈纪要"
+DETAIL_SENTENCE = "本地扫描正文样本：" + DETAIL_CORE_SENTENCE + "。"
+# The scan wait stays 240 s. Only the answer read wait differs from the offline
+# blocks: one real answer call already takes 9-15 s (R-263 measurement), so the
+# questions need room to come back; questions and verdicts are unchanged.
 ANSWER_TIMEOUT_SECONDS = 60.0
 
 
-def create_samples(directory: Path) -> None:
+def _core_sentence_in(text: str) -> bool:
+    """True when the answer carries the core sentence, ignoring punctuation."""
+    compact = re.sub(r"[\s\W_]+", "", text or "")
+    return re.sub(r"[\s\W_]+", "", DETAIL_CORE_SENTENCE) in compact
+
+
+def create_samples(directory: Path) -> list:
     directory.mkdir(parents=True, exist_ok=True)
     doc = Document()
     doc.add_paragraph("青禾试点计划 v1")
@@ -45,6 +58,68 @@ def create_samples(directory: Path) -> None:
     slide.placeholders[1].text = "进度：已招募 9 名导师\n风险：两个校区尚未提名导师人选\n下一步：完成剩余 9 名导师招募"
     deck.save(directory / "青禾试点周报.pptx")
     (directory / "青禾试点详情.md").write_text(DETAIL_SENTENCE, encoding="utf-8")
+
+    copied = []
+    if EXAM_CORPUS_DIR.is_dir():
+        for source in sorted(EXAM_CORPUS_DIR.iterdir()):
+            if not source.is_file():
+                continue
+            target = directory / source.name
+            # The fixture is the reviewer's read-only corpus: copy, never move or edit.
+            shutil.copyfile(source, target)
+            copied.append(source.name)
+    return copied
+
+
+def _create_exam_projects() -> list:
+    """The corpus documents belong to these projects; create them like a user would."""
+    from tests.run_pm_tests import api
+    created = []
+    for name in EXAM_PROJECTS:
+        try:
+            api("POST", "/v1/web/workspace/projects", {"name": name})
+            created.append(name)
+        except Exception:
+            pass
+    return created
+
+
+def _approve_and_resolve() -> dict:
+    """Approve pending candidates and resolve decided families, as a user would."""
+    from tests.run_pm_tests import api
+    approved = 0
+    for _ in range(4):
+        try:
+            pending = api("GET", "/v1/web/brain/review/candidates?status=pending&limit=200").get("items", [])
+        except Exception:
+            pending = []
+        accepted_this_round = 0
+        for cand in pending:
+            cid = cand.get("id") or cand.get("candidate_id")
+            if not cid:
+                continue
+            try:
+                api("POST", f"/v1/web/brain/review/candidates/{cid}/accept", {})
+                approved += 1
+                accepted_this_round += 1
+            except Exception:
+                pass
+        try:
+            decisions = api("GET", "/v1/pm/decisions").get("items", [])
+        except Exception:
+            decisions = []
+        for dec in decisions:
+            if dec.get("status") == "pending" and dec.get("project_id"):
+                try:
+                    api("POST", f"/v1/pm/decisions/{dec['id']}/resolve", {
+                        "project_id": dec["project_id"],
+                        "family_title": dec.get("family_key") or dec.get("title") or "",
+                    })
+                except Exception:
+                    pass
+        if not accepted_this_round and not pending:
+            break
+    return {"approved_candidates": approved}
 
 
 def _safe_progress_text(value: object, key: str) -> str:
@@ -121,6 +196,70 @@ def _emit_model_calls(report: dict, key: str) -> None:
           f"reasoning_tokens={summary.get('reasoning_tokens', 0)}", flush=True)
 
 
+def judge_answer(ident: str, text: str, sources: list, exam_questions: dict):
+    """Verdict for one question. R-264 changes PM-S1-03 only and adds the marker check."""
+    from scripts.build_exam_corpus import evaluate_semantics
+    from backend.pm import internal_markers
+    markers = internal_markers.found(text)
+    if markers:
+        # A visible internal marker is a failure of its own, for every question.
+        return False, "internal_marker_visible:" + ",".join(markers)
+    sources_json = json.dumps(sources or [], ensure_ascii=False)
+    if ident == "PM-U1-03":
+        passed = "18" in text and "青禾试点计划_v2.docx" in sources_json
+        return passed, "current_target_and_source" if passed else "target_or_source_missing"
+    if ident == "PM-S1-03":
+        # R-264: the core sentence counts with other punctuation and without the
+        # "本地扫描正文样本：" prefix; the source file must still be cited.
+        core = _core_sentence_in(text)
+        cited = "青禾试点详情.md" in sources_json
+        if core and cited:
+            return True, "core_sentence_and_source"
+        return False, "source_missing" if core else "core_sentence_missing"
+    if ident in {"PM-U4-01", "X19", "X20"} and ident not in exam_questions:
+        passed = "建议" in text and bool(sources)
+        return passed, "advice_and_sources" if passed else "advice_or_sources_missing"
+    passed, reason = evaluate_semantics(text, sources or [], exam_questions[ident])
+    return bool(passed), str(reason or "")
+
+
+def ask_questions(items: list, exam_questions: dict) -> list:
+    """Ask each question in a fresh session and record answer, sources, seconds and calls."""
+    from tests.run_pm_tests import api
+    from tests.run_e2e_tests import timed_answer
+    print(f"Answer wait per question: {ANSWER_TIMEOUT_SECONDS}s", flush=True)
+    for item in items:
+        ident, question = item["id"], item["question"]
+        started = time.perf_counter()
+        try:
+            session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
+            answer = timed_answer(session, question, "real-model-" + ident,
+                                  timeout=ANSWER_TIMEOUT_SECONDS)
+            item["seconds"] = round(time.perf_counter() - started, 2)
+            item["answer"] = str(answer.get("response") or "")
+            item["sources"] = answer.get("sources") or answer.get("evidence") or answer.get("source_refs") or []
+            item["timings"] = answer.get("timings") or {}
+            item["model_calls"] = [
+                {**row, "question_id": ident, "question": question}
+                for row in (answer.get("model_calls") or [])
+            ]
+            passed, reason = judge_answer(ident, item["answer"], item["sources"], exam_questions)
+            item["status"] = "PASS" if passed else "FAIL"
+            item["reason"] = reason
+        except Exception as exc:  # report only exception class; never serialize request details
+            item["error"] = type(exc).__name__
+            item["seconds"] = round(time.perf_counter() - started, 2)
+    for item in items:
+        timings = item.get("timings") or {}
+        print(f"Question {item['id']}: {item['status']} seconds={item.get('seconds')} "
+              f"model_seconds={timings.get('model_seconds')} "
+              f"model_calls={len(item.get('model_calls') or [])} "
+              f"answer_chars={len(item['answer'])} sources={len(item['sources'])} "
+              f"markers={item.get('markers_found') or []} "
+              f"reason={item.get('reason') or '-'} error={item.get('error') or '-'}", flush=True)
+    return items
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--installer", required=True)
@@ -146,6 +285,10 @@ def main() -> int:
         "model_calls": [],
         "model_call_summary": {},
         "answer_timeout_seconds": ANSWER_TIMEOUT_SECONDS,
+        "exam_corpus": [],
+        "exam_projects": [],
+        "approved_candidates": 0,
+        "ingestion_seconds": None,
     }
     exam = json.loads(Path("tests/pending/exam/questions.json").read_text(encoding="utf-8"))
     exam_questions = {item["id"]: item for item in exam["questions"]}
@@ -175,7 +318,11 @@ def main() -> int:
             time.sleep(3)
             sample_dir = Path(os.environ.get("TEMP", str(Path.cwd()))) / "PAW_C12_real_model_samples"
             shutil.rmtree(sample_dir, ignore_errors=True)
-            create_samples(sample_dir)
+            report["exam_corpus"] = create_samples(sample_dir)
+            report["exam_projects"] = _create_exam_projects()
+            print(f"Sample directory: {sample_dir} files={4 + len(report['exam_corpus'])} "
+                  f"exam_corpus={len(report['exam_corpus'])} "
+                  f"projects={len(report['exam_projects'])}", flush=True)
             settings = {
                 "provider": "custom", "custom_api_key": key,
                 "custom_base_url": ("http://127.0.0.1:18000/v1" if args.mock_smoke
@@ -188,7 +335,8 @@ def main() -> int:
             response = httpx.post(BASE + "/v1/local/scanner/start",
                                   json={"directory": str(sample_dir), "force_restart": True}, timeout=30)
             response.raise_for_status()
-            deadline = time.monotonic() + 240
+            ingestion_started = time.monotonic()
+            deadline = ingestion_started + 240
             next_log = 0.0
             current_segment = None
             segment_started = None
@@ -231,42 +379,16 @@ def main() -> int:
                 segment_times.append({"phase": current_segment[0], "file": current_segment[1],
                                       "seconds": round(time.monotonic() - segment_started, 1)})
             report["scan_file_timings"] = segment_times
+            report["ingestion_seconds"] = round(time.monotonic() - ingestion_started, 1)
+            print(f"Scan finished in {report['ingestion_seconds']}s (limit 240s)", flush=True)
 
-            from tests.run_pm_tests import api
-            from tests.run_e2e_tests import timed_answer
-            from scripts.build_exam_corpus import evaluate_semantics
-            print(f"Answer wait per question: {ANSWER_TIMEOUT_SECONDS}s", flush=True)
-            for item in report["questions"]:
-                ident, question = item["id"], item["question"]
-                try:
-                    session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
-                    answer = timed_answer(session, question, "real-model-" + ident,
-                                          timeout=ANSWER_TIMEOUT_SECONDS)
-                    item["answer"] = str(answer.get("response") or "")
-                    item["sources"] = answer.get("sources") or answer.get("evidence") or answer.get("source_refs") or []
-                    item["timings"] = answer.get("timings") or {}
-                    text = item["answer"]
-                    if ident == "PM-U1-03":
-                        passed = "18" in text and "青禾试点计划_v2.docx" in json.dumps(item["sources"], ensure_ascii=False)
-                    elif ident in {"PM-U4-01", "X19", "X20"}:
-                        if ident in exam_questions:
-                            passed, _ = evaluate_semantics(text, item["sources"], exam_questions[ident])
-                        else:
-                            passed = "建议" in text and bool(item["sources"])
-                    elif ident == "PM-S1-03":
-                        passed = DETAIL_SENTENCE in text and "青禾试点详情.md" in json.dumps(item["sources"], ensure_ascii=False)
-                    else:
-                        passed, _ = evaluate_semantics(text, item["sources"], exam_questions[ident])
-                    item["status"] = "PASS" if passed else "FAIL"
-                except Exception as exc:  # report only exception class; never serialize request details
-                    item["error"] = type(exc).__name__
-            for item in report["questions"]:
-                timings = item.get("timings") or {}
-                print(f"Question {item['id']}: {item['status']} "
-                      f"answer_chars={len(item['answer'])} sources={len(item['sources'])} "
-                      f"model_seconds={timings.get('model_seconds')} "
-                      f"total_seconds={timings.get('total_seconds')} "
-                      f"error={item.get('error') or '-'}", flush=True)
+            # Normal user flow after a scan: approve the non-decision candidates and
+            # resolve the document-family decisions, exactly like the exam runner.
+            approval = _approve_and_resolve()
+            report["approved_candidates"] = approval["approved_candidates"]
+            print(f"Approved candidates: {report['approved_candidates']}", flush=True)
+
+            report["questions"] = ask_questions(report["questions"], exam_questions)
             report["result"] = "GREEN" if len(report["questions"]) == 8 and all(q["status"] == "PASS" for q in report["questions"]) else "RED"
         except Exception as exc:
             report["issues"].append({"state": "未能运行", "reason": type(exc).__name__,
