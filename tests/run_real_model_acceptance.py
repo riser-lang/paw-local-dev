@@ -15,6 +15,7 @@ import httpx
 from docx import Document
 from pptx import Presentation
 
+from tests.acceptance_verdicts import DETAIL_CORE_SENTENCE, core_sentence_in as _core_sentence_in, judge_answer
 from tests.run_e2e_tests import INSTALL_DIR, silent_install, start_paw, stop_paw
 
 # Keep the scan monitor's output to its explicit, redacted 10-second snapshot.
@@ -33,12 +34,6 @@ DETAIL_SENTENCE = "本地扫描正文样本：" + DETAIL_CORE_SENTENCE + "。"
 # blocks: one real answer call already takes 9-15 s (R-263 measurement), so the
 # questions need room to come back; questions and verdicts are unchanged.
 ANSWER_TIMEOUT_SECONDS = 60.0
-
-
-def _core_sentence_in(text: str) -> bool:
-    """True when the answer carries the core sentence, ignoring punctuation."""
-    compact = re.sub(r"[\s\W_]+", "", text or "")
-    return re.sub(r"[\s\W_]+", "", DETAIL_CORE_SENTENCE) in compact
 
 
 def create_samples(directory: Path) -> list:
@@ -194,33 +189,6 @@ def _emit_model_calls(report: dict, key: str) -> None:
           f"rule_fallbacks={summary.get('fallback_rule', 0)} "
           f"model_seconds={summary.get('seconds', 0)} "
           f"reasoning_tokens={summary.get('reasoning_tokens', 0)}", flush=True)
-
-
-def judge_answer(ident: str, text: str, sources: list, exam_questions: dict):
-    """Verdict for one question. R-264 changes PM-S1-03 only and adds the marker check."""
-    from scripts.build_exam_corpus import evaluate_semantics
-    from backend.pm import internal_markers
-    markers = internal_markers.found(text)
-    if markers:
-        # A visible internal marker is a failure of its own, for every question.
-        return False, "internal_marker_visible:" + ",".join(markers)
-    sources_json = json.dumps(sources or [], ensure_ascii=False)
-    if ident == "PM-U1-03":
-        passed = "18" in text and "青禾试点计划_v2.docx" in sources_json
-        return passed, "current_target_and_source" if passed else "target_or_source_missing"
-    if ident == "PM-S1-03":
-        # R-264: the core sentence counts with other punctuation and without the
-        # "本地扫描正文样本：" prefix; the source file must still be cited.
-        core = _core_sentence_in(text)
-        cited = "青禾试点详情.md" in sources_json
-        if core and cited:
-            return True, "core_sentence_and_source"
-        return False, "source_missing" if core else "core_sentence_missing"
-    if ident in {"PM-U4-01", "X19", "X20"} and ident not in exam_questions:
-        passed = "建议" in text and bool(sources)
-        return passed, "advice_and_sources" if passed else "advice_or_sources_missing"
-    passed, reason = evaluate_semantics(text, sources or [], exam_questions[ident])
-    return bool(passed), str(reason or "")
 
 
 def ask_questions(items: list, exam_questions: dict) -> list:

@@ -1,5 +1,5 @@
 """R-264: only PM-S1-03's rule changed, plus the internal-marker check."""
-from tests.run_real_model_acceptance import judge_answer
+from tests.acceptance_verdicts import judge_answer
 
 EXAM = {
     "X01": {

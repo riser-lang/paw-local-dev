@@ -31,7 +31,7 @@ def test_answer_call_disables_thinking_and_bounds_output(provider, stub):
     assert error is None and text == "回答正文"
     sent = stub.state["requests"][0]
     assert sent["enable_thinking"] is False
-    assert sent["max_tokens"] == adapter.ANSWER_MAX_TOKENS == 2000
+    assert sent["max_tokens"] == adapter.ANSWER_MAX_TOKENS == 3000
     row = model_calls.rows_since(0)[0]
     assert row["channel"] == "chat"
     assert row["answer"] == "session-1"

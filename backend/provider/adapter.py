@@ -31,8 +31,11 @@ SCAN_MAX_RETRIES = 2
 SCAN_RETRY_STATUSES = (429, 503)
 
 # Chat answers are short grounded prose. R-264 turns chain-of-thought off for
-# them too and bounds the output; the acceptance keeps its 60 s read wait.
-ANSWER_MAX_TOKENS = 2000
+# them too and bounds the output. 2000 was the first bound, but the real-model
+# run showed three answers truncated exactly at the cap and then refused by the
+# grounding gate, so the measured bound is 3000; the acceptance keeps its 60 s
+# read wait.
+ANSWER_MAX_TOKENS = 3000
 
 
 class ChatCompletionResult(tuple):
@@ -696,6 +699,9 @@ class UniversalOpenAIProvider(BaseProvider):
 
                     choice = data.get("choices", [{}])[0]
                     content = choice.get("message", {}).get("content", "")
+                    if call_row is not None:
+                        # "stop" vs "length" tells truncation apart from a finished answer.
+                        call_row["finish_reason"] = str(choice.get("finish_reason") or "")
                     from backend.pm.health import observe,identity
                     observe('model',True,'模型已成功响应',identity({'base_url':self.base_url,'api_key':self.api_key,'model':self.model}))
 
