@@ -29,6 +29,12 @@
 - PR 安装包构建：[run 39258941964](https://github.com/riser-lang/paw-local-dev/actions/runs/39258941964) — **GREEN**。
 - PR：[#16](https://github.com/riser-lang/paw-local-dev/pull/16)，目标 `main`；未合并、未打 tag。
 
+### DONE 报告提交后的复核
+
+- 报告提交 `147adc3` 的 PR 完整验证：[run 39261236463](https://github.com/riser-lang/paw-local-dev/actions/runs/39261236463) — **GREEN**。
+- 同一提交的 push 完整验证 run `39261230153` 第一次执行为 **RED**（attempt 1）：判定器报告两张截图哈希重复使用。该次汇总显示 91/91 必测通过、0 FAIL、0 NOT RUN；RED 原因是重复截图证据，不是必测用例失败。
+- 按整条流水线重跑，而非只重跑失败的汇总作业后，run `39261230153` attempt 2 为 **GREEN**。完整验证、负对照和汇总判定均结束，失败作业数为 0。
+
 ## 待审核
 
 - 请审核人确认“扫描速度：v2.5.0 已优化”和“助手问答速度：v2.5.0 已优化”两项发布文案，再定稿。
