@@ -51,10 +51,17 @@ class AgentPlanner:
         provider = get_active_provider()
         from backend.pm import storage
         from backend.pm.updates import process_source
+        from backend.provider import model_calls
         with storage.connect() as conn:
             conn.execute('INSERT INTO pm_source_location VALUES(?,?) ON CONFLICT(source_version_id) DO UPDATE SET path=excluded.path',(file_hash,source_file_path))
-        process_source(file_hash,provider)
-        raw_proposals = provider.propose(evidence, projects, knowledge_items)
+        # Attribute every scan model call to this file: section_update and propose
+        # both run inside this context so each row carries the file name.
+        file_ctx = model_calls.begin_file(display_name)
+        try:
+            process_source(file_hash,provider)
+            raw_proposals = provider.propose(evidence, projects, knowledge_items)
+        finally:
+            model_calls.end_file(file_ctx)
 
         created_candidate_ids = []
         failed_proposals = 0

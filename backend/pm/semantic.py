@@ -31,7 +31,12 @@ def invoke(name, value, provider, conn):
         messages = model_messages(system, value, storage.config()['context_budget_bytes'])
     except ValueError:
         return {'status':'budget_exceeded','message':'上下文预算不足，未调用模型'}
-    text, usage, error = provider.chat_completion(messages=messages, temperature=0.1)
+    from backend.provider import model_calls
+    task_ctx = model_calls.begin_task(name)
+    try:
+        text, usage, error = provider.chat_completion(messages=messages, temperature=0.1)
+    finally:
+        model_calls.end_task(task_ctx)
     if error or not text:
         return {'status': 'unavailable', 'message': '模型暂时不可用'}
     try:

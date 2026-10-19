@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from backend.core.config import settings
+from backend.provider import model_calls
 
 logger = logging.getLogger("paw.provider")
 
@@ -394,17 +395,29 @@ class UniversalOpenAIProvider(BaseProvider):
         # Exponential backoff retry on 429/503
         max_retries = 2
         backoff = 1.0
+        prompt_chars = len(body["messages"][0]["content"]) + len(prompt)
+        last_row = None
 
         for attempt in range(max_retries + 1):
+            start_t = time.perf_counter()
             try:
                 with httpx.Client(timeout=45.0) as client:
-                    start_t = time.time()
                     resp = client.post(url, headers=headers, json=body)
-                    latency_ms = int((time.time() - start_t) * 1000)
+                    latency_ms = int((time.perf_counter() - start_t) * 1000)
+                    last_row = model_calls.record(
+                        source="propose",
+                        attempt=attempt + 1,
+                        seconds=latency_ms / 1000.0,
+                        status=resp.status_code,
+                        timed_out=False,
+                        prompt_chars=prompt_chars,
+                        thinking_disabled=False,
+                    )
 
                     if resp.status_code == 200:
                         data = resp.json()
                         usage = data.get("usage", {})
+                        model_calls.mark_usage(last_row, usage)
                         tokens = usage.get("total_tokens", 0)
                         
                         # Update telemetry (Requirement 4.5)
@@ -439,6 +452,17 @@ class UniversalOpenAIProvider(BaseProvider):
                         logger.warning(f"AI Provider HTTP {resp.status_code}: {resp.text[:120]}")
                         break
             except Exception as e:
+                timed_out = isinstance(e, httpx.TimeoutException)
+                last_row = model_calls.record(
+                    source="propose",
+                    attempt=attempt + 1,
+                    seconds=time.perf_counter() - start_t,
+                    status=None,
+                    timed_out=timed_out,
+                    prompt_chars=prompt_chars,
+                    error="TimeoutError" if timed_out else type(e).__name__,
+                    thinking_disabled=False,
+                )
                 logger.warning(f"AI Provider request failed (attempt {attempt+1}): {e}")
                 if attempt < max_retries:
                     time.sleep(backoff)
@@ -447,6 +471,7 @@ class UniversalOpenAIProvider(BaseProvider):
                     break
 
         # Explicit fallback to rule engine on failure
+        model_calls.mark_fallback(last_row)
         logger.info(f"Falling back to rule-based proposal engine due to API unavailability.")
         return self.fallback.propose(evidence, existing_projects, existing_knowledge)
 
@@ -543,6 +568,11 @@ class UniversalOpenAIProvider(BaseProvider):
             from backend.pm.health import observe,identity
             observe('model',False,message,identity({'base_url':self.base_url,'api_key':self.api_key,'model':self.model}))
 
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+        call_row = None
+        attempt = 0
+        started = time.perf_counter()
+
         try:
             # Grounded answers (structured sections + evidence map) can take well over
             # 45 s on slower models; allow 120 s for the response, 10 s to connect.
@@ -553,11 +583,31 @@ class UniversalOpenAIProvider(BaseProvider):
                 stats['model_calls']+=1
                 stats['prompt_bytes']=max(stats['prompt_bytes'],len(json.dumps(messages,ensure_ascii=False).encode('utf-8')))
             with httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+                attempt = 1
+                started = time.perf_counter()
                 resp = client.post(url, headers=headers, json=body)
+                call_row = model_calls.record(
+                    source=model_calls.source_name("chat_completion"),
+                    attempt=attempt,
+                    seconds=time.perf_counter() - started,
+                    status=resp.status_code,
+                    timed_out=False,
+                    prompt_chars=prompt_chars,
+                )
                 if resp.status_code == 400 and body.get("enable_search"):
                     # Retry without enable_search if provider rejects unknown parameter
                     body.pop("enable_search", None)
+                    attempt += 1
+                    started = time.perf_counter()
                     resp = client.post(url, headers=headers, json=body)
+                    call_row = model_calls.record(
+                        source=model_calls.source_name("chat_completion"),
+                        attempt=attempt,
+                        seconds=time.perf_counter() - started,
+                        status=resp.status_code,
+                        timed_out=False,
+                        prompt_chars=prompt_chars,
+                    )
 
                 if stats is not None:
                     stats['model_seconds']=round(stats['model_seconds']+time.perf_counter()-call_started,4)
@@ -565,6 +615,7 @@ class UniversalOpenAIProvider(BaseProvider):
                 if resp.status_code == 200:
                     data = resp.json()
                     usage = data.get("usage", {})
+                    model_calls.mark_usage(call_row, usage)
                     tokens = usage.get("total_tokens", 0)
                     settings.cumulative_calls += 1
                     settings.cumulative_tokens += tokens
@@ -602,9 +653,27 @@ class UniversalOpenAIProvider(BaseProvider):
                     observed_failure('模型请求失败，HTTP '+str(resp.status_code))
                     return ChatCompletionResult(None, {}, f"HTTP_{resp.status_code}: {resp.text[:100]}", {"used": False})
         except httpx.TimeoutException:
+            model_calls.record(
+                source=model_calls.source_name("chat_completion"),
+                attempt=max(attempt, 1),
+                seconds=time.perf_counter() - started,
+                status=None,
+                timed_out=True,
+                prompt_chars=prompt_chars,
+                error="TimeoutError",
+            )
             observed_failure('模型请求超时，请检查网络或稍后重试')
             return ChatCompletionResult(None, {}, "TIMEOUT", {"used": False})
         except Exception as e:
+            model_calls.record(
+                source=model_calls.source_name("chat_completion"),
+                attempt=max(attempt, 1),
+                seconds=time.perf_counter() - started,
+                status=None,
+                timed_out=False,
+                prompt_chars=prompt_chars,
+                error=type(e).__name__,
+            )
             observed_failure('模型请求未完成，请检查本地连接配置')
             return ChatCompletionResult(None, {}, f"NETWORK_ERROR: {str(e)[:80]}", {"used": False})
 

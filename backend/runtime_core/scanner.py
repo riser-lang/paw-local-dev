@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from backend.core.backup import create_db_backup
 from backend.core.config import DATA_DIR, EVIDENCE_DIR, SOURCES_DIR, settings
 from backend.governance.service import get_db, governance
+from backend.provider import model_calls
 from backend.reader.contract import ReaderInput, artifact_sha256
 from backend.reader.dispatch import isolated_read_artifact
 from backend.runtime_core.event_bus import EventType, event_bus
@@ -236,6 +237,8 @@ class PawScanner:
             self.failed_files = 0
             self.new_candidates_count = 0
             self.start_time = time.time()
+            # Per-call model telemetry belongs to this run only.
+            model_calls.reset()
 
             self._thread = threading.Thread(
                 target=self._run_scan_thread,
@@ -760,6 +763,10 @@ class PawScanner:
             "new_candidates_count": self.new_candidates_count,
             "failed_items": self.failed_items,
             "resumable_files": resumable,
+            # Phase 2 model-call detail: file, source, attempt, seconds, status,
+            # timeout, prompt characters, usage tokens, rule-fallback flag.
+            "model_calls": model_calls.snapshot(),
+            "model_call_summary": model_calls.summary(),
         }
 
     def get_grouped_candidates(self) -> Dict[str, Any]:

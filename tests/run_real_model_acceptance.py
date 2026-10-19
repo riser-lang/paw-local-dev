@@ -61,6 +61,7 @@ def _progress_line(progress: dict, key: str) -> str:
         completed = progress.get("phase1_processed", 0)
     total = progress.get("total_files", 0)
     current_file = _safe_progress_text(progress.get("current_file") or "-", key)
+    calls = progress.get("model_call_summary") or {}
     failures = progress.get("failed_items") or []
     if failures:
         last_failure = failures[-1] if isinstance(failures[-1], dict) else {}
@@ -70,7 +71,50 @@ def _progress_line(progress: dict, key: str) -> str:
     else:
         recent_error = "none"
     return (f"Scan progress: status={status} completed={completed}/{total} "
-            f"current_file={current_file} recent_error={recent_error}")
+            f"current_file={current_file} recent_error={recent_error} "
+            f"model_calls={calls.get('calls', 0)} timeouts={calls.get('timeouts', 0)} "
+            f"rule_fallbacks={calls.get('fallback_rule', 0)}")
+
+
+def _call_line(row: dict, key: str) -> str:
+    """One redacted line per model request: no prompt text, no credentials."""
+    return ("Model call: file={} source={} attempt={} seconds={} status={} timed_out={} "
+            "prompt_chars={} tokens=p{}/c{}/r{} rule_fallback={} thinking_disabled={}").format(
+        _safe_progress_text(row.get("file") or "-", key),
+        _safe_progress_text(row.get("source") or "-", key),
+        row.get("attempt", 0),
+        row.get("seconds", 0),
+        row.get("status"),
+        row.get("timed_out"),
+        row.get("prompt_chars", 0),
+        row.get("prompt_tokens", 0),
+        row.get("completion_tokens", 0),
+        row.get("reasoning_tokens", 0),
+        row.get("fallback_rule"),
+        row.get("thinking_disabled"),
+    )
+
+
+def _emit_model_calls(report: dict, key: str) -> None:
+    rows = report.get("model_calls") or []
+    print(f"Phase 2 model calls: {len(rows)}", flush=True)
+    for row in rows:
+        print(_call_line(row, key), flush=True)
+    phase1 = [t for t in report.get("scan_file_timings") or [] if t.get("phase") != "phase2_analyzing"]
+    phase2 = [t for t in report.get("scan_file_timings") or [] if t.get("phase") == "phase2_analyzing"]
+    report["phase1_file_timings"] = phase1
+    report["phase2_file_timings"] = phase2
+    report["phase2_seconds"] = round(sum(float(t.get("seconds") or 0) for t in phase2), 1)
+    report["scan_seconds"] = round(sum(float(t.get("seconds") or 0) for t in phase1 + phase2), 1)
+    for item in phase2:
+        print(f"Phase 2 file: {_safe_progress_text(item.get('file') or '-', key)} "
+              f"seconds={item.get('seconds')}", flush=True)
+    summary = report.get("model_call_summary") or {}
+    print(f"Phase 2 model call summary: calls={summary.get('calls', 0)} "
+          f"timeouts={summary.get('timeouts', 0)} failed={summary.get('failed', 0)} "
+          f"rule_fallbacks={summary.get('fallback_rule', 0)} "
+          f"model_seconds={summary.get('seconds', 0)} "
+          f"reasoning_tokens={summary.get('reasoning_tokens', 0)}", flush=True)
 
 
 def main() -> int:
@@ -91,6 +135,12 @@ def main() -> int:
         "questions": [],
         "last_scan_progress": "",
         "scan_file_timings": [],
+        "phase1_file_timings": [],
+        "phase2_file_timings": [],
+        "phase2_seconds": None,
+        "scan_seconds": None,
+        "model_calls": [],
+        "model_call_summary": {},
     }
     exam = json.loads(Path("tests/pending/exam/questions.json").read_text(encoding="utf-8"))
     exam_questions = {item["id"]: item for item in exam["questions"]}
@@ -156,6 +206,8 @@ def main() -> int:
                     active_timing.append({"phase": current_segment[0], "file": current_segment[1],
                                           "seconds": round(now - segment_started, 1)})
                 report["scan_file_timings"] = [*segment_times, *active_timing]
+                report["model_calls"] = progress.get("model_calls") or []
+                report["model_call_summary"] = progress.get("model_call_summary") or {}
 
                 line = _progress_line(progress, key or "")
                 report["last_scan_progress"] = line
@@ -208,6 +260,9 @@ def main() -> int:
         finally:
             if proc is not None:
                 stop_paw(proc)
+    # Measurement first: every Phase 2 model request and its per-file cost goes
+    # into the report and the log, whichever way the scan ended.
+    _emit_model_calls(report, key or "")
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"model": report["model"], "result": report["result"],
                       "question_count": len(report["questions"]),
