@@ -183,6 +183,14 @@ def _friendly_model_error(error: Optional[str]) -> str:
     return f"模型调用暂时不可用（{err[:60]}）"
 
 
+def _call_model(provider, messages, temperature, stage: str, attempt_base: int, answer_id: str):
+    """One assistant model call, labelled for the per-answer call detail (R-264)."""
+    from backend.provider import model_calls
+    with model_calls.begin_answer(answer_id):
+        with model_calls.begin_call(stage, attempt_base):
+            return provider.chat_completion(messages=messages, temperature=temperature)
+
+
 # ── Retry Prompt Constraint Builder ──────────────────────────────────────────
 
 _RETRY_REPAIR = {
@@ -1156,12 +1164,15 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         {"role": "user", "content": fenced_prompt}
     ]
 
+    from backend.provider import model_calls
+    call_mark = model_calls.count()
     t_first = time.time()
-    response_text, usage, error = provider.chat_completion(messages=messages, temperature=0.2)
+    response_text, usage, error = _call_model(provider, messages, 0.2, "first", 0, session_id)
     first_call_seconds = time.time() - t_first
     if error or not response_text:
         # If API failed (timeout, network, auth error), fallback to grounded retrieval search with disclaimer
         logger.warning(f"AI Assistant API call failed ({error}) after {first_call_seconds:.0f}s. Falling back to offline retrieval display.")
+        turn_calls = model_calls.rows_since(call_mark)
         fallback_text = (
             f"【{_friendly_model_error(error)}，先为你列出工作台里的相关内容】\n\n"
             + _build_offline_retrieval_response(turn)
@@ -1195,6 +1206,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
             "authority_notes": turn["contract"].get("authority_notes", []),
             "clarification": turn["contract"].get("clarification"),
             "grounding": grounding_metadata(turn, grounded=True, gate="fallback_on_error"),
+            "model_calls": turn_calls,
         }
 
     # 6. Apply Evidence Validation Gate (Requirement 3.2, 3.4.1 & A26)
@@ -1217,7 +1229,9 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         retry_messages = [
             {"role": "user", "content": fenced_prompt + retry_suffix}
         ]
-        retry_text, retry_usage, retry_err = provider.chat_completion(messages=retry_messages, temperature=0.1)
+        retry_text, retry_usage, retry_err = _call_model(
+            provider, retry_messages, 0.1, "gate_retry", 1, session_id
+        )
 
         if retry_text:
             retry_text,retry_filter=answer_advice.clean(retry_text,turn['contract'],agy_v2_answer._claim_kind)
@@ -1242,10 +1256,15 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         grounded = True
 
     # 7. Extract visible response (strip machine-only EVIDENCE_MAP block)
+    from backend.pm import internal_markers
     visible, answer_map = agy_v2_answer.extract_evidence_map(response_text)
     if grounded:visible=answer_advice.display(response_text,turn['contract'])
     final_visible = _plain(visible if grounded else response_text)
     final_visible = _conflict_preface(turn,final_visible)
+    # R-264: no internal marker code (CONFIRMED_KNOWLEDGE, EVIDENCE_MAP, …) may
+    # reach the user; the C-12 code→Chinese table answers instead.
+    final_visible = internal_markers.strip(final_visible)
+    turn_calls = model_calls.rows_since(call_mark)
     knowledge_gap_id=None
     from backend.pm.knowledge_gaps import is_insufficient,observe
     if grounded and resolved_proj_id and is_insufficient(final_visible,answer_map):
@@ -1302,4 +1321,5 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         "web_search_used": web_search_used,
         "web_search_note": "以下内容来自网络搜索，非工作台依据" if web_search_used else None,
         "web_search_sources": search_meta.get("sources", []),
+        "model_calls": turn_calls,
     }

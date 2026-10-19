@@ -49,18 +49,26 @@ jobs:
           if (-not (@($matches | Where-Object { $_.id -eq $selected }).Count)) { throw 'PAW_TEST_MODEL does not match the catalog entry for DeepSeek V4.1 Flash.' }
           "model_id=$selected" >> $env:GITHUB_OUTPUT
           "Resolved SiliconFlow model ID: $selected" | Write-Host
+      - name: Model ping
+        continue-on-error: true
+        shell: pwsh
+        env:
+          PAW_TEST_API_KEY: ${{ secrets.PAW_TEST_API_KEY }}
+        run: python tests/model_ping.py --report reports/model-ping-report.json
       - name: Run installed-app real-model acceptance
         shell: pwsh
         env:
           PAW_TEST_API_KEY: ${{ secrets.PAW_TEST_API_KEY }}
           PAW_TEST_MODEL: ${{ steps.model.outputs.model_id }}
         run: |
-          python tests/run_real_model_acceptance.py --installer dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe --report reports/real-model-report.json
-      - name: Upload real-model report
+          python -m tests.run_real_model_acceptance --installer dist/PAW_Personal_Work_OS_Setup_v2.5.0.exe --report reports/real-model-report.json
+      - name: Upload real-model reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: real-model-report
-          path: reports/real-model-report.json
+          path: |
+            reports/real-model-report.json
+            reports/model-ping-report.json
           if-no-files-found: warn
           retention-days: 30

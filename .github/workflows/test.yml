@@ -65,6 +65,63 @@ jobs:
           if-no-files-found: error
           retention-days: 5
 
+  real-model-smoke:
+    name: Real Model Acceptance Smoke (Freeform Mock)
+    runs-on: windows-latest
+    needs: build
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      PYTHONPATH: .
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Smoke Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt httpx python-docx python-pptx
+
+      - name: Download Built Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: built-installer-exe
+          path: installer_artifact
+
+      - name: Start Freeform Mock Model Server
+        shell: pwsh
+        run: |
+          $env:PAW_MOCK_MODE = 'freeform'
+          Start-Process -FilePath "python" -ArgumentList "$PWD\scripts\mock_openai_server.py --port 18000" -WorkingDirectory $PWD -WindowStyle Hidden
+          $retries = 20
+          while ($retries -gt 0) {
+            try {
+              $res = Invoke-RestMethod -Uri "http://127.0.0.1:18000/health" -TimeoutSec 2
+              if ($res.status -eq "ok") { Write-Host "Freeform mock server is live."; break }
+            } catch {}
+            Start-Sleep -Seconds 1
+            $retries--
+          }
+          if ($retries -eq 0) { throw "Freeform mock server did not start." }
+
+      - name: Run Complete Real Model Acceptance Flow Against Mock
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path reports | Out-Null
+          $installer = (Get-ChildItem -Path installer_artifact\*.exe)[0].FullName
+          python -m tests.run_real_model_acceptance --installer $installer --report reports/real-model-report.json --mock-smoke
+          if ($LASTEXITCODE -ne 0) { throw "Acceptance smoke script exited with code $LASTEXITCODE." }
+          if (-not (Test-Path reports/real-model-report.json)) { throw "Acceptance report was not generated." }
+          $report = Get-Content reports/real-model-report.json -Raw -Encoding utf8 | ConvertFrom-Json
+          if (@($report.questions).Count -ne 8) { throw "Expected 8 completed question entries in the acceptance report." }
+          if (@($report.questions | Where-Object { -not $_.answer }).Count -ne 0) { throw "Expected mock answers for all 8 questions." }
+
   test-blocks:
     name: Test Block ${{ matrix.block }}
     runs-on: windows-latest

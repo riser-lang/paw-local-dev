@@ -272,7 +272,7 @@ def scan_metric_candidate(case):
 
 
 def run_c12(report, installer):
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 
     ids = ["PM-U1-01", "PM-U1-02", "PM-U1-03", "PM-U2-01", "PM-U2-02", "PM-U3-01", "PM-U3-02", "PM-U4-01"]
     for case in ids:
@@ -428,6 +428,11 @@ def run_c12(report, installer):
                             card.click()
                             title = page.get_by_role("textbox", name="标题", exact=True)
                             project_name = page.get_by_role("textbox", name="项目名称", exact=True)
+                            # The detail view is fetched after the click, so the edit
+                            # grid appears a moment later. Wait for it instead of
+                            # sampling the transient frame between skeleton and data.
+                            expect(title).to_be_visible(timeout=15000)
+                            expect(project_name).to_be_visible(timeout=15000)
                             print("C-12 metric editor evidence", json.dumps({
                                 "candidate_type": candidate.get("candidate_type"),
                                 "title_input_count": title.count(),

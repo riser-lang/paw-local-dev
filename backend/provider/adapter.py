@@ -17,8 +17,25 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from backend.core.config import settings
+from backend.provider import model_calls
 
 logger = logging.getLogger("paw.provider")
+
+# Phase 2 analysis tuning (R-263). The model returns a small JSON array, so it
+# needs a small output budget and no chain-of-thought; reasoning tokens were the
+# main cost of the 80-140 s per-file scans. A timed-out request is never resent:
+# only rate limiting and temporary unavailability are retried.
+SCAN_CALL_TIMEOUT_SECONDS = 20.0
+SCAN_MAX_TOKENS = 1500
+SCAN_MAX_RETRIES = 2
+SCAN_RETRY_STATUSES = (429, 503)
+
+# Chat answers are short grounded prose. R-264 turns chain-of-thought off for
+# them too and bounds the output. 2000 was the first bound, but the real-model
+# run showed three answers truncated exactly at the cap and then refused by the
+# grounding gate, so the measured bound is 3000; the acceptance keeps its 60 s
+# read wait.
+ANSWER_MAX_TOKENS = 3000
 
 
 class ChatCompletionResult(tuple):
@@ -389,22 +406,41 @@ class UniversalOpenAIProvider(BaseProvider):
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.2,
+            # The answer is a small JSON array: bound it and skip chain-of-thought.
+            "max_tokens": SCAN_MAX_TOKENS,
+            "enable_thinking": False,
         }
 
-        # Exponential backoff retry on 429/503
-        max_retries = 2
+        # Retry only 429/503. A timeout is never resent: repeating the same
+        # request is what made one file cost 80-140 s.
+        retries_left = SCAN_MAX_RETRIES
         backoff = 1.0
+        prompt_chars = len(body["messages"][0]["content"]) + len(prompt)
+        last_row = None
+        attempt = 0
 
-        for attempt in range(max_retries + 1):
+        while True:
+            attempt += 1
+            start_t = time.perf_counter()
+            thinking_off = body.get("enable_thinking") is False
             try:
-                with httpx.Client(timeout=45.0) as client:
-                    start_t = time.time()
+                with httpx.Client(timeout=SCAN_CALL_TIMEOUT_SECONDS) as client:
                     resp = client.post(url, headers=headers, json=body)
-                    latency_ms = int((time.time() - start_t) * 1000)
+                    latency_ms = int((time.perf_counter() - start_t) * 1000)
+                    last_row = model_calls.record(
+                        source="propose",
+                        attempt=attempt,
+                        seconds=latency_ms / 1000.0,
+                        status=resp.status_code,
+                        timed_out=False,
+                        prompt_chars=prompt_chars,
+                        thinking_disabled=thinking_off,
+                    )
 
                     if resp.status_code == 200:
                         data = resp.json()
                         usage = data.get("usage", {})
+                        model_calls.mark_usage(last_row, usage)
                         tokens = usage.get("total_tokens", 0)
                         
                         # Update telemetry (Requirement 4.5)
@@ -431,20 +467,60 @@ class UniversalOpenAIProvider(BaseProvider):
                                 it["review_brief"]["latency_ms"] = latency_ms
                             logger.info(f"AI Model ({self.model}) proposed {len(items)} candidates successfully.")
                             return items
-                    elif resp.status_code in (429, 503) and attempt < max_retries:
+
+                        logger.warning("AI Provider returned no usable candidates; using rule fallback.")
+                        model_calls.mark_fallback(last_row)
+                        break
+
+                    if resp.status_code == 400 and "enable_thinking" in body:
+                        # Provider/model does not know this parameter: drop it and
+                        # retry once so such models keep working instead of failing.
+                        body.pop("enable_thinking", None)
+                        if last_row is not None:
+                            last_row["thinking_param_fallback"] = True
+                        logger.info("Provider rejected enable_thinking; retrying without it.")
+                        continue
+
+                    if resp.status_code in SCAN_RETRY_STATUSES and retries_left > 0:
+                        retries_left -= 1
                         time.sleep(backoff)
                         backoff *= 2.0
                         continue
-                    else:
-                        logger.warning(f"AI Provider HTTP {resp.status_code}: {resp.text[:120]}")
-                        break
-            except Exception as e:
-                logger.warning(f"AI Provider request failed (attempt {attempt+1}): {e}")
-                if attempt < max_retries:
-                    time.sleep(backoff)
-                    backoff *= 2.0
-                else:
+
+                    logger.warning(f"AI Provider HTTP {resp.status_code}: {resp.text[:120]}")
+                    model_calls.mark_fallback(last_row)
                     break
+            except httpx.TimeoutException:
+                last_row = model_calls.record(
+                    source="propose",
+                    attempt=attempt,
+                    seconds=time.perf_counter() - start_t,
+                    status=None,
+                    timed_out=True,
+                    prompt_chars=prompt_chars,
+                    error="TimeoutError",
+                    thinking_disabled=thinking_off,
+                )
+                logger.warning(
+                    f"AI Provider timed out after {SCAN_CALL_TIMEOUT_SECONDS:.0f}s; "
+                    "using the rule engine instead of resending."
+                )
+                model_calls.mark_fallback(last_row)
+                break
+            except Exception as e:
+                last_row = model_calls.record(
+                    source="propose",
+                    attempt=attempt,
+                    seconds=time.perf_counter() - start_t,
+                    status=None,
+                    timed_out=False,
+                    prompt_chars=prompt_chars,
+                    error=type(e).__name__,
+                    thinking_disabled=thinking_off,
+                )
+                logger.warning(f"AI Provider request failed (attempt {attempt}): {e}")
+                model_calls.mark_fallback(last_row)
+                break
 
         # Explicit fallback to rule engine on failure
         logger.info(f"Falling back to rule-based proposal engine due to API unavailability.")
@@ -539,25 +615,75 @@ class UniversalOpenAIProvider(BaseProvider):
         if do_search and search_supported:
             body["enable_search"] = True
 
+        # Phase 2 analysis calls come from the scanner through the semantic
+        # boundary; assistant answers come from the chat facade. Both answer with
+        # short, bounded output and no chain-of-thought. Other internal calls
+        # (cruise advice, semantic drafts) keep their existing request shape.
+        scan_mode = model_calls.in_scan()
+        answer_mode = model_calls.in_answer()
+        if scan_mode:
+            body["max_tokens"] = SCAN_MAX_TOKENS
+            body["enable_thinking"] = False
+        elif answer_mode:
+            body["max_tokens"] = ANSWER_MAX_TOKENS
+            body["enable_thinking"] = False
+        timeout = (httpx.Timeout(SCAN_CALL_TIMEOUT_SECONDS, connect=10.0) if scan_mode
+                   else httpx.Timeout(120.0, connect=10.0))
+
         def observed_failure(message):
             from backend.pm.health import observe,identity
             observe('model',False,message,identity({'base_url':self.base_url,'api_key':self.api_key,'model':self.model}))
 
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+        call_row = None
+        attempt = 0
+        started = time.perf_counter()
+
         try:
             # Grounded answers (structured sections + evidence map) can take well over
             # 45 s on slower models; allow 120 s for the response, 10 s to connect.
+            # Phase 2 analysis allows SCAN_CALL_TIMEOUT_SECONDS and falls back.
             from backend.pm.answer_timing import current as answer_timing
             stats=answer_timing.get()
             call_started=time.perf_counter()
             if stats is not None:
                 stats['model_calls']+=1
                 stats['prompt_bytes']=max(stats['prompt_bytes'],len(json.dumps(messages,ensure_ascii=False).encode('utf-8')))
-            with httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-                resp = client.post(url, headers=headers, json=body)
-                if resp.status_code == 400 and body.get("enable_search"):
-                    # Retry without enable_search if provider rejects unknown parameter
-                    body.pop("enable_search", None)
+            retries_left = SCAN_MAX_RETRIES if scan_mode else 0
+            retry_backoff = 1.0
+            with httpx.Client(timeout=timeout) as client:
+                while True:
+                    thinking_off = body.get("enable_thinking") is False
+                    attempt += 1
+                    started = time.perf_counter()
                     resp = client.post(url, headers=headers, json=body)
+                    call_row = model_calls.record(
+                        source=model_calls.source_name("chat_completion"),
+                        attempt=attempt,
+                        seconds=time.perf_counter() - started,
+                        status=resp.status_code,
+                        timed_out=False,
+                        prompt_chars=prompt_chars,
+                        thinking_disabled=thinking_off,
+                    )
+                    if resp.status_code == 400 and "enable_thinking" in body:
+                        # Unsupported parameter: retry once without it, never fail.
+                        body.pop("enable_thinking", None)
+                        if call_row is not None:
+                            call_row["thinking_param_fallback"] = True
+                        continue
+                    if resp.status_code == 400 and body.get("enable_search"):
+                        # Retry without enable_search if provider rejects unknown parameter
+                        body.pop("enable_search", None)
+                        if call_row is not None:
+                            call_row["search_param_fallback"] = True
+                        continue
+                    if resp.status_code in SCAN_RETRY_STATUSES and retries_left > 0:
+                        retries_left -= 1
+                        time.sleep(retry_backoff)
+                        retry_backoff *= 2.0
+                        continue
+                    break
 
                 if stats is not None:
                     stats['model_seconds']=round(stats['model_seconds']+time.perf_counter()-call_started,4)
@@ -565,6 +691,7 @@ class UniversalOpenAIProvider(BaseProvider):
                 if resp.status_code == 200:
                     data = resp.json()
                     usage = data.get("usage", {})
+                    model_calls.mark_usage(call_row, usage)
                     tokens = usage.get("total_tokens", 0)
                     settings.cumulative_calls += 1
                     settings.cumulative_tokens += tokens
@@ -572,6 +699,9 @@ class UniversalOpenAIProvider(BaseProvider):
 
                     choice = data.get("choices", [{}])[0]
                     content = choice.get("message", {}).get("content", "")
+                    if call_row is not None:
+                        # "stop" vs "length" tells truncation apart from a finished answer.
+                        call_row["finish_reason"] = str(choice.get("finish_reason") or "")
                     from backend.pm.health import observe,identity
                     observe('model',True,'模型已成功响应',identity({'base_url':self.base_url,'api_key':self.api_key,'model':self.model}))
 
@@ -602,9 +732,27 @@ class UniversalOpenAIProvider(BaseProvider):
                     observed_failure('模型请求失败，HTTP '+str(resp.status_code))
                     return ChatCompletionResult(None, {}, f"HTTP_{resp.status_code}: {resp.text[:100]}", {"used": False})
         except httpx.TimeoutException:
+            model_calls.record(
+                source=model_calls.source_name("chat_completion"),
+                attempt=max(attempt, 1),
+                seconds=time.perf_counter() - started,
+                status=None,
+                timed_out=True,
+                prompt_chars=prompt_chars,
+                error="TimeoutError",
+            )
             observed_failure('模型请求超时，请检查网络或稍后重试')
             return ChatCompletionResult(None, {}, "TIMEOUT", {"used": False})
         except Exception as e:
+            model_calls.record(
+                source=model_calls.source_name("chat_completion"),
+                attempt=max(attempt, 1),
+                seconds=time.perf_counter() - started,
+                status=None,
+                timed_out=False,
+                prompt_chars=prompt_chars,
+                error=type(e).__name__,
+            )
             observed_failure('模型请求未完成，请检查本地连接配置')
             return ChatCompletionResult(None, {}, f"NETWORK_ERROR: {str(e)[:80]}", {"used": False})
 
