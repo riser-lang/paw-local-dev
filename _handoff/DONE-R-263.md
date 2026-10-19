@@ -4,9 +4,9 @@
 
 先测量再改。在旧代码上先加"每次模型调用记一行"的明细（commit `c11e943`，真实模型运行 `39242072868`），量到慢的原因不是网络也不是 Phase 1，而是 Phase 2 那一次 `propose` 调用：**深度思考 token 没关 + 45 秒超时后原样重发同一个请求 + 没有 max_tokens**。同一个文件关掉思考后 completion 从 3541 token 降到 457、reasoning 从 3139 降到 0，耗时从 44.83 秒降到 5.76 秒。
 
-修复后真实模型运行 `39243246729`：4 个样例文件 Phase 2 合计 **23.3 秒**，整个扫描 **25.0 秒**（原 211.9 / 214.7 秒），0 次超时、0 次重试、0 次规则兜底、reasoning token 为 0。240 秒等待上限没有改。
+修复后（commit `efc8d78`，运行 `39243246729`）：4 个样例文件 Phase 2 合计 **23.3 秒**、整个扫描 **25.0 秒**；再跑一次（commit `3eb285c`，运行 `39249795534`）Phase 2 **24.6 秒**、扫描 **27.5 秒**，两次都 0 超时、0 重试、0 规则兜底、reasoning token 为 0。240 秒等待上限没有改。
 
-8 道题 0/8：全部 8 题都在 **15.0 秒客户端读取超时**，请求没有返回，因此没有回答原文和来源。问答调用按任务要求没有动，`timed_answer` 的 15 秒等待也属"不改等待时间"的禁改范围，所以这里停下等审核人决定（详见"需要审核人决定"）。
+8 道题：**0/8**，但原因已经不在扫描。经确认后只把 real-model 验收的回答等待从 15 秒放宽到 60 秒（`timed_answer` 默认仍 15 秒，其它 18 个 e2e 块不变），运行 `39249795534` 的结果是 2 题拿到回答但判定不通过、6 题在 60 秒读取超时。真实模型单次问答就要 9.9–53.5 秒（放行门失败还会重试一次），另有 5 题（X01/X02/X18/X19/X20）问的是星火导师计划/人才盘点，而本验收只创建 4 个青禾样例、从未把这些语料放进工作台，所以这 5 题没有依据可答。8/8 需要审核人在验收口径上做决定，不是扫描性能问题。
 
 ## 改了哪些文件、为什么
 
@@ -17,7 +17,9 @@
 | `backend/runtime_core/planner.py` | `plan_document_impact` 里用 `model_calls.begin_file(display_name)` 包住 `process_source(file_hash, provider)` 和 `provider.propose(...)`，`finally` 复位 | 让每次调用能归属到具体文件 |
 | `backend/pm/semantic.py` | `invoke` 里给 `chat_completion` 调用套 `model_calls.begin_task(name)` | 调用来源能标出 `section_update` / `project_advice` 等 |
 | `backend/runtime_core/scanner.py` | 扫描开始时 `model_calls.reset()`；`get_progress()` 增加 `model_calls`（逐次明细）和 `model_call_summary`（汇总） | 明细要能从进度接口读到，才能进验收报告 |
-| `tests/run_real_model_acceptance.py` | 报告新增 `model_calls`、`model_call_summary`、`phase1_file_timings`、`phase2_file_timings`、`phase2_seconds`、`scan_seconds`；进度行补 `model_calls/timeouts/rule_fallbacks`；结束后把每次调用明细、每文件 Phase 2 耗时打印到日志（不含请求内容与 Key） | 任务要求明细写进 real-model 报告 |
+| `tests/run_real_model_acceptance.py` | 报告新增 `model_calls`、`model_call_summary`、`phase1/phase2_file_timings`、`phase2_seconds`、`scan_seconds`、`answer_timeout_seconds`，每题记录 `timings`；进度行补 `model_calls/timeouts/rule_fallbacks`；结束后打印每次调用明细、每文件 Phase 2 耗时、每题状态与耗时（不含请求内容与 Key） | 任务要求明细写进 real-model 报告；8 题需要逐题证据 |
+| `tests/run_e2e_tests.py` | `timed_answer` 增加可选参数 `timeout`，**默认仍是 15.0 秒** | 真实模型单次回答 9.9–53.5 秒，15 秒量不到任何一题；默认值不变，其它块行为不动 |
+| `tests/run_real_model_acceptance.py` | 仅 real-model 验收传 `timeout=60.0`（`ANSWER_TIMEOUT_SECONDS`） | 同上；240 秒扫描上限、8 道题、判定、产品聊天调用都不动。这一处超出了任务原来的"不改等待时间"，已单独向派单人确认后实施，只影响 real-model 验收这一条测量线 |
 | `tests/unit/test_scan_model_calls.py`（新增） | 11 个用例 | 覆盖超时不重试、关闭思考参数、400 回退、429/503 重试、500 不重试、聊天请求形状不变、遥测脱敏 |
 
 没有改：`tests/paw_case.py`、`tests/paw_verdict.py`、`tests/paw_lint.py`、`tests/required_cases*.json`、`tests/pending/**`；没有改 240 秒上限、8 道题和判定；没有在 mock 或产品代码里写死样例/考题答案；没有删除文件、force push、合并 PR 或打 tag。
@@ -51,7 +53,9 @@
 - 单次超时 45 → **20 秒**（扫描调用）；聊天问答仍是 120 秒。
 - **只对 429/503 重试**（最多 2 次，指数退避）。超时、连接错误、5xx、空结果一律不再重发，直接改规则兜底，并在遥测 `fallback_rule` 和进度行的 `rule_fallbacks` 里如实标注。
 
-## 修复后测量明细（commit `efc8d78`，运行 `39243246729`）
+## 修复后测量明细
+
+运行 `39243246729`（commit `efc8d78`）：
 
 | 文件 | 来源 | 尝试 | 耗时(秒) | HTTP | 超时 | prompt 字符 | prompt/completion/reasoning tokens | 规则兜底 | 关思考 |
 |---|---|---:|---:|---:|---|---:|---|---|---|---|
@@ -60,33 +64,42 @@
 | 青禾试点计划_v2.docx | propose | 1 | 5.87 | 200 | 否 | 696 | 336/533/0 | 否 | 是 |
 | 青禾试点计划_v1.docx | propose | 1 | 4.04 | 200 | 否 | 665 | 314/316/0 | 否 | 是 |
 
-Phase 2 每文件：`青禾试点周报.pptx` 6.8 秒、`青禾试点详情.md` 6.2 秒、`青禾试点计划_v2.docx` 6.1 秒、`青禾试点计划_v1.docx` 4.2 秒，合计 **23.3 秒**；扫描全部 **25.0 秒**（上限仍是 240 秒）。汇总：`calls=4 timeouts=0 failed=0 rule_fallbacks=0 model_seconds=22.3 reasoning_tokens=0`。
+Phase 2 每文件：`青禾试点周报.pptx` 6.8 秒、`青禾试点详情.md` 6.2 秒、`青禾试点计划_v2.docx` 6.1 秒、`青禾试点计划_v1.docx` 4.2 秒，合计 **23.3 秒**；扫描 **25.0 秒**。汇总：`calls=4 timeouts=0 failed=0 rule_fallbacks=0 model_seconds=22.3 reasoning_tokens=0`。
+
+运行 `39249795534`（commit `3eb285c`，回答等待放宽到 60 秒后复跑）复核：Phase 2 每文件 7.0 / 6.0 / 6.6 / 5.0 秒，合计 **24.6 秒**；扫描 **27.5 秒**；`calls=4 timeouts=0 failed=0 rule_fallbacks=0 reasoning_tokens=0`。两次独立运行都在 30 秒内，距 240 秒上限有很大余量。
 
 ## 8 道题
 
+运行 `39249795534`（`answer_timeout_seconds=60.0`，报告里逐题记录了 `timings`）：
+
 | ID | 问题 | 结果 | 问题/原因 | 回答原文 | 来源 |
 |---|---|---|---|---|---|
-| PM-U1-03 | 青禾试点计划目标是多少？ | 未能运行 | `ReadTimeout`：15.0 秒客户端读取超时，请求未返回 | 无 | 无 |
+| PM-U1-03 | 青禾试点计划目标是多少？ | 未能运行 | `ReadTimeout`：60 秒客户端读取超时 | 无 | 无 |
 | PM-U4-01 | 青禾试点后续最好如何优化？ | 未能运行 | 同上 | 无 | 无 |
-| PM-S1-03 | 青禾试点详情.md 里写了什么？ | 未能运行 | 同上 | 无 | 无 |
-| X01 | 星火导师计划第一期要培养多少名导师？ | 未能运行 | 同上 | 无 | 无 |
+| PM-S1-03 | 青禾试点详情.md 里写了什么？ | FAIL | 10.03 秒返回（1 次模型调用 9.89 秒）。判定要求答案逐字包含「本地扫描正文样本：青禾试点已完成首轮访谈，下一步整理访谈纪要。」，模型把原文改写成「青禾试点已完成首轮访谈，下一步整理访谈纪要。」（前缀被挪到叙述里、还加了 `CONFIRMED_KNOWLEDGE:` 标记），逐字子串不命中 | 「结论/答案 青禾试点详情.md 目前在工作台中可查到的正文内容是：「青禾试点已完成首轮访谈，下一步整理访谈纪要。」 即该文件记录了两条信息——首轮访谈已完成，以及下一步动作是整理访谈纪要。…」（共 610 字） | 青禾试点详情.md（资料证据，非正式结论） |
+| X01 | 星火导师计划第一期要培养多少名导师？ | 未能运行 | `ReadTimeout`：60 秒客户端读取超时 | 无 | 无 |
 | X02 | 星火导师计划的导师认证通过率目标是多少？ | 未能运行 | 同上 | 无 | 无 |
-| X18 | 星火导师计划最早的 v1 方案里原定培养多少名导师？ | 未能运行 | 同上 | 无 | 无 |
-| X19 | 星火导师计划后续最好如何优化？ | 未能运行 | 同上 | 无 | 无 |
+| X18 | 星火导师计划最早的 v1 方案里原定培养多少名导师？ | FAIL | 55.47 秒返回（2 次模型调用合计 53.54 秒，放行门重试了一次），模型拒答；本次验收只扫描了 4 个青禾样例，工作台里没有星火语料 | 「当前没有足够的已确认工作台依据来回答这个问题。请先明确项目或补充可核对的信息。」（39 字） | 青禾试点计划_v1.docx、青禾试点计划_v2.docx、青禾试点详情.md、青禾试点周报.pptx（资料证据，非正式结论） |
+| X19 | 星火导师计划后续最好如何优化？ | 未能运行 | `ReadTimeout`：60 秒客户端读取超时 | 无 | 无 |
 | X20 | 人才盘点下一步应该做什么？ | 未能运行 | 同上 | 无 | 无 |
 
-通过数 **0/8**（8 题都在 15.0 秒客户端读取超时，判题逻辑没有执行，不代表判题失败）。两次运行的日志里每题都是 `elapsed_seconds=15.00xx timings=no response / request failed`。
+通过数 **0/8**（2 题有回答但未达判定，6 题 60 秒读取超时，判题逻辑没有执行的部分不算判题失败）。
 
-对照证据：运行 A 里 `PM-S1-03` 是唯一在 15 秒内返回的题，`timings={'model_calls': 1, 'model_seconds': 9.3483, 'prompt_bytes': 6173, 'total_seconds': 9.4645}`。也就是真实模型单次问答本身就要 9–15 秒以上，`tests/run_e2e_tests.py:1066` 的 `timed_answer` 固定 `timeout=15.0`，用这个上限测不到真实模型的问答。
+从这次运行读出的三条（都不是扫描性能问题）：
+
+1. **回答链路慢**：单次回答 9.89 秒（PM-S1-03）、两次调用 53.54 秒（X18），6 题在 60 秒仍被截断。聊天调用按任务要求没有动（思考仍开着、120 秒内部超时），放行门失败还会再调一次模型。
+2. **5 题在本验收里没有语料**：X01/X02/X18/X19/X20 问的是星火导师计划/人才盘点，题目要求引用 `星火导师计划_方案_v2.docx` 等（`tests/pending/exam/questions.json`），语料在 `tests/fixtures/exam/`，但 `tests/run_real_model_acceptance.py` 从 `4a1a5f3` 起只创建 4 个青禾样例，工作台里没有这些语料。X18 的回答来源只有 4 个青禾文件，就是证据：即使等待再放宽，这 5 题也无依据可答。
+3. **逐字判定对真实模型偏严**：PM-S1-03 的回答内容正确、来源正确，但把原文引文缩短了 9 个字符，`DETAIL_SENTENCE in text` 不命中。判定按要求没有改。
 
 ## 需要审核人决定
 
-问答链路的等待和思考不在本次授权内（"聊天问答的调用不要动"、"不改等待时间"），所以我停在这里，请审核人二选一：
+8/8 不是扫描性能问题，需要审核人在验收口径上定，我没有自行改：
 
-- (a) 允许把验收侧 `timed_answer` 的客户端等待从 15 秒提到 60 秒左右（`tests/run_e2e_tests.py:1066`，只影响测量，不改判题）；
-- (b) 允许问答调用也关掉深度思考（属聊天调用；同一模型扫描路径关掉后单次 4–7 秒）。
+- (a) **补语料**：让 real-model 验收把 `tests/fixtures/exam/` 的语料（星火导师计划 v1/v2、10 月周报，可能还有人才盘点）也放进扫描目录并走正常审阅，这样 X01/X02/X18/X19/X20 才有依据；按现在的单文件 5–7 秒估算，7–8 个文件仍远低于 240 秒。
+- (b) **再放宽回答等待**：当前 60 秒，6 题被截断；X18 已用 55.47 秒，可能需要 120–180 秒。
+- (c) **PM-S1-03 的逐字要求**：要么接受"内容与来源正确但引文被缩短"的判定方式，要么保留逐字要求并把该题视为模型改写问题。
 
-任一放开后重跑 `real-model.yml` 就能拿到 8 题的真实结果；扫描侧已经不再是瓶颈（25.0 秒）。
+这三项都在"不改题目和判定""聊天问答的调用不要动"的护栏里，需要审核人明确后才能动。
 
 ## 单元测试与本地检查
 
@@ -96,20 +109,22 @@ Phase 2 每文件：`青禾试点周报.pptx` 6.8 秒、`青禾试点详情.md` 
 - `python tests/paw_lint.py`：lint clean；`python -m pytest tests/unit -q`：188 passed。
 - 本地还用 freeform mock 起了一次完整扫描（`run.py` + `scripts/mock_openai_server.py`）：4 文件 Phase 2 共 4 次 `propose`、9.1 秒、每次 `thinking_disabled=true`，进度接口能读到明细。
 
-## CI（均为完整流水线，GREEN）
+## CI
 
 - 测量提交 `c11e943`：push unit `39242029052` GREEN、PR unit `39242034752` GREEN。
 - 修复提交 `efc8d78`：push unit `39242836231` GREEN；PR unit `39242842264` GREEN；push verification pipeline `39242836329` GREEN；PR verification pipeline `39242842129` GREEN（含 mock freeform 的 Real Model Acceptance Smoke）。
+- 回答等待提交 `3eb285c`：push unit `39249758881` GREEN；PR unit `39249763441` GREEN；push verification pipeline `39249758910` GREEN；PR verification pipeline `39249763466` GREEN（**第 2 次尝试**：第 1 次因 PM12 的 PM-U3-02 `missing_fields_have_inputs` 偶发失败，按规则整条流水线重跑后 GREEN）。
 - 本 DONE 是纯文档提交，推送后按同一套流水线单独运行。
 
 ## 运行编号
 
 - 真实模型测量（旧代码）：`39242072868`，commit `c11e94336a8623e2f2ef8c8eea5dcadee132eb33`。
 - 真实模型验证（修复后）：`39243246729`，commit `efc8d788d06b3334286263abdd884860e115e419`。
-- 两次报告都从 artifact `real-model-report` 下载核对（`.r263-runA` / `.r263-runB`，未提交）。
+- 真实模型验证（回答等待 60 秒、含 8 题）：`39249795534`，commit `3eb285c303a8bbb651224c8ab5e819731f832a83`。
+- 三次报告都从 artifact `real-model-report` 下载核对（`.r263-runA` / `.r263-runB` / `.r263-runC`，未提交）。
 
 ## 停止点
 
-扫描目标已达成（Phase 2 23.3 秒、整次扫描 25.0 秒，240 秒上限未动），8 道题卡在验收侧 15 秒回答等待上，改它或改问答调用都超出本次规则，故停下等审核人。
+扫描目标已达成（两次独立运行 25.0 秒 / 27.5 秒，Phase 2 23.3 / 24.6 秒，240 秒上限未动），8 道题卡在回答链路耗时与验收语料缺口的组合上，两项都超出本次授权，故停下等审核人。
 
-执行者进度：R-263，PR #15；push CI 编号 39242836329 结果 GREEN、PR CI 编号 39242842129 结果 GREEN；真实模型运行编号 39243246729；扫描用时 25.0 秒（Phase 2 23.3 秒）；8 题通过数 0/8；停下原因：8 题全部在 15.0 秒客户端读取超时（问答等待上限与问答思考不在本次可改范围），等审核人决定是否放开来测量。
+执行者进度：R-263，PR #15；push CI 编号 39249758910 结果 GREEN、PR CI 编号 39249763466 结果 GREEN（第 2 次尝试，首次 PM12 偶发失败后整条重跑）；真实模型运行编号 39249795534；扫描用时 27.5 秒（Phase 2 24.6 秒）；8 题通过数 0/8（2 题有回答未通过、6 题 60 秒读取超时、其中 5 题本验收无对应语料）；停下原因：回答链路单次 9.9–53.5 秒仍在 60 秒被截断，且 5 题缺语料，等审核人定验收口径。
