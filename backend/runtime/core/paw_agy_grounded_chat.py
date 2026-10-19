@@ -493,6 +493,18 @@ def _retrieve_knowledge(
             else:
                 authority = f"provisional:{status}"
             sources = [f"{s.get('title')}({s.get('wps_document_id')})" for s in (detail.get("sources") or [])]
+            if not sources:
+                # R-267: a knowledge page created from a scanned document records
+                # the creation candidate's source hash; resolve it to the file name
+                # so an answer citing this page can also name the original document.
+                try:
+                    from contextlib import closing
+                    from backend.pm import evidence_sources
+                    from backend.workspace_api import db as workspace_db
+                    with closing(workspace_db.connect()) as _conn:
+                        sources = evidence_sources.knowledge_source_files(_conn, kid)
+                except Exception:  # noqa: BLE001 - retrieval still works without it
+                    sources = []
             items.append(
                 _make_evidence(
                     layer="KNOWLEDGE",

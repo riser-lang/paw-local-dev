@@ -48,6 +48,12 @@ def connect_readonly(db_path: str = PRODUCTION_DB) -> sqlite3.Connection:
     return conn
 
 
+def _knowledge_source_files(conn: sqlite3.Connection, knowledge_id: str) -> list[str]:
+    """R-267: the document(s) a knowledge page was created from (never a guess)."""
+    from backend.pm import evidence_sources
+    return evidence_sources.knowledge_source_files(conn, knowledge_id)
+
+
 def _s(v: Any) -> str:
     return "" if v is None else str(v)
 
@@ -176,6 +182,9 @@ def _layer_knowledge(conn: sqlite3.Connection, pid: str,
             extra={"knowledge_status": status,
                    "confirmed_revision_no": p.get("confirmed_revision_no"),
                    "revision_no": rev[0]["revision_no"] if rev else None,
+                   # R-267: the document this page was created from, so an answer
+                   # citing the page can also name the original file.
+                   "source_refs": _knowledge_source_files(conn, p["id"]),
                    "authority_note": ("body_from_confirmed_revision"
                                       if rev else "no_confirmed_revision_draft_only")}))
     return out
@@ -484,7 +493,8 @@ def build_global_workspace_context_pack(
             authority=auth,
             temporal_state="current" if status == "current" else "draft",
             source_ref="knowledge_page/%s" % p["id"],
-            extra={"knowledge_status": status, "scope": "未限定项目"}
+            extra={"knowledge_status": status, "scope": "未限定项目",
+                   "source_refs": _knowledge_source_files(conn, p["id"])}
         ))
 
     # 2. Global Active Todos

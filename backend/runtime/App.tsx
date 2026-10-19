@@ -809,7 +809,7 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
 function ReviewSection({ title, children, className = "" }: {title: string; children: ReactNode; className?: string}) { return <section className={`review-section ${className}`}><h3>{title}</h3>{children}</section>; }
 
 function AgnesPage() {
-  type AgnesChatMessage = { id: string; role: "user" | "agy"; text: string; failed?: boolean };
+  type AgnesChatMessage = { id: string; role: "user" | "agy"; text: string; failed?: boolean; sources?: string[] };
   type AgnesChatSummary = { session_id: string; title: string; updated_at: string; message_count: number };
   const LAST_SESSION_KEY = "agnes.lastSessionId";
   const [messages, setMessages] = useState<AgnesChatMessage[]>([]);
@@ -878,7 +878,10 @@ function AgnesPage() {
       // The same client id is reused on retry so the server updates the existing
       // user row instead of storing a duplicate.
       const response = await client.sendAgnesMessage(sid, value, id);
-      setMessages(prev => [...prev.map(msg => msg.id === id ? { ...msg, failed: false } : msg), { id: crypto.randomUUID(), role: "agy", text: response.response }]);
+      // R-267: the answer carries the documents behind each cited item, so the
+      // "查看来源" panel can show the original file next to the knowledge page.
+      const answerSources = Array.isArray((response as { sources?: unknown }).sources) ? (response as { sources: string[] }).sources : [];
+      setMessages(prev => [...prev.map(msg => msg.id === id ? { ...msg, failed: false } : msg), { id: crypto.randomUUID(), role: "agy", text: response.response, sources: answerSources }]);
       await refreshChats();
     } catch (e) {
       setMessages(prev => prev.map(msg => msg.id === id ? { ...msg, failed: true } : msg));
@@ -901,7 +904,7 @@ function AgnesPage() {
     <div className="agy-conversation" aria-live="polite">
       {restoring && <div className="agy-empty"><p>正在载入对话…</p></div>}
       {!restoring && !messages.length && !busy && <div className="agy-empty"><p>可以试试：</p><div>{["今天有什么需要处理？", "我有哪些正在进行的项目？", "最近记录了什么？", "有哪些待确认内容？"].map(prompt => <button className="agy-suggestion" key={prompt} onClick={() => void send(prompt)}>{prompt}</button>)}</div></div>}
-      {messages.map(msg => <div className={`agy-bubble-row ${msg.role === "user" ? "user" : "agy"}`} key={msg.id}><div className={`agy-bubble ${msg.failed ? "failed" : ""}`}>{msg.role === "user" ? <p>{msg.text}</p> : <MessageText text={msg.text} />}{msg.failed && <button className="text-button" onClick={() => void send(msg.text, msg.id)}>重试</button>}</div></div>)}
+      {messages.map(msg => <div className={`agy-bubble-row ${msg.role === "user" ? "user" : "agy"}`} key={msg.id}><div className={`agy-bubble ${msg.failed ? "failed" : ""}`}>{msg.role === "user" ? <p>{msg.text}</p> : <MessageText text={msg.text} />}{msg.role !== "user" && (msg.sources?.length ?? 0) > 0 && <details className="agy-sources"><summary>查看来源</summary><ul>{msg.sources!.map((source, index) => <li key={`${msg.id}-${index}`}>{source}</li>)}</ul></details>}{msg.failed && <button className="text-button" onClick={() => void send(msg.text, msg.id)}>重试</button>}</div></div>)}
       {busy && <div className="agy-bubble-row agy"><div className="agy-bubble agy-thinking">Agy 正在分析工作台数据…</div></div>}
       {error && <div className="state-message state-message-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setError("")}>关闭</button></div>}
     </div>
