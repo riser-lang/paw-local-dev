@@ -71,4 +71,12 @@
 - 诊断步骤样例验证：同哈希映射到 `CASE-A / one.png / PMXX` 与 `CASE-B / two.png / PMXX`，summary 正确列出两个来源；这只是临时虚构输入，不是仓库验收用例。
 - push 和 PR 云端流水线尚待本轮推送后运行。
 
-执行者进度：R-266 诊断改造待云端验证，PR 未创建，push/PR 运行编号待定；已确认候选为多个 PM 用例共用 `/app/pm/today`，确切根因仍待实际重复来源映射。
+## 云端验证（PR #17）
+
+- push 运行 `39277040971` attempt 1：RED。Verdict summary 为 91 项必需用例中 PASS 90、FAIL 1、NOT RUN 0；`PM-U4-01` 因异常失败（PM12 报告指向模型请求 ReadTimeout）。摘要的重复截图诊断显示：当前可用报告里没有重复截图哈希。
+- 已对 `39277040971` 发起整条流水线重跑，GitHub API 确认 attempt 2 已创建；截至本报告更新时，attempt 2 的 21 个 job 全部 queued，未分配 runner，无法获得 GREEN/RED 结论。仓库同期其他分支的 Actions jobs 也处于 queued。未单独重跑任何 job。
+- PR 运行 `39277214124`：GREEN。Verdict summary 为 91/91 必需用例 PASS、0 FAIL、0 NOT RUN；诊断步骤显示当前可用报告里没有重复截图哈希。`NC-PM-S1` 等负对照按规则显示预期失败，不计入 91 个必需用例。
+- PR summary artifact `pipeline-verdict-summary` 中，Duplicate screenshot sources 一节为 “No duplicate screenshot hashes were found in the available report files.”；push attempt 1 的同一诊断也没有找到重复哈希。
+- 因 push 的整条重跑仍排队，本轮 push+PR 不能记为双 GREEN。PR #17 保持打开，未合并、未打 tag。
+
+执行者进度：PR #17 的 PR 检查 GREEN（运行 39277214124）；push 首轮 RED（运行 39277040971 attempt 1），整条 attempt 2 仍 queued；PR 检查满足要求，push GREEN 尚未取得。
