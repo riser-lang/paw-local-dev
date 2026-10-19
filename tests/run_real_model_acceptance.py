@@ -207,6 +207,11 @@ def ask_questions(items: list, exam_questions: dict) -> list:
             item["answer"] = str(answer.get("response") or "")
             item["sources"] = answer.get("sources") or answer.get("evidence") or answer.get("source_refs") or []
             item["timings"] = answer.get("timings") or {}
+            # Diagnostics for a refusal: which gate rejected the answer, if any.
+            item["answer_type"] = answer.get("answer_type")
+            item["answer_status"] = answer.get("status")
+            item["grounding"] = answer.get("grounding") or {}
+            item["source_files"] = answer.get("source_files") or []
             item["model_calls"] = [
                 {**row, "question_id": ident, "question": question}
                 for row in (answer.get("model_calls") or [])
