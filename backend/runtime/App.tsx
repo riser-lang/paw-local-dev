@@ -79,6 +79,14 @@ function humanSource(value?: string | null) { return mappedLabel(value, { web: "
 function humanProvider(value?: string | null) { return mappedLabel(value, { workbuddy: "WorkBuddy", wps_mcp: "WPS 只读适配器", unknown: "未识别适配器" }, "资料读取适配器"); }
 function humanSourceLabel(value?: string | null) { return !value || /unknown source/i.test(value) ? "原始工作记录" : value; }
 function humanContentKey(value: string) { return knowledgeLabels[value] || mappedLabel(value, {}, "补充信息"); }
+// R-268: a data/metric proposal must stay reachable in the review list even when
+// its stored candidate_type is "fact"; both name and target type are read here.
+function proposalTargetTypeOf(value: unknown) {
+  const proposal = safeJson(value);
+  const original = safeJson(proposal.original_payload ?? proposal);
+  return String(original.target_type ?? proposal.target_type ?? "");
+}
+function isDataTargetProposal(value: unknown) { return ["data", "metric"].includes(proposalTargetTypeOf(value)); }
 function readableContent(value: unknown): string {
   if (value === null || value === undefined || value === "") return "未记录";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
@@ -728,7 +736,9 @@ function ReviewPage({ navigate, backTo, initialCandidateId }: {navigate: (path: 
   const reload = () => { list.retry(); if (selected) detail.retry(); };
   const visible = (list.data ?? []).filter(item => {
     if (status === "pending" && dismissed[item.candidateId]) return false;
-    if (status === "pending" && item.effectiveReviewState && item.effectiveReviewState !== "NEEDS_REVIEW") return false;
+    // R-268: the shipped bundle keeps a data/metric card visible even when its
+    // effective state is not NEEDS_REVIEW, so the source does the same.
+    if (status === "pending" && item.effectiveReviewState && item.effectiveReviewState !== "NEEDS_REVIEW" && !isDataTargetProposal(item.proposedChange)) return false;
     return true;
   });
   const markSubmitted = (candidateId: string) => {
@@ -747,7 +757,7 @@ function ReviewDetailView({ detail, onDone, onSubmitted, submittedLocally = fals
   const conflict = detail.candidateType === "conflict";
   const proposal = safeJson(detail.proposedChange);
   const originalProposal = safeJson(proposal.original_payload ?? proposal);
-  const proposalTargetType = String(originalProposal.target_type ?? proposal.target_type ?? "");
+  const proposalTargetType = proposalTargetTypeOf(detail.proposedChange);
   const proposalPayload = safeJson(proposal.reviewed_payload ?? originalProposal.payload ?? originalProposal);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
