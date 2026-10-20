@@ -185,7 +185,7 @@ def stop_paw(proc: Optional[subprocess.Popen]):
                 pass
 
 
-def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str = "", ready_texts: tuple = ()) -> Tuple[str, str, Path]:
+def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str = "", ready_texts: tuple = (), ready_any_texts: tuple = ()) -> Tuple[str, str, Path]:
     """Uses Playwright to render page, retrieve final URL and inner body text, and capture screenshot."""
     out_path = SCREENSHOTS_DIR / output_png_name
     final_url = page_url
@@ -207,7 +207,9 @@ def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str =
                 logger.info('Page readiness %s initial_matches=%s/%s project_response_statuses=%s', case_id, sum(text in first_text for text in ready_texts), len(ready_texts), project_responses)
                 page.wait_for_function('(texts) => texts.every(text => document.body.innerText.includes(text))', arg=list(ready_texts), timeout=12000)
                 logger.info('Page readiness %s condition_seconds=%.4f project_response_statuses=%s', case_id, time.monotonic()-started, project_responses)
-            else:
+            if ready_any_texts:
+                page.wait_for_function('(texts) => texts.some(text => document.body.innerText.includes(text))', arg=list(ready_any_texts), timeout=12000)
+            if not ready_texts and not ready_any_texts:
                 page.wait_for_function("""() => {
                     const root = document.querySelector('#root');
                     return !!root && root.innerText.trim().length > 20;
@@ -402,7 +404,7 @@ def run_b1(report: Report, installer_exe: Path):
     with report.case("B1-02", "从快捷方式启动后 /app 返回 200，工作台页面截图") as c:
         c.fresh_install(clean_and_record, lambda: silent_install(installer_exe)[2], INSTALL_DIR)
         proc = start_paw(8800)
-        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app", "screen_B1_02.png", "B1-02")
+        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app", "screen_B1_02.png", "B1-02", ready_any_texts=("PAW", "个人 AI 工作台", "工作台", "今日", "项目", "知识", "设置"))
         is_rendered = any(k in body_text for k in ["PAW", "个人 AI 工作台", "工作台", "今日", "项目", "知识", "设置"])
         c.check("workbench_page_rendered", is_rendered, True)
         c.screenshot(shot, "http://127.0.0.1:8800/app")
@@ -427,7 +429,7 @@ def run_b2(report: Report, installer_exe: Path):
         proc = start_paw(8800)
         sett = httpx.get("http://127.0.0.1:8800/v1/local/settings").json()
         c.check("key_initially_empty", bool(sett.get("key_mask")), False)
-        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app?open_paw_console=settings", "screen_B2_01.png", "B2-01")
+        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app?open_paw_console=settings", "screen_B2_01.png", "B2-01", ready_texts=("API Key",), ready_any_texts=("系统与模型", "设置", "PAW 本地控制中心"))
         c.check("page_text_contains_api_key", "API Key" in body_text, True)
         c.check("page_text_contains_settings_entry", any(k in body_text for k in ["系统与模型", "设置", "PAW 本地控制中心"]), True)
         c.screenshot(shot, "http://127.0.0.1:8800/app?open_paw_console=settings")
@@ -944,7 +946,7 @@ def run_b5(report: Report, installer_exe: Path):
 
         c.check("explainer_fields_filled", filled, True)
 
-        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app/projects/proj-01", "screen_B5_02.png", "B5-02")
+        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/app/projects/proj-01", "screen_B5_02.png", "B5-02", ready_texts=tuple(str(explainer[f]) for f in fields), ready_any_texts=("30秒", "30 秒", "快速了解"))
         c.check("explainer_title_rendered", any(k in body_text for k in ["30秒", "30 秒", "快速了解"]), True)
         c.check("explainer_fields_rendered_in_page", all(explainer[f] in body_text for f in fields), True)
         c.screenshot(shot, "http://127.0.0.1:8800/app/projects/proj-01")
@@ -959,7 +961,7 @@ def run_b5(report: Report, installer_exe: Path):
         conn.commit()
         conn.close()
 
-        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/projects/proj-01", "screen_B5_03.png", "B5-03")
+        final_url, body_text, shot = inspect_and_capture_page("http://127.0.0.1:8800/projects/proj-01", "screen_B5_03.png", "B5-03", ready_texts=("智能认知治理工程",))
         c.check("direct_project_url_final_path", "/app/projects/proj-01" in final_url, True)
         c.check("direct_project_url_contains_project_name", "智能认知治理工程" in body_text, True)
         c.screenshot(shot, "http://127.0.0.1:8800/app/projects/proj-01")

@@ -167,7 +167,48 @@ TimeoutError: Scanner did not reach completed within 40s (last state=phase2_anal
 - `python tests/paw_lint.py`：`lint clean`。
 - `python -m pytest tests/unit -q`：`219 passed in 51.79s`。
 - `compileall` 对涉及的测试模块通过；`git diff --check` 通过；在测试目录中没有剩余 `networkidle` 或 `wait_for_timeout` 调用。
-- 本次修复尚待提交并触发 push/PR 首次流水线；若首次运行任一 RED，将如实记录失败 case 和原文并停下，不重跑来换绿。
-- 本地分支已 rebase 到 `6d08f1ea`，无冲突；远端 `codex/R-266` 仍指向 rebase 前的 `fcbf2cd`。推送时将使用 `--force-with-lease`，不改写远端以外的分支。
+- 分支已 rebase 到 `6d08f1ea`，无冲突；更新远端时使用精确 lease `--force-with-lease=refs/heads/codex/R-266:fcbf2cd21ecfa15e661e939025fbe4fced9b2e66`。
+- push 首次运行 `39357377944`：RED，91 项中 PASS 90、FAIL 1、NOT RUN 0；`PM-C1-02`、`PM-A1-01`、`PM-A2-01`、`PM-A4-01`、`PM-UP-01` 均 PASS。
+- PR 首次运行 `39357382728`：RED，91 项中 PASS 89、FAIL 2、NOT RUN 0；以上五个扫描/清理修复用例也均 PASS。
+- 两条流水线只运行 attempt 1；未重跑。PR #17 保持打开，未合并、未打 tag。
 
-执行者进度：PR #17 修复待云端首次验证；push/PR 运行编号待定。
+## 首次 CI 的剩余失败（按要求停下）
+
+- push `39357377944` 与 PR `39357382728` 都失败于 `B5-03`，failed check 为 `direct_project_url_contains_project_name`。报告异常原文：
+
+```text
+Traceback (most recent call last):
+  File "D:\\a\\paw-local-dev\\paw-local-dev\\tests\\run_e2e_tests.py", line 964, in run_b5
+    c.check("direct_project_url_contains_project_name", "������֪��������" in body_text, True)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\\a\\paw-local-dev\\paw-local-dev\\tests\\paw_case.py", line 73, in check
+    raise CheckFailed(name)
+tests.paw_case.CheckFailed: direct_project_url_contains_project_name
+```
+
+  根因证据：`inspect_and_capture_page()` 现在等待 `#root` 可见且根节点文字长度超过 20；这没有等待 B5-03 要证明的项目名称。测试随后读取 `body_text` 并检查名称，页面内容尚未到位时该 check 失败。下一步若继续，应为 B5-03 等待精确项目名称或相应项目接口响应；本轮按“首轮仍失败就写明并停下”不再改动。
+- PR `39357382728` 另有 `PM-U3-01`，failed check 为 `no_internal_terms_visible`，报告异常原文：
+
+```text
+Traceback (most recent call last):
+  File "D:\\a\\paw-local-dev\\paw-local-dev\\tests\\run_pm_c12_tests.py", line 406, in run_c12
+    c.check("no_internal_terms_visible", no_internal_terms_visible(case), True)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\\a\\paw-local-dev\\paw-local-dev\\tests\\paw_case.py", line 73, in check
+    raise CheckFailed(name)
+tests.paw_case.CheckFailed: no_internal_terms_visible
+```
+
+  这是 check 失败而非捕获到的异常；报告没有保存是哪一页的匹配文本。该 case 使用 `page_text()` 在 body 文本长度超过 20 后立即采样，当前证据不足以判定是否过早采样。没有放宽检查，也没有重跑。
+- push summary：`PASS 90 | FAIL 1 | NOT RUN 0`，唯一必需用例失败为 `B5-03`。
+- PR summary：`PASS 89 | FAIL 2 | NOT RUN 0`，失败用例为 `B5-03`、`PM-U3-01`。
+
+执行者进度：PR #17，push 首次运行 39357377944 RED，PR 首次运行 39357382728 RED；PM-C1-02 与 PM-A1-01 修复项通过，因 B5-03 和 PM-U3-01 失败已按要求停下，未重跑。
+
+## R-266 后续修订（基于 main 3fb84fb）
+
+- 将本地 `DONE-R-266.md` 修改保留后，分支 rebase 到 `origin/main` 的 `3fb84fb`；无冲突。远端 `codex/R-266` rebase 前 SHA 为 `7da3d813cf1ec70387cf102873850fd58f0f903b`，推送时使用对应的精确 `--force-with-lease`。
+- B5-03 现在等待页面文字中精确出现“智能认知治理工程”后再读取页面；B1-02、B2-01、B5-02 所有用于判定的页面文字也各自等待该用例断言内容（含备选标题）。其他只截图、没有读取页面文字作判定的用例不增加无关等待。
+- PM-U3-01 在采样前分别等待审核卡片、待办标题、项目档案 API 200 响应及项目主标题；助手回答使用请求完成的回答正文。命中内部词时保留每页 URL、命中词及其前后最多 40 个字符，并将诊断序列化进失败用例的异常报告；检查规则与词表不变。
+- 本地检查：`python tests/paw_lint.py` 为 `lint clean`；`python -m pytest tests/unit -q` 为 `227 passed in 72.49s`；`git diff --check` 通过。
+- 云端 push/PR 首次运行编号及结果待补；按本轮指示，任何一侧首轮 RED 都将记录失败用例和原文后停止，不重跑。
