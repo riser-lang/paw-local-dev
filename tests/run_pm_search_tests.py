@@ -103,7 +103,8 @@ def run_c11(report, installer):
                 browser = p.chromium.launch(headless=False)
                 try:
                     page = browser.new_page(viewport={"width": 1440, "height": 900})
-                    page.goto(BASE + "/app/files", wait_until="networkidle")
+                    page.goto(BASE + "/app/files", wait_until="domcontentloaded")
+                    page.get_by_text(FILENAME, exact=True).wait_for(state="visible")
                     initial_rendered = page.locator(".source-grid").inner_text()
                     c.check("full_filename_listed_rendered", FILENAME in initial_rendered, True)
                     search = page.get_by_placeholder("搜索文件名或分类", exact=True)
@@ -127,7 +128,7 @@ def run_c11(report, installer):
                 browser = p.chromium.launch(headless=False)
                 try:
                     page = browser.new_page(viewport={"width": 1440, "height": 900})
-                    page.goto(BASE + "/app/knowledge", wait_until="networkidle")
+                    page.goto(BASE + "/app/knowledge", wait_until="domcontentloaded")
                     search = page.get_by_role("searchbox", name="搜索正式知识")
                     search.fill(query)
                     search.press("Enter")

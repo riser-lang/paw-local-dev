@@ -221,7 +221,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: report-${{ matrix.block }}
+          name: report-${{ matrix.block }}-attempt-${{ github.run_attempt }}
           path: reports/report_${{ matrix.block }}.json
           retention-days: 5
 
@@ -238,7 +238,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screens-${{ matrix.block }}
+          name: screens-${{ matrix.block }}-attempt-${{ github.run_attempt }}
           path: screenshots/
           retention-days: 5
 
@@ -383,7 +383,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: report-negative-control
+          name: report-negative-control-attempt-${{ github.run_attempt }}
           path: reports/
           retention-days: 5
 
@@ -391,7 +391,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screens-negative-control
+          name: screens-negative-control-attempt-${{ github.run_attempt }}
           path: screenshots/
           retention-days: 5
 
@@ -416,7 +416,7 @@ jobs:
       - name: Download All Block Reports
         uses: actions/download-artifact@v4
         with:
-          pattern: report-*
+          pattern: report-*-attempt-${{ github.run_attempt }}
           path: all_reports
           merge-multiple: true
 
@@ -426,6 +426,48 @@ jobs:
           chcp 65001
           Get-ChildItem all_reports -Recurse
           python tests/paw_verdict.py all_reports ${{ github.sha }} summary.md
+
+      - name: Diagnose Reused Screenshot Sources
+        if: always()
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from collections import defaultdict
+          from pathlib import Path
+
+          reports = Path("all_reports")
+          sources = defaultdict(list)
+          for path in sorted(reports.rglob("*.json")) if reports.exists() else []:
+              try:
+                  report = json.loads(path.read_text(encoding="utf-8-sig"))
+              except Exception:
+                  continue
+              block = str(report.get("block") or "unknown")
+              for case in report.get("cases", []):
+                  case_id = str(case.get("id") or "unknown")
+                  for shot in case.get("screens", []):
+                      digest = str(shot.get("sha256") or "")
+                      if digest:
+                          sources[digest].append((case_id, str(shot.get("file") or "unknown"), block))
+
+          duplicates = [(digest, rows) for digest, rows in sorted(sources.items()) if len(rows) > 1]
+          lines = ["## Duplicate screenshot sources", ""]
+          if duplicates:
+              lines.extend(f"- `{digest[:12]}` → " + "; ".join(
+                  f"case `{case_id}`, file `{filename}`, block `{block}`"
+                  for case_id, filename, block in rows
+              ) for digest, rows in duplicates)
+          else:
+              lines.append("No duplicate screenshot hashes were found in the available report files.")
+
+          summary = Path("summary.md")
+          if summary.exists():
+              with summary.open("a", encoding="utf-8") as stream:
+                  stream.write("\n\n" + "\n".join(lines) + "\n")
+          print("\n".join(lines))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { Write-Warning "Screenshot diagnostics failed; reviewer verdict remains unchanged." }
 
       - name: Publish Reviewer Verdict to Job Summary
         if: always()

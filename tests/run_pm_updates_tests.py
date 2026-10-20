@@ -38,7 +38,7 @@ def capture_conflicts(c,pid,width):
         browser=p.chromium.launch(headless=False)
         try:
             page=browser.new_page(viewport={'width':width,'height':900})
-            page.goto(url,wait_until='networkidle')
+            page.goto(url,wait_until='domcontentloaded')
             page.get_by_role('heading',name='冲突清单',exact=True).wait_for()
             text=page.inner_text('body')
             c.check('conflict_two_sides_rendered_'+str(width),'另一份有效资料' in text and '里程碑状态为尚未完成' in text and '里程碑状态为已完成' in text,True)
@@ -54,7 +54,7 @@ def decide_in_ui(pid):
         browser=p.chromium.launch(headless=False)
         try:
             page=browser.new_page(viewport={'width':1440,'height':900})
-            page.goto(BASE+'/app/pm/projects/'+pid,wait_until='networkidle')
+            page.goto(BASE+'/app/pm/projects/'+pid,wait_until='domcontentloaded')
             page.get_by_role('button',name='采纳新资料',exact=True).click()
             page.get_by_role('heading',name='进度与里程碑 · ✓ 已裁决',exact=True).wait_for()
             return page.inner_text('body')

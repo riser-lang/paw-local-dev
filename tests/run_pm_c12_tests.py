@@ -19,6 +19,7 @@ PLAN_V1 = "目标：第一期培养新任导师 30 名。生效日期：2026年9
 PLAN_V2 = "目标调整：第一期培养新任导师 40 名。生效日期：2026年10月8日。本版替代 v1。"
 WEEKLY = "进度：已招募 26 名导师。风险：两个校区尚未提名导师人选。下一步：完成剩余 14 名导师招募。"
 DETAIL = "C12 正文样本：青禾试点已完成首轮访谈，下一步整理访谈纪要。"
+PM_U3_DIAGNOSTICS = []
 
 
 def c12_project():
@@ -64,7 +65,7 @@ def current_target_visible(pid):
             browser = p.chromium.launch(headless=False)
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
-                page.goto(BASE + "/app/projects", wait_until="networkidle")
+                page.goto(BASE + "/app/projects", wait_until="domcontentloaded")
                 navigation_stage = "locate-project-navigation-button"
                 project_button = page.locator("a:visible, button:visible").filter(
                     has_text=re.compile(r"^\s*项目\s*$"),
@@ -154,8 +155,9 @@ def page_text(url):
         browser = p.chromium.launch(headless=False)
         try:
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            page.goto(BASE + url, wait_until="networkidle")
+            page.goto(BASE + url, wait_until="domcontentloaded")
             page.locator("body").wait_for()
+            page.wait_for_function("document.body.innerText.trim().length > 20")
             return page, browser, page.inner_text("body")
         except Exception:
             browser.close()
@@ -197,21 +199,44 @@ def no_internal_terms_visible(case):
         try:
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             for route in ("/app/review", "/app/todos", "/app/pm/projects/" + pid):
-                page.goto(BASE + route, wait_until="networkidle")
-                rendered.append(page.locator("body").inner_text())
+                if route.startswith("/app/pm/projects/"):
+                    expected_path = "/v1/pm/view/projects/" + pid
+                    with page.expect_response(lambda response: expected_path in response.url and response.status == 200):
+                        page.goto(BASE + route, wait_until="domcontentloaded")
+                    page.locator(".pm-root h1").wait_for(state="visible")
+                else:
+                    page.goto(BASE + route, wait_until="domcontentloaded")
                 if route == "/app/review":
+                    page.locator(".review-card").first.wait_for(state="visible")
                     review_card_count = page.locator(".review-card").count()
-                route_names[len(rendered) - 1] = route
+                elif route == "/app/todos":
+                    page.get_by_role("heading", name="待办", exact=True).wait_for(state="visible")
+                rendered.append({"url": page.url, "text": page.locator("body").inner_text()})
+                route_names[len(rendered) - 1] = page.url
             page.screenshot(path="screenshots/screen_PM_U3_01.png", full_page=True)
         finally:
             browser.close()
     session = api("POST", "/v1/web/agy/chat", {"mode": "chat"})["session_id"]
     answer = timed_answer(session, "青禾项目周报记录了什么？", case)
-    rendered.append(str(answer.get("response") or ""))
-    matches = [{"route": route_names[index] if index < len(route_names) else "assistant",
-                "terms": list(dict.fromkeys(match.group(0).lower() for match in forbidden.finditer(text))),
-                "lines": [line.strip() for line in text.splitlines() if forbidden.search(line)][:5]}
-               for index, text in enumerate(rendered) if forbidden.search(text)]
+    rendered.append({"url": "API /v1/web/agy/chat/" + str(session), "text": str(answer.get("response") or "")})
+    matches = []
+    for index, item in enumerate(rendered):
+        text = item["text"]
+        term_matches = []
+        seen_terms = set()
+        for match in forbidden.finditer(text):
+            term = match.group(0).lower()
+            if term in seen_terms:
+                continue
+            seen_terms.add(term)
+            term_matches.append({
+                "term": term,
+                "context": text[max(0, match.start() - 40):min(len(text), match.end() + 40)],
+            })
+        if term_matches:
+            matches.append({"url": item["url"], "matches": term_matches})
+    global PM_U3_DIAGNOSTICS
+    PM_U3_DIAGNOSTICS = matches
     if matches:
         print("C-12 visible internal-term check", json.dumps(matches, ensure_ascii=False))
     print("C-12 review card visibility evidence", json.dumps({
@@ -331,11 +356,16 @@ def run_c12(report, installer):
                         browser = p.chromium.launch(headless=False)
                         try:
                             page = browser.new_page(viewport={"width": 1440, "height": 900})
-                            page.goto(BASE + "/app/files", wait_until="networkidle")
+                            page.goto(BASE + "/app/files", wait_until="domcontentloaded")
                             def close_startup_overlay():
-                                # The clean test install may asynchronously show
-                                # first-run onboarding over the source list.
-                                page.wait_for_timeout(750)
+                                # Wait for either onboarding or the rendered source list.
+                                page.wait_for_function("""() => {
+                                    const overlay = document.querySelector('#paw-modal-overlay');
+                                    const grid = document.querySelector('.source-grid');
+                                    return (overlay && getComputedStyle(overlay).display !== 'none'
+                                        && overlay.getBoundingClientRect().width > 0)
+                                        || (grid && grid.getBoundingClientRect().width > 0);
+                                }""")
                                 overlay = page.locator("#paw-modal-overlay")
                                 if overlay.is_visible():
                                     page.locator("#paw-close-btn").click()
@@ -346,7 +376,7 @@ def run_c12(report, installer):
                             page.get_by_role("button", name=re.compile(re.escape(FILENAME))).first.click()
                             page.locator(".source-content-card pre").wait_for()
                             rendered_docx = page.locator(".source-content-card pre").inner_text()
-                            page.goto(BASE + "/app/files", wait_until="networkidle")
+                            page.goto(BASE + "/app/files", wait_until="domcontentloaded")
                             close_startup_overlay()
                             search = page.locator(".source-toolbar input").first
                             search.fill(md_path.name)
@@ -396,7 +426,13 @@ def run_c12(report, installer):
                         }, ensure_ascii=False))
                     c.check("knowledge_detail_opens", bool(details) and all(details) and all(source_details), True)
                 elif case == "PM-U3-01":
-                    c.check("no_internal_terms_visible", no_internal_terms_visible(case), True)
+                    passed = no_internal_terms_visible(case)
+                    try:
+                        c.check("no_internal_terms_visible", passed, True)
+                    except Exception as exc:
+                        if not passed:
+                            raise RuntimeError("PM-U3-01 diagnostics: " + json.dumps(PM_U3_DIAGNOSTICS, ensure_ascii=False)) from exc
+                        raise
                 else:
                     candidate = scan_metric_candidate(case)
                     c.check("data_metric_card_available", bool(candidate), True)
@@ -404,8 +440,13 @@ def run_c12(report, installer):
                         browser = p.chromium.launch(headless=False)
                         try:
                             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-                            page.goto(BASE + "/app/review", wait_until="networkidle")
-                            page.wait_for_timeout(750)
+                            page.goto(BASE + "/app/review", wait_until="domcontentloaded")
+                            page.wait_for_function("""() => {
+                                const overlay = document.querySelector('#paw-modal-overlay');
+                                const cards = document.querySelectorAll('.review-card');
+                                return (overlay && getComputedStyle(overlay).display !== 'none'
+                                    && overlay.getBoundingClientRect().width > 0) || cards.length > 0;
+                            }""")
                             cards = page.locator(".review-card")
                             card_texts = cards.all_text_contents()
                             print("C-12 metric card list evidence", json.dumps({

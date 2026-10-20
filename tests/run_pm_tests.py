@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from tests.paw_case import Report
-from tests.run_e2e_tests import (INSTALL_DIR, clean_and_record, silent_install, start_paw, stop_paw,
+from tests.run_e2e_tests import (INSTALL_DIR, clean_and_record, clean_environment, silent_install, start_paw, stop_paw,
     get_db_path, configure_mock_settings, poll_candidates_from_scanner, parse_candidate_types, get_file_sha256)
 
 BASE = 'http://127.0.0.1:8800'
@@ -34,11 +34,44 @@ def running():
     if proc is None:
         raise RuntimeError('Installed application did not start')
     try:
-        # Let the initial empty-workspace cruise finish before creating data.
-        time.sleep(3)
+        wait_for_startup_cruise()
         yield
     finally:
         stop_paw(proc)
+
+
+@contextmanager
+def clean_environment_on_error():
+    """Remove app residue in a finally block before a later case starts."""
+    failed = False
+    try:
+        yield
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        if failed:
+            try:
+                clean_environment()
+            except Exception as cleanup_error:
+                print('Failed-case cleanup raised ' + type(cleanup_error).__name__)
+
+
+def wait_for_startup_cruise(timeout_sec: int = 30):
+    """Wait for the app's first scheduled cruise before seeding test data."""
+    deadline = time.monotonic() + timeout_sec
+    last = {"status": "unknown", "total_cruises": 0}
+    while time.monotonic() < deadline:
+        response = httpx.get(BASE + '/v1/local/runtime/status', timeout=5)
+        response.raise_for_status()
+        last = response.json().get('scheduler') or {}
+        if last.get('total_cruises', 0) >= 1 and last.get('status') == 'idle':
+            return
+        time.sleep(0.2)
+    raise TimeoutError(
+        'Startup cruise did not reach idle within '
+        f'{timeout_sec}s (status={last.get("status")}, total_cruises={last.get("total_cruises", 0)})'
+    )
 
 
 def project():
@@ -112,7 +145,7 @@ def screenshot(c, pid, width):
         browser = p.chromium.launch(headless=False)
         try:
             page = browser.new_page(viewport={'width': width, 'height': 900})
-            page.goto(url, wait_until='networkidle')
+            page.goto(url, wait_until='domcontentloaded')
             page.get_by_text('AI 生成 · 尚未成为正式事实', exact=True).first.wait_for()
             text = page.inner_text('body')
             c.check('ai_label_rendered_' + str(width), 'AI 生成' in text, True)
