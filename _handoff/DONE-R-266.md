@@ -80,3 +80,94 @@
 - 因 push 的整条重跑仍排队，本轮 push+PR 不能记为双 GREEN。PR #17 保持打开，未合并、未打 tag。
 
 执行者进度：PR #17 的 PR 检查 GREEN（运行 39277214124）；push 首轮 RED（运行 39277040971 attempt 1），整条 attempt 2 仍 queued；PR 检查满足要求，push GREEN 尚未取得。
+
+
+## R-266 第二次修复：扫描竞争、异常清理与页面就绪条件
+
+依据 latest `origin/main` (`6d08f1ea`) rebase 后，检查了最新提交 `fcbf2cd` 的失败运行产物：push `39284660576` 的 `report-PM06-attempt-1` 和 PR `39284669933` 的 `report-PM07-attempt-1`。
+
+### 失败原文与执行步骤
+
+- `PM-C1-02`（push，PM06）：异常末行为 `httpx.ReadTimeout: timed out`。报告中的异常字段为 2,000 个字符；`tests/paw_case.py` 只保存 traceback 末尾 2,000 个字符，因此报告本身没有完整的上游 traceback 头部。完整的报告字段原文如下：
+
+```text
+t_env=trust_env,
+    )
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_api.py", line 109, in request
+    return client.request(
+           ~~~~~~~~~~~~~~^
+        method=method,
+        ^^^^^^^^^^^^^^
+    ...<8 lines>...
+        follow_redirects=follow_redirects,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_transports\default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\httpx\_transports\default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: timed out
+
+```
+
+  代码路径是 `run_c06` → `make_conflict` → `seed` → `import_doc` → `poll_candidates_from_scanner`。等待目标是 `/v1/local/scanner/progress` 返回 `completed` 且 `pipeline_complete` 成立，然后再读取候选。对应日志显示第四次扫描 `未定资料.docx` 在 16:29:19 UTC 仍在轮询 progress；下一个读取调用超时，扫描轮询函数没有捕获短暂的 progress-read timeout。该端点单次读取上限为 2 秒，原有扫描总截止为 40 秒。
+- `PM-A1-01`（PR，PM07）：完整异常原文：
+
+```text
+Traceback (most recent call last):
+  File "D:\a\paw-local-dev\paw-local-dev\tests\run_pm_operations_tests.py", line 63, in run_c07
+    pid=project();import_doc(case,'输入资料.docx','冲刺项目。\n进度与里程碑：原型已交付。')
+                  ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\paw-local-dev\paw-local-dev\tests\run_pm_versions_tests.py", line 30, in import_doc
+    candidates=poll_candidates_from_scanner()
+  File "D:\a\paw-local-dev\paw-local-dev\tests\run_e2e_tests.py", line 318, in poll_candidates_from_scanner
+    return wait_for_scan(candidates, progress, timeout_sec)
+  File "D:\a\paw-local-dev\paw-local-dev\tests\scanner_wait.py", line 16, in wait_for_scan
+    raise TimeoutError(f'Scanner did not reach completed within {timeout_sec}s (last state={state})')
+TimeoutError: Scanner did not reach completed within 40s (last state=phase2_analyzing)
+
+```
+
+  `run_c07` 在导入首份 `输入资料.docx` 时经 `import_doc` 等扫描完成；`scanner_wait.wait_for_scan` 等待 scanner `completed` 与 pipeline completion barrier。40 秒到期时最后状态仍为 `phase2_analyzing`。对应日志中 scanner 从 16:30:47 UTC 开始，progress API 每秒正常返回，但截至 16:31:27 UTC 仍未到达完成状态。脚本原本在 `running()` 里固定等待 3 秒；`start_paw()` 在服务可响应约 3 秒后即返回，因而测试可能在 scheduler 的 startup cruise 仍运行时创建项目和开始扫描。两个后台任务可能争用模型/运行时资源，这是代码证据支持的竞态解释。
+
+### 改动与超时说明
+
+- `running()` 现在等待 `/v1/local/runtime/status` 中 `scheduler.total_cruises >= 1` 且 `scheduler.status == idle` 后才创建样例。30 秒仅作为 startup readiness 的失败保护；没有放宽扫描总超时。
+- scanner progress 的单次 HTTP timeout 仍是 2 秒、扫描总截止仍是 40 秒。短暂 `httpx.TimeoutException` 记录日志后继续轮询，并保留最近一次状态；不会把 `phase2_analyzing` 当作成功。
+- PM06 的 `run_c06` 与 PM07 的 `run_c07` 保留直接的 `with report.case(...)` 判定块，并在块内用 `clean_environment_on_error()` 包住用例主体；任何异常会在 finally 中调用现有 `clean_environment()` 后再交给原 report case 记录，所以后续用例开始前先清理残留。
+- 验收脚本中的 `page.goto(..., wait_until="networkidle")` 改成 `domcontentloaded` 后等待目标 API response、页面 heading、可见列表/表单或非空渲染内容。固定 Playwright 页面等待也替换为 DOM 条件等待。
+- page navigation timeout 设为 30 秒，与 Playwright 原默认值相同；没有延长 scanner timeout。
+
+### 本地检查和云端状态
+
+- `python tests/paw_lint.py`：`lint clean`。
+- `python -m pytest tests/unit -q`：`219 passed in 51.79s`。
+- `compileall` 对涉及的测试模块通过；`git diff --check` 通过；在测试目录中没有剩余 `networkidle` 或 `wait_for_timeout` 调用。
+- 本次修复尚待提交并触发 push/PR 首次流水线；若首次运行任一 RED，将如实记录失败 case 和原文并停下，不重跑来换绿。
+- 本地分支已 rebase 到 `6d08f1ea`，无冲突；远端 `codex/R-266` 仍指向 rebase 前的 `fcbf2cd`。推送时将使用 `--force-with-lease`，不改写远端以外的分支。
+
+执行者进度：PR #17 修复待云端首次验证；push/PR 运行编号待定。

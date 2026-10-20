@@ -185,7 +185,7 @@ def stop_paw(proc: Optional[subprocess.Popen]):
                 pass
 
 
-def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str = "", wait_ms: int = 1200, ready_texts: tuple = ()) -> Tuple[str, str, Path]:
+def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str = "", ready_texts: tuple = ()) -> Tuple[str, str, Path]:
     """Uses Playwright to render page, retrieve final URL and inner body text, and capture screenshot."""
     out_path = SCREENSHOTS_DIR / output_png_name
     final_url = page_url
@@ -200,13 +200,18 @@ def inspect_and_capture_page(page_url: str, output_png_name: str, case_id: str =
             project_responses = []
             page.on('response', lambda response: project_responses.append(response.status) if '/v1/web/workspace/projects' in response.url else None)
             page.goto(page_url, wait_until="domcontentloaded", timeout=12000)
-            page.wait_for_timeout(wait_ms)
+            page.locator("#root").wait_for(state="visible")
             if ready_texts:
                 first_text = page.inner_text('body')
                 started = time.monotonic()
                 logger.info('Page readiness %s initial_matches=%s/%s project_response_statuses=%s', case_id, sum(text in first_text for text in ready_texts), len(ready_texts), project_responses)
                 page.wait_for_function('(texts) => texts.every(text => document.body.innerText.includes(text))', arg=list(ready_texts), timeout=12000)
                 logger.info('Page readiness %s condition_seconds=%.4f project_response_statuses=%s', case_id, time.monotonic()-started, project_responses)
+            else:
+                page.wait_for_function("""() => {
+                    const root = document.querySelector('#root');
+                    return !!root && root.innerText.trim().length > 20;
+                }""", timeout=12000)
             final_url = page.url
             try:
                 body_text = page.inner_text("body")
@@ -279,6 +284,7 @@ def configure_mock_settings(work_dir: Optional[Path] = None):
 
 def poll_candidates_from_scanner(timeout_sec: int = 40) -> List[Dict[str, Any]]:
     from tests.scanner_wait import wait_for_scan
+    last_progress = {'status': 'unknown'}
     def candidates():
         with closing(sqlite3.connect(str(get_db_path()), timeout=10)) as conn:
             conn.row_factory = sqlite3.Row
@@ -286,7 +292,17 @@ def poll_candidates_from_scanner(timeout_sec: int = 40) -> List[Dict[str, Any]]:
             logger.info('Completion barrier read %d pending proposals', len(rows))
             return rows
     def progress():
-        result = httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0).json()
+        nonlocal last_progress
+        try:
+            response = httpx.get("http://127.0.0.1:8800/v1/local/scanner/progress", timeout=2.0)
+            response.raise_for_status()
+            result = response.json()
+        except httpx.TimeoutException as exc:
+            # A slow progress read is telemetry delay, not a terminal scan state.
+            # Keep polling under the existing overall scanner deadline.
+            logger.warning('Scanner progress read timed out; retrying within the existing deadline (%s)', type(exc).__name__)
+            return last_progress
+        last_progress = result
         if result.get('status') in ('completed', 'failed'):
             logger.info('Scan completion evidence: %s', {k: result.get(k) for k in (
                 'status','total_files','phase1_success','phase2_success','failed_files','new_candidates_count')})

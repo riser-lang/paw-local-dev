@@ -64,7 +64,7 @@ def current_target_visible(pid):
             browser = p.chromium.launch(headless=False)
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
-                page.goto(BASE + "/app/projects", wait_until="networkidle")
+                page.goto(BASE + "/app/projects", wait_until="domcontentloaded")
                 navigation_stage = "locate-project-navigation-button"
                 project_button = page.locator("a:visible, button:visible").filter(
                     has_text=re.compile(r"^\s*项目\s*$"),
@@ -154,8 +154,9 @@ def page_text(url):
         browser = p.chromium.launch(headless=False)
         try:
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            page.goto(BASE + url, wait_until="networkidle")
+            page.goto(BASE + url, wait_until="domcontentloaded")
             page.locator("body").wait_for()
+            page.wait_for_function("document.body.innerText.trim().length > 20")
             return page, browser, page.inner_text("body")
         except Exception:
             browser.close()
@@ -197,7 +198,8 @@ def no_internal_terms_visible(case):
         try:
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             for route in ("/app/review", "/app/todos", "/app/pm/projects/" + pid):
-                page.goto(BASE + route, wait_until="networkidle")
+                page.goto(BASE + route, wait_until="domcontentloaded")
+                page.wait_for_function("document.body.innerText.trim().length > 20")
                 rendered.append(page.locator("body").inner_text())
                 if route == "/app/review":
                     review_card_count = page.locator(".review-card").count()
@@ -331,11 +333,16 @@ def run_c12(report, installer):
                         browser = p.chromium.launch(headless=False)
                         try:
                             page = browser.new_page(viewport={"width": 1440, "height": 900})
-                            page.goto(BASE + "/app/files", wait_until="networkidle")
+                            page.goto(BASE + "/app/files", wait_until="domcontentloaded")
                             def close_startup_overlay():
-                                # The clean test install may asynchronously show
-                                # first-run onboarding over the source list.
-                                page.wait_for_timeout(750)
+                                # Wait for either onboarding or the rendered source list.
+                                page.wait_for_function("""() => {
+                                    const overlay = document.querySelector('#paw-modal-overlay');
+                                    const grid = document.querySelector('.source-grid');
+                                    return (overlay && getComputedStyle(overlay).display !== 'none'
+                                        && overlay.getBoundingClientRect().width > 0)
+                                        || (grid && grid.getBoundingClientRect().width > 0);
+                                }""")
                                 overlay = page.locator("#paw-modal-overlay")
                                 if overlay.is_visible():
                                     page.locator("#paw-close-btn").click()
@@ -346,7 +353,7 @@ def run_c12(report, installer):
                             page.get_by_role("button", name=re.compile(re.escape(FILENAME))).first.click()
                             page.locator(".source-content-card pre").wait_for()
                             rendered_docx = page.locator(".source-content-card pre").inner_text()
-                            page.goto(BASE + "/app/files", wait_until="networkidle")
+                            page.goto(BASE + "/app/files", wait_until="domcontentloaded")
                             close_startup_overlay()
                             search = page.locator(".source-toolbar input").first
                             search.fill(md_path.name)
@@ -404,8 +411,13 @@ def run_c12(report, installer):
                         browser = p.chromium.launch(headless=False)
                         try:
                             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-                            page.goto(BASE + "/app/review", wait_until="networkidle")
-                            page.wait_for_timeout(750)
+                            page.goto(BASE + "/app/review", wait_until="domcontentloaded")
+                            page.wait_for_function("""() => {
+                                const overlay = document.querySelector('#paw-modal-overlay');
+                                const cards = document.querySelectorAll('.review-card');
+                                return (overlay && getComputedStyle(overlay).display !== 'none'
+                                    && overlay.getBoundingClientRect().width > 0) || cards.length > 0;
+                            }""")
                             cards = page.locator(".review-card")
                             card_texts = cards.all_text_contents()
                             print("C-12 metric card list evidence", json.dumps({

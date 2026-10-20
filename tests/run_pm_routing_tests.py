@@ -58,7 +58,7 @@ def receipts_page(c,width,expected,decide_pid=None):
         browser=p.chromium.launch(headless=False)
         try:
             page=browser.new_page(viewport={'width':width,'height':1000})
-            page.goto(url,wait_until='networkidle')
+            page.goto(url,wait_until='domcontentloaded')
             page.get_by_role('heading',name='资料去向',exact=True).wait_for()
             if decide_pid:
                 page.get_by_label('归属项目',exact=True).select_option(decide_pid)

@@ -54,7 +54,7 @@ def capture_versions(c,pid,width):
         browser=p.chromium.launch(headless=False)
         try:
             page=browser.new_page(viewport={'width':width,'height':900})
-            page.goto(url,wait_until='networkidle')
+            page.goto(url,wait_until='domcontentloaded')
             page.get_by_role('heading',name='资料版本',exact=True).wait_for()
             text=page.inner_text('body')
             c.check('version_status_rendered_'+str(width),'方案_v2.docx · ● 当前版本' in text and '方案_v1.docx · 历史 · 已替换' in text,True)
