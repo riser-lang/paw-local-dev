@@ -527,15 +527,27 @@ def validate_answer(answer: str, contract: dict[str, Any]) -> tuple[bool, str, d
 
 def build_evidence_footer(contract: dict[str, Any]) -> dict[str, Any]:
     """The ONLY evidence surface the user sees (spec §19)."""
+    from backend.pm import evidence_sources
     idx = contract["evidence_index"]
+    by_key: dict[str, dict[str, Any]] = {}
+    for item in contract.get("context_items") or []:
+        key = evidence_sources.evidence_key(item)
+        if key and key not in by_key:
+            by_key[key] = item
+    items = []
+    for entry in idx:
+        # R-267: a knowledge entry also names the document it came from, so the
+        # evidence panel ("查看依据") can show the original file.
+        files = evidence_sources.source_files_for(by_key.get(entry.get("evidence_id"), {}))
+        items.append({"title": entry["title"], "layer": entry["layer"],
+                      "authority": entry["authority"],
+                      "temporal_state": entry["temporal_state"],
+                      "is_formal_fact": entry["is_formal_fact"],
+                      "source_files": files})
     return {
         "label": "依据：%d 条" % len(idx),
         "expand_label": "查看依据",
-        "items": [{"title": e["title"], "layer": e["layer"],
-                   "authority": e["authority"],
-                   "temporal_state": e["temporal_state"],
-                   "is_formal_fact": e["is_formal_fact"]}
-                  for e in idx],
+        "items": items,
     }
 
 

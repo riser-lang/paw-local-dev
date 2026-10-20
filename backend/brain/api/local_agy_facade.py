@@ -1265,6 +1265,14 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     # reach the user; the C-12 code→Chinese table answers instead.
     final_visible = internal_markers.strip(final_visible)
     turn_calls = model_calls.rows_since(call_mark)
+    # R-267: a cited knowledge page must also name the document it came from.
+    # Append-only: the existing titles stay, the original files are added.
+    from backend.pm import evidence_sources
+    cited_ids = evidence_sources.cited_ids_from_map(answer_map) if grounded else []
+    context_items = turn["contract"].get("context_items") or []
+    source_files = evidence_sources.files_for_cited(context_items, cited_ids) if cited_ids else []
+    if source_files:
+        final_visible = evidence_sources.append_sources_footer(final_visible, source_files)
     knowledge_gap_id=None
     from backend.pm.knowledge_gaps import is_insufficient,observe
     if grounded and resolved_proj_id and is_insufficient(final_visible,answer_map):
@@ -1299,7 +1307,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
                     returned_sources.append(evidence_idx[ref]["title"])
     if not returned_sources and not turn.get("fail_closed"):
         returned_sources = [e["title"] for e in turn["contract"].get("evidence_index", [])]
-    returned_sources = list(dict.fromkeys(returned_sources))
+    # Original files are appended after the titles they belong to (never removed).
+    returned_sources = list(dict.fromkeys([*returned_sources, *source_files]))
 
     return {
         "session_id": session_id,
@@ -1312,6 +1321,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         "usage": usage or {},
         "evidence": agy_v2_answer.build_evidence_footer(turn["contract"]),
         "sources": returned_sources,
+        "source_files": source_files,
         "authority_notes": turn["contract"].get("authority_notes", []),
         "clarification": turn["contract"].get("clarification"),
         "grounding": grounding_metadata(turn, grounded=grounded, gate=gate_reason),
