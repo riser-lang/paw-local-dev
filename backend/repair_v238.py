@@ -17,6 +17,31 @@ from datetime import datetime, timezone
 _review_lock = threading.RLock()
 _installed = False
 
+# R-268: the shipped UI has no client-side guard for a data/metric card that still
+# misses a title or a project, so the backend answers with this sentence and the
+# review panel shows it as the error message.
+DATA_CARD_INCOMPLETE = '请补充标题和项目名称后再接受'
+
+
+def data_card_missing_fields(target, operation, payload):
+    """Fields a data/metric review card still needs before it can be accepted.
+
+    ``title`` falls back to the metric ``name`` (the card fills 标题 from it) and the
+    project may be given by name or id, so only a genuinely empty field is reported.
+    """
+    if str(target or '') != 'data' or str(operation or '') != 'create':
+        return []
+    if not isinstance(payload, dict):
+        return []
+    title = str(payload.get('title') or payload.get('name') or '').strip()
+    project = str(payload.get('project_name') or payload.get('project_id') or '').strip()
+    missing = []
+    if not title:
+        missing.append('title')
+    if not project:
+        missing.append('project_name')
+    return missing
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -135,6 +160,12 @@ def _normalize(conn, candidate, change, edited, reviewer):
                     payload[name] = conn.execute('SELECT ' + default).fetchone()[0]
                 elif operation != 'create':
                     del payload[name]
+        # R-268: a data/metric review card must carry a title and a project before
+        # it can be accepted; otherwise the card was written with no project and the
+        # user saw no prompt at all. Checked before the generic name rule so both
+        # cases answer with the same sentence.
+        if data_card_missing_fields(target, operation, payload):
+            raise ValueError(DATA_CARD_INCOMPLETE)
         name_field = 'name' if target in ('project', 'data') else 'title'
         if operation == 'create' and (not isinstance(payload.get(name_field), str) or not payload[name_field].strip()):
             raise ValueError('标题或项目名称不能为空，请编辑草稿后重试。')
