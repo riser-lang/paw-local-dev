@@ -212,3 +212,45 @@ tests.paw_case.CheckFailed: no_internal_terms_visible
 - PM-U3-01 在采样前分别等待审核卡片、待办标题、项目档案 API 200 响应及项目主标题；助手回答使用请求完成的回答正文。命中内部词时保留每页 URL、命中词及其前后最多 40 个字符，并将诊断序列化进失败用例的异常报告；检查规则与词表不变。
 - 本地检查：`python tests/paw_lint.py` 为 `lint clean`；`python -m pytest tests/unit -q` 为 `227 passed in 72.49s`；`git diff --check` 通过。
 - 云端 push/PR 首次运行编号及结果待补；按本轮指示，任何一侧首轮 RED 都将记录失败用例和原文后停止，不重跑。
+
+## R-266 后续修订的首次 CI 结果
+
+- push run `39363340764`（attempt 1）：verdict RED。91 个必需用例为 PASS 91、FAIL 0、NOT RUN 0；Reviewer Verdict Gate 仍因重复截图判 RED。PM-U3-01 PASS，`no_internal_terms_visible` 为 true，没有命中词或页面诊断记录。
+- push 的截图诊断：PM-E1-02 `screen_PM_E1_02_390.png` 与 PM-E1-03 `screen_PM_E1_03_390.png` 的 SHA256 完全相同，均为 `45d8b72bb53ed909a40946c80132d4daa212087263b294db59a535271ebae06f`。两张截图来自不同项目 URL；本轮按首次 RED 后停止规则没有继续改脚本或追查原因。报告摘要中的问题原文为：`screenshot 45d8b72bb53e reused 2 times`，Duplicate screenshot sources 列出上述两个用例、文件及 block PM08。
+- PR run `39363345481`（attempt 1）：verdict RED，必需用例 90 PASS、1 FAIL、0 NOT RUN。B5-03 PASS，PM-U3-01 PASS 且无内部词命中；唯一必需失败为 PM-A4-01，failed_check 为 `exception`。该用例此前的业务检查均通过，随后调用 Playwright `page.screenshot` 时浏览器页面已关闭。报告保留的异常原文（traceback 按审核报告字段限制保留末尾 2000 字符）为：
+
+```text
+error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TargetClosedError: Page.screenshot: Target page, context or browser has been closed
+Browser logs:
+
+<launching> C:\Users\runneradmin\AppData\Local\ms-playwright\chromium-1248\chrome-win64\chrome.exe --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --no-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,AvoidCorsURLLoaderRestartOnRedirect,Translate,AutoDeElevate,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --no-sandbox --user-data-dir=C:\Users\RUNNER~1\AppData\Local\Temp\playwright_chromiumdev_profile-UTpRtu --remote-debugging-pipe --no-startup-window
+<launched> pid=6424
+Call log:
+  - taking page screenshot
+  - waiting for fonts to load...
+  - fonts loaded
+```
+
+- push 的所有必需用例均通过，PR 仅 PM-A4-01 失败；两边的 PM-U3-01 与 B5-03 均通过。CI 两次均为 attempt 1；未重跑。PR #17 仍 OPEN，未合并、未打 tag。因首轮 RED，后续不再修改或推送；本段运行结果更新保留在本地工作区。
+
+执行者进度：PR #17，push 39363340764 RED（必需用例 91/91，截图重复），PR 39363345481 RED（PM-A4-01 TargetClosedError）；B5-03 与 PM-U3-01 通过且 PM-U3-01 无命中，报告 _handoff/DONE-R-266.md；停下原因：首轮 CI 未双绿，未重跑。
+
+## R-266 再次修订（基于 main d6e059a）
+
+- 保留此前本地未推送的 DONE 更新后，rebase 到 `origin/main` `d6e059a37899d7659eb48bd2e5afda8ac61e4bb6`，无冲突。rebase 前远端 `codex/R-266` SHA 为 `e9fa81fc78d2b327aac74040ecb30aa14e66bcd1`；推送将仅使用该值作为精确 `--force-with-lease`。
+- 上次 push `39363340764` 的重复截图诊断原样列出两个不同用例：`PM-E1-02` `screen_PM_E1_02_390.png` 和 `PM-E1-03` `screen_PM_E1_03_390.png`，均属 PM08。SHA256 为 `45d8b72bb53ed909a40946c80132d4daa212087263b294db59a535271ebae06f`。修复后，PM-E1-02 在打开自己的来源依据对话框后再截图；PM-E1-03 通过页面按钮触发拒绝生成，检查并截图界面显示的拒绝消息与保留建议。
+- 上次 PR `39363345481` 的 PM-A4-01 报告中，已有的状态/时间及页面检查均通过，失败步骤为首次桌面视图 `capture(c,page,1440)` 内的 Playwright `page.screenshot`；报告 `screens` 为空，截图尚未登记。报告保留的异常原文末尾为：
+
+```text
+error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TargetClosedError: Page.screenshot: Target page, context or browser has been closed
+Call log:
+  - taking page screenshot
+  - waiting for fonts to load...
+  - fonts loaded
+```
+
+  用例的 `finally: browser.close()` 位于 capture 之后，没有先行关闭页面的语句。现已在桌面 capture 前重新导航并等待 `/v1/pm/view/today` 的成功响应、可见的“本地维护”标题及该区域的状态/时间文字；调整到手机宽度后也等待同一组页面内容和渲染帧再截图。没有延长超时。
+- 本地检查：`python tests/paw_lint.py` 为 `lint clean`；`python -m pytest tests/unit -q` 为 `227 passed in 74.35s`；两个改动脚本 `py_compile` 通过；`git diff --check` 通过。
+- 本次 push/PR 首次运行编号与结果待补。任何首次 RED 都将追加失败用例、原文和诊断用例名后停止，不重跑。

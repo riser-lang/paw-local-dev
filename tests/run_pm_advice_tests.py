@@ -51,12 +51,8 @@ def run_c08(report,installer):
                         c.check('advice_linked_to_approved_task',next(r for r in advice(pid) if r['id']==items[0]['id'])['state'],'adopted')
                     elif case=='PM-E1-03':
                         rejects=read_rows("SELECT COUNT(*) AS n FROM pm_contract_rejection WHERE contract='project_advice'")[0]['n']
-                        model('fault-schema:project_advice');result=api('POST','/v1/pm/projects/'+pid+'/suggestions/generate',{})
-                        c.check('invalid_schema_rejected',result['status'],'rejected')
-                        c.check('schema_rejection_recorded',read_rows("SELECT COUNT(*) AS n FROM pm_contract_rejection WHERE contract='project_advice' AND reason='output_schema_invalid'")[0]['n']>rejects,True)
-                        c.check('prior_valid_advice_preserved',[r['id'] for r in advice(pid)],[r['id'] for r in items])
-                        c.check('bad_output_absent',not read_rows("SELECT id FROM pm_suggestion WHERE text LIKE '%FAULT_SCHEMA_OUTPUT%'"),True)
-                        c.check('formal_unchanged_after_rejection',formal(),before)
+                        model('fault-schema:project_advice')
+                        prior_advice_ids=[r['id'] for r in items]
                     with sync_playwright() as p:
                         browser=p.chromium.launch(headless=False)
                         try:
@@ -67,11 +63,31 @@ def run_c08(report,installer):
                             c.check('advice_separate_from_formal_sections',page.locator('.pm-sections .pm-ai').count(),0)
                             c.check('tinted_advice_background',region.locator('.pm-ai').first.evaluate("n=>getComputedStyle(n).backgroundColor") not in ('rgba(0, 0, 0, 0)','rgb(255, 255, 255)'),True)
                             c.check('bad_output_not_rendered','FAULT_SCHEMA_OUTPUT' not in page.inner_text('body'),True)
-                            capture(c,page,1440);page.set_viewport_size({'width':390,'height':900});capture(c,page,390)
-                            title=items[0]['basis'][0]['title']
-                            region.get_by_role('button',name='依据：'+title,exact=True).first.click()
-                            page.get_by_role('dialog',name='依据：'+title,exact=True).get_by_role('button',name='来源 · '+title,exact=True).click()
-                            expect(page.locator('#source-text')).to_contain_text('原型已完成')
+                            if case=='PM-E1-02':
+                                title=items[0]['basis'][0]['title']
+                                region.get_by_role('button',name='依据：'+title,exact=True).first.click()
+                                page.get_by_role('dialog',name='依据：'+title,exact=True).get_by_role('button',name='来源 · '+title,exact=True).click()
+                                expect(page.locator('#source-text')).to_contain_text('原型已完成')
+                                capture(c,page,1440);page.set_viewport_size({'width':390,'height':900});capture(c,page,390)
+                            elif case=='PM-E1-03':
+                                generate_button=region.get_by_role('button',name='重新生成建议',exact=True)
+                                expect(generate_button).to_be_enabled()
+                                with page.expect_response(lambda response: response.request.method=='POST'
+                                    and response.url.endswith('/v1/pm/projects/'+pid+'/suggestions/generate'),timeout=30000) as generated:
+                                    generate_button.click()
+                                result=generated.value.json()
+                                c.check('invalid_schema_rejected',result.get('status'),'rejected')
+                                notice=page.locator('#notice')
+                                expect(notice).to_have_text(result.get('message',''),timeout=12000)
+                                c.check('rejection_status_visible_on_page',result.get('message','') in notice.inner_text(),True)
+                                c.check('schema_rejection_recorded',read_rows("SELECT COUNT(*) AS n FROM pm_contract_rejection WHERE contract='project_advice' AND reason='output_schema_invalid'")[0]['n']>rejects,True)
+                                c.check('prior_valid_advice_preserved',[r['id'] for r in advice(pid)],prior_advice_ids)
+                                c.check('bad_output_absent',not read_rows("SELECT id FROM pm_suggestion WHERE text LIKE '%FAULT_SCHEMA_OUTPUT%'"),True)
+                                c.check('formal_unchanged_after_rejection',formal(),before)
+                                c.check('bad_output_not_rendered_after_rejection','FAULT_SCHEMA_OUTPUT' not in page.inner_text('body'),True)
+                                capture(c,page,1440);page.set_viewport_size({'width':390,'height':900});capture(c,page,390)
+                            else:
+                                capture(c,page,1440);page.set_viewport_size({'width':390,'height':900});capture(c,page,390)
                         finally:browser.close()
                     c.check('today_uses_same_advice_ids',sorted(r['id'] for r in view()['ai_suggestions']),sorted(r['id'] for r in advice(pid)))
                 else:
