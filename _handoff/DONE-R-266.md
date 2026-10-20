@@ -254,3 +254,28 @@ Call log:
   用例的 `finally: browser.close()` 位于 capture 之后，没有先行关闭页面的语句。现已在桌面 capture 前重新导航并等待 `/v1/pm/view/today` 的成功响应、可见的“本地维护”标题及该区域的状态/时间文字；调整到手机宽度后也等待同一组页面内容和渲染帧再截图。没有延长超时。
 - 本地检查：`python tests/paw_lint.py` 为 `lint clean`；`python -m pytest tests/unit -q` 为 `227 passed in 74.35s`；两个改动脚本 `py_compile` 通过；`git diff --check` 通过。
 - 本次 push/PR 首次运行编号与结果待补。任何首次 RED 都将追加失败用例、原文和诊断用例名后停止，不重跑。
+
+## R-266 再次修订的首次 CI 结果
+
+- push run `39377487143`（attempt 1，head `522a742ddbdcd82349bb02ffcd4a96bd8d895c1e`）：RED，必需用例 90 PASS、1 FAIL、0 NOT RUN；唯一失败是 PM07 的 `PM-A4-01`（`exception`）。
+- PR run `39377492911`（attempt 1，同一 head）：RED，必需用例 90 PASS、1 FAIL、0 NOT RUN；唯一失败同为 PM07 的 `PM-A4-01`（`exception`）。PM-E1-02、PM-E1-03 均 PASS。Reviewer Verdict Gate 的截图诊断列出的相关用例名为 `PM-E1-02` 和 `PM-E1-03`；这两次运行的摘要均显示没有重复截图哈希。修复前 `39363340764` 的重复截图诊断也列出这两个用例，位于 PM08，文件分别为 `screen_PM_E1_02_390.png`、`screen_PM_E1_03_390.png`；本次结果表明两个用例现已通过，且本轮没有哈希冲突。
+- 两边的 PM-A4-01 失败都发生在 `tests/run_pm_operations_tests.py` 的 `run_c07` 第 118 行，等待“本地维护”区域文本断言时，而非页面关闭或截图步骤。push 报告的异常原文为：
+
+```text
+expect(area).to_contain_text(['巡航 · ✕ 异常','扫描','备份','模型连通','最后成功：'])
+AssertionError: Locator expected to contain text '['巡航 · ✕ 异常', '扫描', '备份', '模型连通', '最后成功：']'
+Actual value: ['本地维护巡航 · ✕ 异常：最后成功巡航已超过 3 小时，请检查巡航是否开启；最后成功：10/20 09:59扫描 · ● 正常：扫描完成；最后成功：10/20 13:59备份 · ● 正常：备份已完成并通过 SQLite 完整性检查；最后成功：10/20 13:59；尚未进行恢复自检模型连通 · ● 正常：模型连接测试成功；最后成功：10/20 13:59磁盘 · ● 正常：可用空间 30.3 GB；最后成功：10/20 13:59自动备份 0 份；手动及其他保留备份 1 份。手动备份不参与自动轮转。自动备份最多份数自动备份容量上限（MB）保存备份上限手动备份备份恢复自检测试模型连通恢复自检只检查临时副本，检查完成后清理临时文件。正式数据不会被恢复自检覆盖。']
+```
+
+  PR 报告同样显示 `run_c07` 第 118 行及同一断言；它记录的文本包含“本地维护巡航 · ✕ 异常”“扫描 · ● 正常”“备份 · ● 正常”“模型连通 · ● 正常”等实际页面内容。失败原因是该等待把多个短字符串作为 `to_contain_text` 的期望列表交给单个 region locator，Playwright 按元素文本列表匹配，实际 locator 只有一个合并文本值，因而等待条件失败。原 `TargetClosedError` 没有在本轮重现；原先的截图等待改动已避免走到该旧失败步骤，但新等待断言写错了。
+- 本地检查仍为：`python tests/paw_lint.py` lint clean；`python -m pytest tests/unit -q` 227 passed；两个脚本 `py_compile` 通过；`git diff --check` 通过。
+- push 与 PR 均为第一次运行且均 RED。按要求不重跑；不再修代码或推送。PR #17 保持 OPEN，未合并、未打 tag。此运行结果仅追加在本地 DONE，未提交、未推送，以免触发新 CI。
+
+执行者进度：PR #17，push 首次运行 39377487143 RED，PR 首次运行 39377492911 RED；PM-A4-01 在 run_c07 第 118 行的文本等待断言失败，截图诊断相关用例为 PM-E1-02、PM-E1-03；报告 _handoff/DONE-R-266.md；停下原因：首轮 CI 未双绿，按要求不重跑并停止。
+
+## R-266 PM-A4-01 文本等待修正
+
+- 将 `tests/run_pm_operations_tests.py` 第 118 行和第 122 行附近的 5 项文本列表改为逐项调用 `expect(area).to_contain_text(text)`。五个检查字符串全部保留；第 113 行的 `all_statuses_and_times_visible` 判定、超时和截图流程没有改动。
+- 全仓搜索 `to_contain_text` / `to_have_text`：测试代码中没有其他把列表传给单个元素的新增断言；其余调用传入单个文本或值。报告中保留的列表仅为上轮失败的原始异常记录。
+- 本地检查：`python tests/paw_lint.py` lint clean；`python -m pytest tests/unit -q` 227 passed in 66.34s。
+- 本轮 push 与 PR 首次运行结果待补。若任一为 RED，将记录失败用例、异常原文和截图诊断列出的用例名后停止，不重跑。

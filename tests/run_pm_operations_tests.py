@@ -115,11 +115,14 @@ def run_c07(report,installer):
                                 stable_page(page,BASE+'/app/pm/today')
                                 page.get_by_role('heading',name='本地维护',exact=True).wait_for(state='visible')
                                 area=page.get_by_role('region',name='本地维护',exact=True)
-                                expect(area).to_contain_text(['巡航 · ✕ 异常','扫描','备份','模型连通','最后成功：'])
+                                for text in ['巡航 · ✕ 异常','扫描','备份','模型连通','最后成功：']:
+                                    expect(area).to_contain_text(text)
                             capture(c,page,1440);page.set_viewport_size({'width':390,'height':900})
                             if case=='PM-A4-01':
                                 page.get_by_role('heading',name='本地维护',exact=True).wait_for(state='visible')
-                                expect(page.get_by_role('region',name='本地维护',exact=True)).to_contain_text(['巡航 · ✕ 异常','扫描','备份','模型连通','最后成功：'])
+                                area=page.get_by_role('region',name='本地维护',exact=True)
+                                for text in ['巡航 · ✕ 异常','扫描','备份','模型连通','最后成功：']:
+                                    expect(area).to_contain_text(text)
                                 page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
                                 capture(c,page,390)
                         finally:browser.close()
