@@ -57,3 +57,20 @@ def test_final_icon_contains_four_independent_size_entries():
         assert png.startswith(b"\x89PNG\r\n\x1a\n")
         assert struct.unpack_from(">II", png, 16) == size
     assert sizes == {(16, 16), (32, 32), (48, 48), (256, 256)}
+
+
+def test_versioned_favicon_route_serves_the_shipped_icon_bytes():
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+
+    expected = (ROOT / "assets/paw-app.ico").read_bytes()
+    response = TestClient(app).get("/assets/paw-app.ico?v=2.5.0-rc3")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].split(";", 1)[0] in {
+        "image/x-icon",
+        "image/vnd.microsoft.icon",
+    }
+    assert response.content == expected
+    assert (ROOT / "frontend/dist/assets/paw-app.ico").read_bytes() == expected
