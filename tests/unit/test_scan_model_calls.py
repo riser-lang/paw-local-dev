@@ -179,14 +179,34 @@ def test_propose_disables_thinking_and_bounds_output(provider, stub):
     assert model_calls.snapshot()[0]["thinking_disabled"] is True
 
 
-def test_chat_completion_outside_scan_keeps_the_chat_request_shape(provider, stub):
+def test_background_calls_are_bounded_like_scan(provider, stub):
+    """R-271: cruise/project-analysis calls must not run unbounded.
+
+    Outside a scan file and outside an assistant answer the request is a small
+    JSON draft: no chain-of-thought, bounded output and a short wait.  Before this
+    bound those calls ran with thinking enabled and the 120 s chat ceiling, which
+    is what made a three-file cruise take minutes.
+    """
     text, usage, error = provider.chat_completion(
         messages=[{"role": "user", "content": "聊天问题"}], temperature=0.1
     )
     assert error is None
     sent = stub.state["requests"][0]
-    assert "enable_thinking" not in sent
-    assert sent["max_tokens"] == 2048
+    assert sent["enable_thinking"] is False
+    assert sent["max_tokens"] == adapter.INTERNAL_MAX_TOKENS
+    assert adapter.INTERNAL_MAX_TOKENS <= 2000
+    assert adapter.INTERNAL_CALL_TIMEOUT_SECONDS <= 30
+
+
+def test_assistant_answers_keep_the_larger_budget(provider, stub):
+    with model_calls.begin_answer("answer-1"):
+        text, usage, error = provider.chat_completion(
+            messages=[{"role": "user", "content": "聊天问题"}], temperature=0.1
+        )
+    assert error is None
+    sent = stub.state["requests"][0]
+    assert sent["enable_thinking"] is False
+    assert sent["max_tokens"] == adapter.ANSWER_MAX_TOKENS
 
 
 def test_scan_chat_completion_disables_thinking(provider, stub):

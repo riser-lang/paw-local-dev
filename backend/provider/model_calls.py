@@ -38,6 +38,33 @@ _stage: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 _attempt_base: contextvars.ContextVar[int] = contextvars.ContextVar(
     "paw_answer_attempt_base", default=0
 )
+# Background run (cruise / project analysis). Calls made outside a scan-file or
+# answer context are recorded under this name, so the cruise report can list
+# per-call timings without touching prompts or credentials.
+_run: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "paw_run", default=None
+)
+
+
+def begin_run(name: str):
+    """Enter a background run context (for example ``cruise``)."""
+    return _Scope(_run.set(str(name or "")), _reset_run)
+
+
+def end_run(scope) -> None:
+    token = getattr(scope, "token", scope)
+    _reset_run(token)
+
+
+def _reset_run(token) -> None:
+    try:
+        _run.reset(token)
+    except (ValueError, RuntimeError):
+        pass
+
+
+def current_run() -> Optional[str]:
+    return _run.get()
 
 _rows: List[Dict[str, Any]] = []
 _lock = threading.Lock()
@@ -204,16 +231,20 @@ def record(
     fallback_rule: bool = False,
     thinking_disabled: Optional[bool] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Append one telemetry row. Outside a scan file or answer turn nothing is recorded."""
+    """Append one telemetry row. Outside a scan file, answer turn or run nothing is recorded."""
     file_name = _scan_file.get()
     answer_id = _answer.get()
-    if not file_name and not answer_id:
+    run_name = _run.get()
+    if not file_name and not answer_id and not run_name:
         return None
     tokens = usage_tokens(usage)
+    channel = "chat" if answer_id else (str(run_name) if run_name else "scan")
     row: Dict[str, Any] = {
         "file": file_name or "",
         "answer": answer_id or "",
-        "channel": "scan" if file_name else "chat",
+        "run": run_name or "",
+        "task": _task.get() or "",
+        "channel": channel,
         "source": source,
         "stage": _stage.get() or "",
         "attempt": int(attempt) + int(_attempt_base.get() or 0),

@@ -66,7 +66,6 @@ router = APIRouter()
 MAX_MESSAGE_LEN = 4000
 ALLOWED_MODES = frozenset({"chat", "extract", "analyze", "plan"})
 
-
 class WebAgyCreateRequest(BaseModel):
     project_id: Optional[str] = None
     mode: str = Field(default="chat")
@@ -211,6 +210,11 @@ def _build_retry_suffix(gate_reason: str, gate_detail: Any, contract: Dict[str, 
         valid_ids = [e["evidence_id"] for e in contract.get("evidence_index") or []]
         sample = "、".join(valid_ids[:15])
         repair = f"回答中引用了不存在的 evidence id，只能使用给定的有效 id：{sample}。"
+    elif isinstance(gate_reason, str) and gate_reason.startswith("metric_value_mismatch"):
+        name = gate_reason.split(":", 1)[-1]
+        detail = gate_detail if isinstance(gate_detail, dict) else {}
+        repair = (f"指标「{name}」的权威数值是 {detail.get('authoritative')}，"
+                  f"上次回答写成了 {detail.get('stated')}。请按权威数值陈述，不要推算或改写数字。")
     else:
         repair = _RETRY_REPAIR.get(gate_reason, "请严格遵循证据引用要求，只引用真实存在的 evidence id。")
 
@@ -1213,6 +1217,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     from backend.pm import answer_advice
     response_text,advice_filter=answer_advice.clean(response_text,turn['contract'],agy_v2_answer._claim_kind)
     ok, gate_reason, gate_detail = agy_v2_answer.validate_answer(response_text, turn["contract"])
+    gate_attempts = [{"stage": "first", "raw": response_text, "ok": ok,
+                      "reason": gate_reason, "detail": gate_detail}]
     grounded = False
 
     if not ok and first_call_seconds > 60:
@@ -1236,6 +1242,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         if retry_text:
             retry_text,retry_filter=answer_advice.clean(retry_text,turn['contract'],agy_v2_answer._claim_kind)
             ok2, gate_reason2, gate_detail2 = agy_v2_answer.validate_answer(retry_text, turn["contract"])
+            gate_attempts.append({"stage": "gate_retry", "raw": retry_text, "ok": ok2,
+                                  "reason": gate_reason2, "detail": gate_detail2})
             if ok2:
                 response_text = retry_text
                 advice_filter=retry_filter
@@ -1298,6 +1306,22 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     search_meta = usage.get("search_info") or {}
     web_search_used = bool(search_meta.get("used"))
 
+    grounding = grounding_metadata(turn, grounded=grounded, gate=gate_reason)
+    grounding["gate_diagnostics"] = agy_v2_answer.gate_diagnostics(turn, gate_attempts)
+    if not grounded:
+        # One line per rejected attempt: reason, evidence count and the ids the
+        # answer cited that the gate cannot accept.  Ids and reasons only, never
+        # the prompt or the credential.
+        for attempt in grounding["gate_diagnostics"]["attempts"]:
+            if attempt.get("ok"):
+                continue
+            logger.info(
+                "证据门拒绝（%s）reason=%s 证据=%d 不合格引用=%s detail=%s",
+                attempt.get("stage"), attempt.get("reason"),
+                grounding["gate_diagnostics"]["evidence_count"],
+                (attempt.get("unsupported_evidence_ids") or [])[:5],
+                str(attempt.get("detail") or {})[:200])
+
     evidence_idx = {e["evidence_id"]: e for e in turn["contract"].get("evidence_index", [])}
     returned_sources = []
     if grounded and isinstance(answer_map, dict):
@@ -1324,7 +1348,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         "source_files": source_files,
         "authority_notes": turn["contract"].get("authority_notes", []),
         "clarification": turn["contract"].get("clarification"),
-        "grounding": grounding_metadata(turn, grounded=grounded, gate=gate_reason),
+        "grounding": grounding,
         "advice_filter": advice_filter,
         "knowledge_gap_id": knowledge_gap_id,
         "evidence_map": answer_map if grounded else None,

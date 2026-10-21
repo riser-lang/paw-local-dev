@@ -41,6 +41,13 @@ logger = logging.getLogger("mock_openai_server")
 # sees the kind of answer a real model would give.
 MOCK_MODE = os.environ.get("PAW_MOCK_MODE", "scripted").strip().lower()
 
+# Optional latency model for cruise/scan timing measurements.  Defaults are 0 so
+# the CI mock stays instant: PAW_MOCK_LATENCY is added to every call, and
+# PAW_MOCK_THINKING_EXTRA only to calls that did not ask for thinking to be
+# disabled (a reasoning model spends that time on chain-of-thought).
+MOCK_LATENCY = float(os.environ.get("PAW_MOCK_LATENCY", "0") or 0)
+MOCK_THINKING_EXTRA = float(os.environ.get("PAW_MOCK_THINKING_EXTRA", "0") or 0)
+
 
 def extractive_analysis(text: str) -> Dict[str, Any]:
     """Extractive-mode analysis: candidates come only from the document text."""
@@ -215,6 +222,29 @@ def generate_structured_analysis(all_text: str) -> Dict[str, Any]:
 _request_count=0
 _advice_fault_sentences=0
 _count_lock=threading.Lock()
+_calls: List[Dict[str, Any]] = []
+
+
+def _task_label(system_prompt: str, user_prompt: str) -> str:
+    """Name the semantic task from the contract text, for per-call timing records."""
+    for marker, name in (
+        ('语义任务契约：section_update', 'section_update'),
+        ('语义任务契约：section_consistency', 'section_consistency'),
+        ('语义任务契约：project_advice', 'project_advice'),
+        ('语义任务契约：project_explainer', 'project_explainer'),
+        ('语义任务契约：daily_check', 'daily_check'),
+        ('语义任务契约：convergence', 'convergence'),
+    ):
+        if marker in system_prompt:
+            return name
+    text = f"{system_prompt}\n{user_prompt}"
+    if 'PAW (Personal AI Workspace)' in system_prompt:
+        return 'propose'
+    if any(k in text for k in ('30秒说明', '一句话说明', 'project_explainer')):
+        return 'project_explainer'
+    if '项目收敛' in text or ('现有活跃项目' in text and '收敛' in text):
+        return 'convergence'
+    return 'other'
 
 
 class MockOpenAIHandler(BaseHTTPRequestHandler):
@@ -233,8 +263,9 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path=='/stats':
-            with _count_lock:count=_request_count;faults=_advice_fault_sentences
-            self._send_json(200,{'chat_requests':count,'advice_fault_sentences':faults})
+            with _count_lock:
+                count=_request_count;faults=_advice_fault_sentences;calls=list(_calls)
+            self._send_json(200,{'chat_requests':count,'advice_fault_sentences':faults,'calls':calls})
         elif self.path in ("/health", "/"):
             self._send_json(200, {"status": "ok", "service": "mock_openai_server"})
         elif self.path.startswith("/v1/models"):
@@ -279,6 +310,10 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
                 system_prompt += str(m.get("content", ""))
 
         all_text = f"{system_prompt}\n{user_prompt}"
+        call_started = time.perf_counter()
+        call_task = _task_label(system_prompt, user_prompt)
+        call_thinking = req_data.get("enable_thinking") is not False
+        call_max_tokens = req_data.get("max_tokens")
 
         # 1. Connectivity probe (ping)
         if user_prompt.strip().lower() == "ping":
@@ -369,6 +404,16 @@ class MockOpenAIHandler(BaseHTTPRequestHandler):
                 "total_tokens": (len(all_text) + len(reply_content)) // 2,
             }
         }
+        delay = MOCK_LATENCY + (MOCK_THINKING_EXTRA if call_thinking else 0.0)
+        if delay > 0:
+            time.sleep(delay)
+        seconds = round(time.perf_counter() - call_started, 3)
+        with _count_lock:
+            _calls.append({'task': call_task, 'thinking': call_thinking,
+                           'max_tokens': call_max_tokens, 'delay': round(delay, 3),
+                           'seconds': seconds})
+        logger.info(f"[mock_server] call task={call_task} thinking={call_thinking} "
+                    f"max_tokens={call_max_tokens} seconds={seconds}")
         self._send_json(200, resp)
 
 

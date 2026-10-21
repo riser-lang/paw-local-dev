@@ -38,7 +38,7 @@ from backend.runtime_core.planner import agent_planner
 logger = logging.getLogger("paw.scanner")
 
 CHECKPOINT_FILE = DATA_DIR / "scan_checkpoint.json"
-SUPPORTED_EXTS = {".docx", ".xlsx", ".xlsm", ".pptx", ".pdf", ".txt", ".md", ".text"}
+from backend.core.file_types import SUPPORTED_EXTENSIONS as SUPPORTED_EXTS  # one list for scan, watch and cruise
 
 # Version suffix pattern for multi-version source grouping (R3)
 VERSION_SUFFIX_RE = re.compile(

@@ -69,6 +69,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[Migration] Warning: schema migration failed: {e}")
 
+    # Startup: retire proposals that a later version of the same document
+    # replaced.  A ruling retires them when it happens; this also cleans up the
+    # items an older build left behind, so they cannot block batch approval.
+    try:
+        from backend.pm.versions import retire_replaced_candidates
+        retired = retire_replaced_candidates()
+        if retired:
+            print(f"[Migration] Retired {retired} proposals from replaced versions")
+    except Exception as e:
+        print(f"[Migration] Warning: version cleanup failed: {e}")
+
     trace_startup('lifespan_directories')
     # Startup: sync monitored directories from settings (multi-directory support)
     try:

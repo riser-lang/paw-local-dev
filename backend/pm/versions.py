@@ -1,11 +1,14 @@
 """R1/R2 document-family decisions. Intake is nonformal; mutations run in Committer."""
 import difflib
 import json
+import logging
 import re
 import uuid
 from datetime import date
 from pathlib import Path
 from . import storage
+
+logger = logging.getLogger("paw.pm.versions")
 
 RULE_SOURCE = '用户 2026-10-15 设定'
 VERSION = re.compile(r'(?i)(?:[ _.-]*(?:v|版本)[ _.-]*)(\d+(?:\.\d+)*)$')
@@ -58,12 +61,156 @@ def rank(row):
     return (row['effective_date'] or '', tuple(json.loads(row['version_json'])), row['observed_at'])
 
 
+def _family_tail(title, project_name=None):
+    """The part of a family key that identifies the document, not the project.
+
+    Two files of one project normally share the project name ("青苗计划_方案_v1"
+    and "青苗计划_10月周报").  Comparing the full titles made the *different*
+    documents look like one family, so the two versions fell back to "needs
+    assignment" and no version ever superseded the other.  Comparing the tails
+    keeps that decision about the document itself.
+    """
+    value = str(title or '').strip()
+    name = str(project_name or '').strip()
+    if name and value.startswith(name):
+        value = value[len(name):]
+    return value.strip(' _.-')
+
+
+def similar_family(left, right, project_name=None):
+    """True when two family keys plausibly name the same document."""
+    a, b = _family_tail(left, project_name), _family_tail(right, project_name)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return difflib.SequenceMatcher(None, a, b).ratio() >= .55
+
+
+def is_replaced(conn, sid):
+    """True when a version ruling made another source of this family current.
+
+    The family pointer is the authoritative statement that this document was
+    replaced, so it is safe to withhold proposals and to retire pending ones.
+    Without a family (still waiting for the user's assignment decision) nothing
+    is replaced and the document keeps proposing.
+    """
+    row = conn.execute('SELECT f.current_source_id FROM pm_family_member m '
+                       'JOIN pm_family f ON f.id=m.family_id WHERE m.source_version_id=?', (sid,)).fetchone()
+    if not row:
+        return False
+    current = row[0]
+    return bool(current) and current != sid
+
+
+def withdraw_pending_candidates(conn, source_ids, reason='来源版本已被替换'):
+    """Retire pending candidates that were derived from replaced source versions.
+
+    They can never be accepted ("来源版本已被替换" from the committer), so leaving
+    them in the review list is what looked like "a few items that cannot be
+    confirmed".  The decision is recorded like any other review decision.
+    """
+    wanted = {str(s) for s in source_ids if s}
+    if not wanted:
+        return []
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if 'candidate' not in tables or 'review_decision' not in tables:
+        # Minimal schemas (unit fixtures, imported documents only) have no review
+        # list to clean up.
+        return []
+    withdrawn = []
+    rows = conn.execute("SELECT id,proposed_change FROM candidate WHERE status='pending'").fetchall()
+    for row in rows:
+        try:
+            refs = json.loads(conn.execute('SELECT source_refs FROM candidate WHERE id=?', (row['id'],)).fetchone()[0] or '[]')
+        except (TypeError, ValueError):
+            continue
+        if not wanted.intersection({str(r) for r in refs}):
+            continue
+        conn.execute('''INSERT INTO review_decision (id,candidate_id,decision,reviewer,review_channel,
+            approval_source,original_payload,reviewed_payload,authorization_payload_hash,review_notes,created_at)
+            VALUES (?,?,'reject',?,'web_review','candidate_review',?,NULL,NULL,?,?)''',
+            (str(uuid.uuid4()), row['id'], 'system:version-superseded',
+             row['proposed_change'], reason, storage.now()))
+        conn.execute("UPDATE candidate SET status='rejected',reviewed_at=?,reviewed_by=? WHERE id=?",
+                     (storage.now(), 'system:version-superseded', row['id']))
+        withdrawn.append(row['id'])
+    return withdrawn
+
+
+def withdraw_candidates_for(sids, reason='来源版本已被替换'):
+    """Open its own connection and retire candidates of replaced versions."""
+    if not sids:
+        return []
+    with storage.connect() as conn:
+        return withdraw_pending_candidates(conn, sids, reason)
+
+
+def retire_replaced_candidates():
+    """Retire proposals left in the list by versions a newer one replaced.
+
+    A ruling retires them at the moment it is made.  Workspaces that already
+    contain the stuck items (a review list written before that rule existed)
+    are cleaned up once at startup: those proposals could never be accepted, so
+    they stay visible as "rejected · 来源版本已被替换" instead of blocking the
+    user's batch approval.  Idempotent: after the first run nothing is pending.
+    """
+    tables = {}
+    with storage.connect() as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'candidate' not in tables or 'pm_family_member' not in tables:
+            return 0
+        stale = set()
+        for row in conn.execute("SELECT id,source_refs FROM candidate WHERE status='pending'"):
+            try:
+                refs = json.loads(row['source_refs'] or '[]')
+            except (TypeError, ValueError):
+                continue
+            if isinstance(refs, dict):
+                refs = refs.get('refs') or []
+            for sid in refs:
+                if is_replaced(conn, str(sid)):
+                    stale.add(str(sid))
+        retired = withdraw_pending_candidates(conn, stale)
+    if retired:
+        note('启动清理：撤回被替代版本的遗留提议', retired=len(retired))
+    return len(retired)
+
+
 def source_metadata(source):
     value=metadata(source['title'],source['body'])
     if source['kind']=='capture':
         value={'family_key':'随手记-'+source['source_version_id'],'version':[],
                'effective_date':None,'ambiguous_date':False}
     return value
+
+
+def _candidate_review_summary(conn, sid, limit=6):
+    """How the review list currently treats the proposals of one source version."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if 'candidate' not in tables:
+        return []
+    out = []
+    for row in conn.execute("SELECT id,candidate_type,status,source_refs FROM candidate "
+                            "ORDER BY created_at DESC LIMIT 200"):
+        try:
+            refs = json.loads(row['source_refs'] or '[]')
+        except (TypeError, ValueError):
+            continue
+        if isinstance(refs, dict):
+            refs = refs.get('refs') or []
+        if sid not in {str(r) for r in refs}:
+            continue
+        out.append({'id': row['id'][:8], 'type': row['candidate_type'], 'status': row['status']})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def note(_message, **_fields):
+    """One line of version-ruling evidence: keys, not prompts, never a secret."""
+    detail = ' '.join(f'{key}={value}' for key, value in _fields.items())
+    logger.info(_message + (' ' + detail if detail else ''))
 
 
 def process_source(source_id):
@@ -79,15 +226,27 @@ def process_source(source_id):
         pid = hits[0]['id'] if len(hits) == 1 else None
         conn.execute('INSERT OR IGNORE INTO pm_document_intake VALUES(?,?,?,?,?,?)',
                      (source_id, pid, meta['family_key'], storage.encoded(meta['version']), meta['effective_date'], s['created_at']))
+        note('版本摄取', source=source_id[:12], title=s['title'], family_key=meta['family_key'],
+             effective_date=meta['effective_date'] or 'none', version_json=storage.encoded(meta['version']),
+             project=pid or 'none')
         if conn.execute('SELECT 1 FROM pm_family_member WHERE source_version_id=?', (source_id,)).fetchone():
+            note('版本已在文档族内，跳过裁定', source=source_id[:12])
             return
         families = [dict(r) for r in conn.execute('SELECT * FROM pm_family WHERE project_id=?', (pid,))]
         exact = next((f for f in families if f['title'] == meta['family_key']), None)
-        similar = [f for f in families if difflib.SequenceMatcher(None, f['title'], meta['family_key']).ratio() >= .55] if s['kind']=='document' else []
+        project_name = None
+        if pid:
+            row = conn.execute('SELECT name FROM project WHERE id=?', (pid,)).fetchone()
+            project_name = row['name'] if row else None
+        similar = [f for f in families
+                   if similar_family(f['title'], meta['family_key'], project_name)] if s['kind']=='document' else []
         if not pid or meta['ambiguous_date'] or (not exact and similar):
             conn.execute('INSERT OR IGNORE INTO pm_family_decision(id,source_version_id,project_id,options_json,prompt,created_at) VALUES(?,?,?,?,?,?)',
                          (str(uuid.uuid4()),source_id,pid,storage.encoded([f['id'] for f in similar]),
                           '需要你决定：确认资料归属与文档族。选择后会参与该族版本裁定；拒绝则保持正式记录不变。',storage.now()))
+            note('版本未裁定：等待用户确认归属', source=source_id[:12], project=pid or 'none',
+                 ambiguous_date=bool(meta['ambiguous_date']), exact_family=bool(exact),
+                 similar_families=len(similar))
             return
         payload = {'project_id': pid, 'source_version_id': source_id,
                    'family_id': exact['id'] if exact else None, 'family_title': meta['family_key']}
@@ -114,7 +273,8 @@ def execute(conn, change, payload):
     if not user_decision:
         meta=source_metadata(storage.source(conn,sid))
         similar=conn.execute('SELECT title FROM pm_family WHERE project_id=? AND title<>?',(pid,intake['family_key'])).fetchall()
-        if meta['ambiguous_date'] or (storage.source(conn,sid)['kind']=='document' and not family and any(difflib.SequenceMatcher(None,r[0],intake['family_key']).ratio()>=.55 for r in similar)):
+        project_name = conn.execute('SELECT name FROM project WHERE id=?',(pid,)).fetchone()[0]
+        if meta['ambiguous_date'] or (storage.source(conn,sid)['kind']=='document' and not family and any(similar_family(r[0],intake['family_key'],project_name) for r in similar)):
             raise ValueError('R2：不确定的文档族需要用户确认')
     if family and (family['project_id'] != pid or (not user_decision and family['title'] != intake['family_key'])):
         raise ValueError('R2：不能自动归入不确定的文档族')
@@ -181,6 +341,19 @@ def execute(conn, change, payload):
                      (str(uuid.uuid4()),pid,fid,winner,change['change_id'],'references_refreshed' if previous else 'initial'))
     conn.execute('INSERT INTO pm_version_ruling VALUES(?,?,?,?,?,?,NULL,?)',
                  (change['change_id'],fid,previous,winner,storage.encoded(snapshot),RULE_SOURCE,storage.now()))
+    if winner != previous:
+        # The ruling makes one version current: proposals that came from the
+        # replaced versions cannot become formal state any more, so they leave
+        # the review list instead of waiting there forever.
+        replaced = [r['source_version_id'] for r in candidates if r['source_version_id'] != winner]
+        withdrawn = withdraw_pending_candidates(conn, replaced)
+        note('版本裁定', source=sid[:12], family=fid[:8], previous=(previous or 'none')[:12],
+             current=winner[:12], retired_candidates=len(withdrawn))
+    else:
+        note('版本裁定', source=sid[:12], family=fid[:8], previous=(previous or 'none')[:12],
+             current=winner[:12], retired_candidates=0)
+    note('版本裁定后来源候选', source=sid[:12],
+         review=_candidate_review_summary(conn, sid))
     if user_decision:
         conn.execute('UPDATE pm_document_intake SET project_id=? WHERE source_version_id=?',(pid,sid))
         conn.execute("UPDATE pm_family_decision SET status='resolved',change_id=? WHERE id=?",(change['change_id'],user_decision))

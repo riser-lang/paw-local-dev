@@ -71,10 +71,11 @@ def test_answer_call_falls_back_when_thinking_parameter_is_rejected(provider, st
     assert rows[-1]["thinking_disabled"] is False
 
 
-def test_internal_calls_keep_their_request_shape(provider, stub):
+def test_internal_calls_are_bounded_and_keep_no_answer_rows(provider, stub):
+    """R-271: background work is bounded, and it is not recorded as an answer."""
     stub.state["respond"] = lambda index, body: (200, _chat_payload())
     provider.chat_completion(messages=[{"role": "user", "content": "巡航建议"}], temperature=0.1)
     sent = stub.state["requests"][0]
-    assert "enable_thinking" not in sent
-    assert sent["max_tokens"] == 2048
-    assert model_calls.rows_since(0) == []
+    assert sent["enable_thinking"] is False
+    assert sent["max_tokens"] == adapter.INTERNAL_MAX_TOKENS
+    assert model_calls.snapshot("chat") == []
