@@ -30,6 +30,13 @@ SCAN_MAX_TOKENS = 1500
 SCAN_MAX_RETRIES = 2
 SCAN_RETRY_STATUSES = (429, 503)
 
+# Background model work (cruise project analysis, advice, convergence, reread)
+# answers with a small JSON draft exactly like the scan path: no chain-of-thought
+# and a bounded wait.  Before this bound those calls ran with thinking enabled and
+# the 120 s chat ceiling, which is what made a three-file cruise take minutes.
+INTERNAL_MAX_TOKENS = 2000
+INTERNAL_CALL_TIMEOUT_SECONDS = 25.0
+
 # Chat answers are short grounded prose. R-264 turns chain-of-thought off for
 # them too and bounds the output. 2000 was the first bound, but the real-model
 # run showed three answers truncated exactly at the cap and then refused by the
@@ -617,8 +624,11 @@ class UniversalOpenAIProvider(BaseProvider):
 
         # Phase 2 analysis calls come from the scanner through the semantic
         # boundary; assistant answers come from the chat facade. Both answer with
-        # short, bounded output and no chain-of-thought. Other internal calls
-        # (cruise advice, semantic drafts) keep their existing request shape.
+        # short, bounded output and no chain-of-thought.
+        # Everything that is neither an assistant answer nor a scan file is
+        # background work (cruise project analysis, advice, convergence, reread);
+        # it is bounded the same way, because it must not decide how long a cruise
+        # takes. Chat answers keep their own larger budget.
         scan_mode = model_calls.in_scan()
         answer_mode = model_calls.in_answer()
         if scan_mode:
@@ -627,8 +637,13 @@ class UniversalOpenAIProvider(BaseProvider):
         elif answer_mode:
             body["max_tokens"] = ANSWER_MAX_TOKENS
             body["enable_thinking"] = False
+        else:
+            body["max_tokens"] = min(int(max_tokens or 0) or INTERNAL_MAX_TOKENS,
+                                     INTERNAL_MAX_TOKENS)
+            body["enable_thinking"] = False
         timeout = (httpx.Timeout(SCAN_CALL_TIMEOUT_SECONDS, connect=10.0) if scan_mode
-                   else httpx.Timeout(120.0, connect=10.0))
+                   else httpx.Timeout(INTERNAL_CALL_TIMEOUT_SECONDS if not answer_mode else 120.0,
+                                      connect=10.0))
 
         def observed_failure(message):
             from backend.pm.health import observe,identity

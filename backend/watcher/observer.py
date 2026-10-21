@@ -27,7 +27,7 @@ from backend.workspace_api.repository import list_knowledge, list_projects
 
 logger = logging.getLogger("paw.watcher")
 
-SUPPORTED_EXTENSIONS = {".docx", ".xlsx", ".xlsm", ".pptx", ".pdf"}
+SUPPORTED_EXTENSIONS = {".docx", ".xlsx", ".xlsm", ".pptx", ".pdf", ".txt", ".md", ".text"}
 
 
 def _is_temporary_file(path: Path) -> bool:

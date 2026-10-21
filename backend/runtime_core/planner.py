@@ -40,6 +40,20 @@ class AgentPlanner:
         text_blocks = evidence.get("text_blocks", [])
         combined_text = " ".join(b.get("text", "") for b in text_blocks[:15])
 
+        # A version that a newer version of the same document already replaced
+        # never proposes again: its content contradicts the current version, and
+        # the committer would refuse it anyway ("来源版本已被替换").  Proposals it
+        # already produced are retired here so the review list only shows the
+        # current version.
+        from backend.pm import storage
+        from backend.pm import versions as pm_versions
+        with storage.connect() as conn:
+            replaced = pm_versions.superseded_siblings(conn, file_hash)
+        if replaced:
+            pm_versions.withdraw_candidates_for(replaced)
+            logger.info(f"{display_name} 已被更新版本替代，本次不生成提议")
+            return []
+
         # 1. Fetch current formal state
         projects = list_projects()
         knowledge_items = list_knowledge(limit=100)
@@ -67,13 +81,16 @@ class AgentPlanner:
         failed_proposals = 0
 
         # 4. Evaluate each proposal with Conflict Analyzer
+        from backend.pm import display_text
         for prop in raw_proposals:
             target_type = prop.get("target_type")
             operation = prop.get("operation")
-            payload = prop.get("payload", {})
+            payload = display_text.clean_payload(prop.get("payload", {}))
             raw_excerpt = prop.get("raw_excerpt", "")
             locators = prop.get("evidence_locators", [])
             review_brief = prop.get("review_brief", {})
+            # Review brief text is shown next to the card as well.
+            display_text.clean_fields(review_brief, ("summary", "recommended_action"))
 
             # If project aligned, automatically associate project_id to todo or knowledge
             if aligned_projects and not payload.get("project_id"):
@@ -114,6 +131,17 @@ class AgentPlanner:
 
         if failed_proposals:
             raise RuntimeError(f'候选落库失败 {failed_proposals} 条；资料分析未完成，可重试')
+
+        # The newer version may have been filed while this proposal batch was being
+        # built (phase 2 analyses files in parallel).  Re-check at the end: a batch
+        # that belongs to a replaced version must not stay in the review list,
+        # where it can never be accepted.
+        with storage.connect() as conn:
+            replaced_now = pm_versions.superseded_siblings(conn, file_hash)
+        if replaced_now and created_candidate_ids:
+            pm_versions.withdraw_candidates_for([file_hash] + replaced_now)
+            logger.info(f"{display_name} 在分析期间被更新版本替代，撤回本次 {len(created_candidate_ids)} 条提议")
+            return []
 
         # 6. Publish REVIEW_REQUIRED event
         if created_candidate_ids:

@@ -27,7 +27,7 @@ from backend.runtime_core.project_convergence import run_project_convergence
 
 logger = logging.getLogger("paw.scheduler")
 
-SUPPORTED_EXTENSIONS = {".docx", ".xlsx", ".xlsm", ".pptx", ".pdf"}
+SUPPORTED_EXTENSIONS = {".docx", ".xlsx", ".xlsm", ".pptx", ".pdf", ".txt", ".md", ".text"}
 
 
 def _is_temporary_file(path: Path) -> bool:
@@ -135,7 +135,16 @@ class PawScheduler:
         total_files_in_dir = 0
         new_candidates = 0
         item_budget=10  # R5: one-by-one, at most ten intake/reread items in a cruise.
+        file_timings: List[Dict[str, Any]] = []
+        phase_seconds: Dict[str, float] = {}
 
+        # Every model call made by this cruise is recorded under the "cruise"
+        # channel: one row per request with the file, task, seconds and status.
+        # Prompts, request bodies and credentials are never stored (see
+        # backend/provider/model_calls.py).
+        from backend.provider import model_calls
+        call_mark = model_calls.count()
+        run_ctx = model_calls.begin_run("cruise")
         try:
             for scan_dir in (getattr(self, "sources_dirs", None) or [self.sources_dir]):
                 if not scan_dir.is_dir():
@@ -160,6 +169,7 @@ class PawScheduler:
                         # Process file with fault isolation
                         files_attempted+=1
                         cids = None
+                        file_started = time.perf_counter()
                         try:
                             cids = self.process_source_file(p, f_hash)
                             self._processed_hashes.add(f_hash)
@@ -169,6 +179,12 @@ class PawScheduler:
                         except Exception as file_exc:
                             logger.error(f"Error processing source file {p.name}: {file_exc}", exc_info=True)
                         finally:
+                            file_timings.append({
+                                "name": p.name,
+                                "seconds": round(time.perf_counter() - file_started, 2),
+                                "candidates": len(cids or []),
+                                "ok": cids is not None,
+                            })
                             governance.release_source(
                                 f_hash, p.name, "cruise",
                                 candidates_created=len(cids) if cids is not None else None,
@@ -176,6 +192,7 @@ class PawScheduler:
 
             # 2. Built-in AI Quick Capture (快速记录) Ingest & Analysis
             captures_processed = 0
+            phase_started = time.perf_counter()
             try:
                 from backend.workspace_api.repository import unprocessed_captures
                 pending_caps = unprocessed_captures(limit=max(0,item_budget-files_attempted))
@@ -186,12 +203,15 @@ class PawScheduler:
                     captures_processed += 1
             except Exception as exc:
                 logger.warning(f"Capture cruise processing warning: {exc}")
+            phase_seconds["captures"] = round(time.perf_counter() - phase_started, 2)
 
             # Project convergence: same-name duplicates plus AI grouping of projects that
             # belong to one long-term initiative (model called only when the project list
             # changed, or on a deep cruise); high-confidence groups merge automatically.
+            phase_started = time.perf_counter()
             convergence = run_project_convergence(use_ai=True, force_ai=force_rescan)
             new_candidates += len(convergence.get("pending") or [])
+            phase_seconds["convergence"] = round(time.perf_counter() - phase_started, 2)
 
             self.total_cruises += 1
             self.total_files_analyzed += files_processed
@@ -200,24 +220,39 @@ class PawScheduler:
             # Built-in AI Project Explainer & 30-Second Summary Analysis
             analyzed_projects = []
             projects_attempted = 0
+            projects_deferred = False
+            phase_started = time.perf_counter()
             if analyze_projects:
-                try:
-                    analyzed_projects = project_analyzer.analyze_projects(max_projects=max(0,item_budget-files_attempted-captures_processed), force=force_rescan)
-                except Exception as exc:
-                    logger.warning(f"ProjectAnalyzer during cruise warning: {exc}")
-                finally:
-                    projects_attempted = getattr(project_analyzer,'last_attempted',len(analyzed_projects))
+                if files_processed or captures_processed:
+                    # This cruise already spent its model budget on the files it
+                    # read; the project drafts are produced right after the cruise
+                    # returns instead of making the user wait for them again.
+                    projects_deferred = True
+                    threading.Thread(target=self._analyze_projects_background,
+                                     name="CruiseProjectAnalysis", daemon=True).start()
+                else:
+                    try:
+                        analyzed_projects = project_analyzer.analyze_projects(max_projects=max(0,item_budget-files_attempted-captures_processed), force=force_rescan)
+                    except Exception as exc:
+                        logger.warning(f"ProjectAnalyzer during cruise warning: {exc}")
+                    finally:
+                        projects_attempted = getattr(project_analyzer,'last_attempted',len(analyzed_projects))
+            phase_seconds["projects"] = round(time.perf_counter() - phase_started, 2)
 
             from backend.pm.reread import run as run_targeted_reread
             remaining=item_budget-files_attempted-captures_processed-projects_attempted
+            phase_started = time.perf_counter()
             reread=run_targeted_reread(remaining) if remaining>0 else {'processed':0,'items':[]}
+            phase_seconds["reread"] = round(time.perf_counter() - phase_started, 2)
 
             # Run Evolution Engine health check and background self-diagnosis
+            phase_started = time.perf_counter()
             try:
                 evo_diagnosis = self.evolution_engine.run_cruise_evolution_check(self.sources_dir)
             except Exception as e:
                 logger.warning(f"Evolution Engine check during cruise warning: {e}")
                 evo_diagnosis = {"status": "error", "detail": str(e), "overall_score": 70, "overall_grade": "良好"}
+            phase_seconds["evolution"] = round(time.perf_counter() - phase_started, 2)
 
             elapsed_seconds = round(time.time() - t0, 2)
             score = evo_diagnosis.get("overall_score", 0)
@@ -227,6 +262,12 @@ class PawScheduler:
                 cap_msg += f"，已自动收敛 {len(convergence['auto_merged'])} 组项目"
             if convergence.get("pending"):
                 cap_msg += f"，{len(convergence['pending'])} 组项目合并建议待审核"
+            timing = {
+                "files": file_timings,
+                "phases": phase_seconds,
+                "model_calls": model_calls.summary("cruise"),
+                "model_call_rows": model_calls.rows_since(call_mark),
+            }
             result = {
                 "status": "success",
                 "trigger": trigger,
@@ -236,12 +277,14 @@ class PawScheduler:
                 "captures_analyzed": captures_processed,
                 "candidates_produced": new_candidates,
                 "projects_analyzed": len(analyzed_projects),
+                "projects_deferred": projects_deferred,
                 "targeted_reread": reread,
                 "projects_details": [p.get("name") for p in analyzed_projects],
                 "evolution": evo_diagnosis,
                 "started_at": started_at,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "elapsed_seconds": elapsed_seconds,
+                "timing": timing,
                 "summary": (
                     f"巡航完成（耗时 {elapsed_seconds} 秒）：检查工作目录 {total_files_in_dir} 个文件"
                     f"（{files_processed} 个新解析，{files_unchanged} 个最新）{cap_msg}，"
@@ -260,8 +303,23 @@ class PawScheduler:
             observe('patrol',False,'巡航未完成，请查看本地运行记录并重试')
             raise
         finally:
+            model_calls.end_run(run_ctx)
             with self._lock:
                 self.cruise_status = "idle"
+
+    def _analyze_projects_background(self) -> None:
+        """Produce the project drafts a busy cruise deferred, without blocking it."""
+        try:
+            updated = project_analyzer.analyze_projects(max_projects=10)
+        except Exception as exc:
+            logger.warning(f"Background project analysis warning: {exc}")
+            return
+        with self._lock:
+            result = self.latest_cruise_result
+            if isinstance(result, dict):
+                result["projects_analyzed"] = len(updated)
+                result["projects_deferred"] = False
+                result["projects_details"] = [p.get("name") for p in updated]
 
     def process_capture(self, capture_id: str) -> List[str]:
         """Process a single quick capture record with AI Cruise."""
