@@ -147,6 +147,20 @@ def test_retired_proposals_leave_the_review_list(version_db):
         assert json.loads(pending[0]["proposed_change"])["payload"]["target"] == 40
 
 
+def test_current_version_proposals_survive_the_older_version_guard(version_db):
+    """Only the replaced version's proposals are retired, never the current ones."""
+    _ingest("v1", "青苗计划_方案_v1.md", "# 青苗计划实施方案 v1\n\n生效日期：2026年9月1日\n目标：30 名。")
+    stale = _candidate("v1", "第一期培养新员工导师", 30)
+    _ingest("v2", "青苗计划_方案_v2.md", "# 青苗计划实施方案 v2\n\n生效日期：2026年10月8日\n目标调整：40 名。")
+    current = _candidate("v2", "第一期培养新员工导师", 40)
+    # The guard a replaced version runs must not touch the current version's card.
+    with storage.connect() as conn:
+        versions.withdraw_pending_candidates(conn, ["v1"])
+        rows = {r["id"]: r["status"] for r in conn.execute("SELECT id,status FROM candidate")}
+    assert rows[stale] == "rejected"
+    assert rows[current] == "pending"
+
+
 def test_planner_does_not_propose_from_a_replaced_version(version_db, monkeypatch):
     _ingest("v1", "青苗计划_方案_v1.md", "# 青苗计划实施方案 v1\n\n生效日期：2026年9月1日\n目标：30 名。")
     _ingest("v2", "青苗计划_方案_v2.md", "# 青苗计划实施方案 v2\n\n生效日期：2026年10月8日\n目标调整：40 名。")

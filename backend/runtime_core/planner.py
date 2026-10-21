@@ -50,7 +50,9 @@ class AgentPlanner:
         with storage.connect() as conn:
             replaced = pm_versions.superseded_siblings(conn, file_hash)
         if replaced:
-            pm_versions.withdraw_candidates_for(replaced)
+            # Retire only this file's own proposals: the newer versions are the
+            # current ones and their proposals stay.
+            pm_versions.withdraw_candidates_for([file_hash])
             logger.info(f"{display_name} 已被更新版本替代，本次不生成提议")
             return []
 
@@ -139,7 +141,7 @@ class AgentPlanner:
         with storage.connect() as conn:
             replaced_now = pm_versions.superseded_siblings(conn, file_hash)
         if replaced_now and created_candidate_ids:
-            pm_versions.withdraw_candidates_for([file_hash] + replaced_now)
+            pm_versions.withdraw_candidates_for([file_hash])
             logger.info(f"{display_name} 在分析期间被更新版本替代，撤回本次 {len(created_candidate_ids)} 条提议")
             return []
 
