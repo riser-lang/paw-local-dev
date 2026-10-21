@@ -120,6 +120,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='PAW_Personal_Work_OS',
+    icon=str(project_root / 'assets' / 'paw-app.ico'),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

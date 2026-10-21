@@ -992,7 +992,8 @@
           if (resp.failed_count > 0) {
             alert(`批量审核完成：
 成功入库: ${resp.accepted_count} 条
-入库失败: ${resp.failed_count} 条（首条错误原因: ${resp.failed_details && resp.failed_details[0] ? resp.failed_details[0].error : "校验未通过"}）
+入库失败: ${resp.failed_count} 条
+${window.formatBatchFailureDetails(resp.failed_details)}
 当前剩余待审: ${after.total_pending != null ? after.total_pending : "-"} 条`);
           } else {
             alert(`批量通过成功！

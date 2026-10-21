@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+<title id="title">PAW 图标方向 A</title>
+<desc id="desc">暖米色与赤陶色的个人 AI 工作台图标。256 像素保留开放的回形针 P；小尺寸保留窗口外框、顶栏和 P。</desc>
+<defs>
+<symbol id="size-16" viewBox="0 0 16 16">
+  <rect x="1" y="1" width="14" height="14" rx="3" fill="#B66F51"/>
+  <rect x="3" y="4" width="10" height="9" rx="1.2" fill="#FCFAF6"/>
+  <path d="M4.2 4h7.6v2H4.2z" fill="#EAD9CE"/>
+  <rect x="4" y="7" width="4" height="6.5" rx="0.8" fill="#B66F51"/>
+  <path d="M5.2 8h2.4l1.2.7v2l-1.2.7H6.4v2H5.2Z" fill="#FCFAF6"/>
+</symbol>
+<symbol id="size-32" viewBox="0 0 32 32">
+  <rect x="2" y="2" width="28" height="28" rx="5" fill="#B66F51"/>
+  <rect x="5" y="7" width="22" height="20" rx="2.5" fill="#FCFAF6"/>
+  <path d="M7.5 7h17v5h-17z" fill="#EAD9CE"/>
+  <rect x="8" y="13" width="6" height="13" rx="1.2" fill="#B66F51"/>
+  <path d="M9.6 14.8h3.3l1.7 1v3.1l-1.7 1H12v4.3H9.6Z" fill="#FCFAF6"/>
+</symbol>
+<symbol id="size-48" viewBox="0 0 48 48">
+  <rect x="3" y="3" width="42" height="42" rx="8" fill="#B66F51"/>
+  <rect x="7" y="8" width="34" height="33" rx="4" fill="#FCFAF6"/>
+  <path d="M11 8h26a4 4 0 0 1 4 4v5H7v-5a4 4 0 0 1 4-4Z" fill="#EAD9CE"/>
+  <rect x="10" y="18.5" width="10" height="20" rx="2.2" fill="#B66F51"/>
+  <path d="M13.3 21.4h5.6l1.8 1.2v5l-1.8 1.2H16v7h-2.7Z" fill="#FCFAF6"/>
+</symbol>
+</defs>
+<rect x="4" y="4" width="248" height="248" rx="48" fill="#F7F3EB"/>
+<g transform="translate(0 0)"><rect x="16" y="16" width="224" height="224" rx="40" fill="#B66F51"/><rect x="38" y="39" width="180" height="180" rx="18" fill="#FCFAF6"/><path d="M56 39h144a18 18 0 0 1 18 18v23H38V57a18 18 0 0 1 18-18Z" fill="#EAD9CE"/><circle cx="58" cy="60" r="4" fill="#B66F51"/><circle cx="74" cy="60" r="4" fill="#B66F51"/><circle cx="90" cy="60" r="4" fill="#B66F51"/><rect x="53" y="99" width="42" height="99" rx="9" fill="#B66F51"/><path d="M67 113h25l15 8v25l-15 8H81v29H67Z" fill="#FCFAF6"/><path d="M119 108h82v10h-82zm0 24h76v9h-76z" fill="#EAD9CE"/><rect x="119" y="156" width="82" height="31" rx="8" fill="#EAD9CE"/><rect x="131" y="166" width="58" height="9" fill="#B66F51"/></g>
+</svg>

@@ -14,6 +14,7 @@
 [Setup]
 ; Basic Application Identity
 AppId={#MyAppAppId}
+SetupIconFile=..\assets\paw-app.ico
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
@@ -83,7 +84,7 @@ Source: "..\docs\使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\使用说明"; Filename: "{app}\使用说明.txt"
 Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon
 
 [Run]

@@ -14,5 +14,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: python -m pip install pytest httpx lxml python-docx openpyxl python-pptx
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install pytest httpx fastapi lxml python-docx openpyxl python-pptx
       - run: python -m pytest tests/unit -q
