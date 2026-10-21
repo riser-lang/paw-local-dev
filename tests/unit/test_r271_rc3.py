@@ -23,7 +23,7 @@ from backend.provider import adapter, model_calls
 from backend.runtime_core import planner as planner_module
 from backend.runtime_core import scanner as scanner_module
 from backend.runtime_core import scheduler as scheduler_module
-from backend.watcher import observer as watcher_module
+from backend.core import file_types
 from tests.unit.test_scan_model_calls import provider, stub  # noqa: F401  (pytest fixtures)
 
 
@@ -127,6 +127,26 @@ def test_older_version_is_reported_as_superseded(version_db):
         assert conn.execute("SELECT count(*) FROM pm_version_ruling").fetchone()[0] == 2
 
 
+def test_version_number_decides_even_when_one_effective_date_is_missing(version_db):
+    # A parsing miss must not make the newest document look replaced.
+    _ingest("v1", "青苗计划_方案_v1.md", "# 青苗计划实施方案 v1\n\n生效日期：2026年9月1日\n目标：30 名。")
+    _ingest("v9", "青苗计划_方案_v9.md", "# 青苗计划实施方案 v9\n\n目标调整：40 名。")
+    with storage.connect() as conn:
+        conn.execute("UPDATE pm_document_intake SET effective_date=NULL WHERE source_version_id='v9'")
+        assert versions.superseded_siblings(conn, "v1") == ["v9"]
+        assert versions.superseded_siblings(conn, "v9") == []
+
+    # Neither a version number nor a date: nothing proves v2 replaces v1.
+    _ingest("wi", "青禾计划_纪要.md", "会议记录。")
+    _ingest("wj", "青禾计划_纪要.md", "会议记录。")
+    with storage.connect() as conn:
+        conn.execute("UPDATE pm_document_intake SET effective_date=NULL WHERE source_version_id IN ('wi','wj')")
+        conn.execute("UPDATE pm_document_intake SET version_json='[]' WHERE source_version_id IN ('wi','wj')")
+        conn.execute("UPDATE pm_document_intake SET observed_at='2026-01-01' WHERE source_version_id='wi'")
+        conn.execute("UPDATE pm_document_intake SET observed_at='2026-02-01' WHERE source_version_id='wj'")
+        assert versions.superseded_siblings(conn, "wi") == ["wj"]
+
+
 def test_retired_proposals_leave_the_review_list(version_db):
     """The candidates that could never be confirmed are retired with an audit note."""
     _ingest("v1", "青苗计划_方案_v1.md", "# 青苗计划实施方案 v1\n\n生效日期：2026年9月1日\n目标：30 名。")
@@ -174,10 +194,14 @@ def test_planner_does_not_propose_from_a_replaced_version(version_db, monkeypatc
 
 
 # ── 1. Cruise cost ──────────────────────────────────────────────────────────
-def test_cruise_reads_the_same_file_types_as_the_scanner():
-    assert scanner_module.SUPPORTED_EXTS <= scheduler_module.SUPPORTED_EXTENSIONS
-    assert ".md" in scheduler_module.SUPPORTED_EXTENSIONS
-    assert ".md" in watcher_module.SUPPORTED_EXTENSIONS
+def test_every_intake_path_reads_the_same_file_types():
+    # The watcher imports watchdog, which the Linux unit runner does not install;
+    # all three paths take the list from backend.core.file_types instead.
+    assert scheduler_module.SUPPORTED_EXTENSIONS is file_types.SUPPORTED_EXTENSIONS
+    assert scanner_module.SUPPORTED_EXTS is file_types.SUPPORTED_EXTENSIONS
+    assert {".md", ".txt", ".docx", ".pdf"} <= set(file_types.SUPPORTED_EXTENSIONS)
+    watcher = Path("backend/watcher/observer.py").read_text(encoding="utf-8")
+    assert "from backend.core.file_types import SUPPORTED_EXTENSIONS" in watcher
 
 
 def test_background_calls_are_recorded_under_the_cruise_channel(provider, stub):

@@ -84,6 +84,32 @@ def similar_family(left, right, project_name=None):
     return difflib.SequenceMatcher(None, a, b).ratio() >= .55
 
 
+def _json_version(row):
+    try:
+        value = json.loads(row['version_json'] or '[]')
+        return tuple(value) if isinstance(value, list) else ()
+    except (TypeError, ValueError):
+        return ()
+
+
+def _outranks(peer, mine):
+    """True when ``peer`` is a newer version of the same document.
+
+    Only comparable evidence decides: an explicit version number first, then an
+    explicit effective date.  An intake row with neither never outranks another
+    one, so a parsing miss cannot make the newest document look replaced.
+    """
+    peer_version, mine_version = _json_version(peer), _json_version(mine)
+    if peer_version and mine_version and peer_version != mine_version:
+        return peer_version > mine_version
+    peer_date, mine_date = peer.get('effective_date') or '', mine.get('effective_date') or ''
+    if peer_date and mine_date and peer_date != mine_date:
+        return peer_date > mine_date
+    if peer_version == mine_version and peer_date == mine_date:
+        return (peer.get('observed_at') or '') > (mine.get('observed_at') or '')
+    return False
+
+
 def superseded_siblings(conn, sid):
     """Sibling source versions of the same document family that outrank ``sid``.
 
@@ -102,7 +128,7 @@ def superseded_siblings(conn, sid):
     if not mine:
         return []
     return [p['source_version_id'] for p in peers
-            if p['source_version_id'] != sid and rank(p) > rank(mine)]
+            if p['source_version_id'] != sid and _outranks(p, mine)]
 
 
 def withdraw_pending_candidates(conn, source_ids, reason='来源版本已被替换'):

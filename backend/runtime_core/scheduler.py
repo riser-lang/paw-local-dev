@@ -27,7 +27,7 @@ from backend.runtime_core.project_convergence import run_project_convergence
 
 logger = logging.getLogger("paw.scheduler")
 
-SUPPORTED_EXTENSIONS = {".docx", ".xlsx", ".xlsm", ".pptx", ".pdf", ".txt", ".md", ".text"}
+from backend.core.file_types import SUPPORTED_EXTENSIONS  # one list for scan, watch and cruise
 
 
 def _is_temporary_file(path: Path) -> bool:
