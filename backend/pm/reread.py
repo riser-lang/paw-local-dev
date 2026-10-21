@@ -62,21 +62,7 @@ def run(limit=5):
             row=conn.execute("SELECT j.*,l.path FROM pm_reread_job j LEFT JOIN pm_source_location l ON l.source_version_id=j.source_version_id WHERE j.status='pending' ORDER BY j.created_at,j.id LIMIT 1").fetchone()
             if not row:break
             job=dict(row)
-            # A version that a newer version replaced is not read again: the
-            # reread would only spend model calls on text the user already
-            # replaced, and its proposals are retired anyway.
-            from . import versions
-            replaced=versions.superseded_siblings(conn,job['source_version_id'])
-            if replaced:
-                conn.execute("UPDATE pm_reread_job SET status='skipped',result_json=?,updated_at=? WHERE id=?",
-                             (storage.encoded({'status':'skipped','reason':'source_superseded'}),storage.now(),job['id']))
-            else:
-                conn.execute("UPDATE pm_reread_job SET status='running',attempts=attempts+1,updated_at=? WHERE id=?",
-                             (storage.now(),job['id']))
-        if replaced:
-            outcomes.append({'id':job['id'],'source_version_id':job['source_version_id'],
-                             'reason':job['reason'],'status':'skipped'})
-            continue
+            conn.execute("UPDATE pm_reread_job SET status='running',attempts=attempts+1,updated_at=? WHERE id=?",(storage.now(),job['id']))
         result=_perform(job)
         with storage.connect() as conn:
             conn.execute('UPDATE pm_reread_job SET status=?,result_json=?,updated_at=? WHERE id=?',
