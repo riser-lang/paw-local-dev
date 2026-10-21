@@ -84,51 +84,20 @@ def similar_family(left, right, project_name=None):
     return difflib.SequenceMatcher(None, a, b).ratio() >= .55
 
 
-def _json_version(row):
-    try:
-        value = json.loads(row['version_json'] or '[]')
-        return tuple(value) if isinstance(value, list) else ()
-    except (TypeError, ValueError):
-        return ()
+def is_replaced(conn, sid):
+    """True when a version ruling made another source of this family current.
 
-
-def _outranks(peer, mine):
-    """True when ``peer`` is a newer version of the same document.
-
-    Only comparable evidence decides: an explicit version number first, then an
-    explicit effective date.  An intake row with neither never outranks another
-    one, so a parsing miss cannot make the newest document look replaced.
+    The family pointer is the authoritative statement that this document was
+    replaced, so it is safe to withhold proposals and to retire pending ones.
+    Without a family (still waiting for the user's assignment decision) nothing
+    is replaced and the document keeps proposing.
     """
-    peer_version, mine_version = _json_version(peer), _json_version(mine)
-    if peer_version and mine_version and peer_version != mine_version:
-        return peer_version > mine_version
-    peer_date, mine_date = peer.get('effective_date') or '', mine.get('effective_date') or ''
-    if peer_date and mine_date and peer_date != mine_date:
-        return peer_date > mine_date
-    if peer_version == mine_version and peer_date == mine_date:
-        return (peer.get('observed_at') or '') > (mine.get('observed_at') or '')
-    return False
-
-
-def superseded_siblings(conn, sid):
-    """Sibling source versions of the same document family that outrank ``sid``.
-
-    Used before proposing: a version that a newer version already replaced must
-    not send new proposals to the review list.  Works even while the family
-    still waits for the user's assignment decision, because the family key and
-    the version rank are known from intake.
-    """
-    row = conn.execute('SELECT family_key,project_id FROM pm_document_intake WHERE source_version_id=?', (sid,)).fetchone()
-    if not row or not row['family_key']:
-        return []
-    peers = [dict(r) for r in conn.execute(
-        'SELECT source_version_id,version_json,effective_date,observed_at FROM pm_document_intake WHERE family_key=?',
-        (row['family_key'],))]
-    mine = next((p for p in peers if p['source_version_id'] == sid), None)
-    if not mine:
-        return []
-    return [p['source_version_id'] for p in peers
-            if p['source_version_id'] != sid and _outranks(p, mine)]
+    row = conn.execute('SELECT f.current_source_id FROM pm_family_member m '
+                       'JOIN pm_family f ON f.id=m.family_id WHERE m.source_version_id=?', (sid,)).fetchone()
+    if not row:
+        return False
+    current = row[0]
+    return bool(current) and current != sid
 
 
 def withdraw_pending_candidates(conn, source_ids, reason='来源版本已被替换'):

@@ -48,7 +48,7 @@ class AgentPlanner:
         from backend.pm import storage
         from backend.pm import versions as pm_versions
         with storage.connect() as conn:
-            replaced = pm_versions.superseded_siblings(conn, file_hash)
+            replaced = pm_versions.is_replaced(conn, file_hash)
         if replaced:
             # Retire only this file's own proposals: the newer versions are the
             # current ones and their proposals stay.
@@ -139,7 +139,7 @@ class AgentPlanner:
         # that belongs to a replaced version must not stay in the review list,
         # where it can never be accepted.
         with storage.connect() as conn:
-            replaced_now = pm_versions.superseded_siblings(conn, file_hash)
+            replaced_now = pm_versions.is_replaced(conn, file_hash)
         if replaced_now and created_candidate_ids:
             pm_versions.withdraw_candidates_for([file_hash])
             logger.info(f"{display_name} 在分析期间被更新版本替代，撤回本次 {len(created_candidate_ids)} 条提议")

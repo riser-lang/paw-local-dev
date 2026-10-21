@@ -120,31 +120,29 @@ def test_older_version_is_reported_as_superseded(version_db):
     _ingest("v1", "青苗计划_方案_v1.md", "# 青苗计划实施方案 v1\n\n生效日期：2026年9月1日\n目标：30 名。")
     _ingest("v2", "青苗计划_方案_v2.md", "# 青苗计划实施方案 v2\n\n生效日期：2026年10月8日\n目标调整：40 名。")
     with storage.connect() as conn:
-        assert versions.superseded_siblings(conn, "v1") == ["v2"]
-        assert versions.superseded_siblings(conn, "v2") == []
+        assert versions.is_replaced(conn, "v1") is True
+        assert versions.is_replaced(conn, "v2") is False
         # Both versions really did join one family and the ruling was recorded.
         assert conn.execute("SELECT count(*) FROM pm_family").fetchone()[0] == 1
         assert conn.execute("SELECT count(*) FROM pm_version_ruling").fetchone()[0] == 2
 
 
-def test_version_number_decides_even_when_one_effective_date_is_missing(version_db):
-    # A parsing miss must not make the newest document look replaced.
+def test_replaced_is_decided_by_the_version_ruling(version_db):
+    # The family pointer is authoritative: before the ruling neither version is
+    # replaced (both may propose), after it only the current one may.
     _ingest("v1", "青苗计划_方案_v1.md", "# 青苗计划实施方案 v1\n\n生效日期：2026年9月1日\n目标：30 名。")
-    _ingest("v9", "青苗计划_方案_v9.md", "# 青苗计划实施方案 v9\n\n目标调整：40 名。")
     with storage.connect() as conn:
-        conn.execute("UPDATE pm_document_intake SET effective_date=NULL WHERE source_version_id='v9'")
-        assert versions.superseded_siblings(conn, "v1") == ["v9"]
-        assert versions.superseded_siblings(conn, "v9") == []
-
-    # Neither a version number nor a date: nothing proves v2 replaces v1.
-    _ingest("wi", "青禾计划_纪要.md", "会议记录。")
-    _ingest("wj", "青禾计划_纪要.md", "会议记录。")
+        assert versions.is_replaced(conn, "v1") is False
+    _ingest("v2", "青苗计划_方案_v2.md", "# 青苗计划实施方案 v2\n\n生效日期：2026年10月8日\n目标调整：40 名。")
     with storage.connect() as conn:
-        conn.execute("UPDATE pm_document_intake SET effective_date=NULL WHERE source_version_id IN ('wi','wj')")
-        conn.execute("UPDATE pm_document_intake SET version_json='[]' WHERE source_version_id IN ('wi','wj')")
-        conn.execute("UPDATE pm_document_intake SET observed_at='2026-01-01' WHERE source_version_id='wi'")
-        conn.execute("UPDATE pm_document_intake SET observed_at='2026-02-01' WHERE source_version_id='wj'")
-        assert versions.superseded_siblings(conn, "wi") == ["wj"]
+        assert versions.is_replaced(conn, "v1") is True
+        assert versions.is_replaced(conn, "v2") is False
+    # A source outside any family is never "replaced".
+    with storage.connect() as conn:
+        storage.store_source(conn, "solo", "青禾计划_纪要.md", "会议记录。")
+    versions.process_source("solo")
+    with storage.connect() as conn:
+        assert versions.is_replaced(conn, "solo") is False
 
 
 def test_retired_proposals_leave_the_review_list(version_db):
@@ -239,7 +237,7 @@ def test_cruise_reports_per_file_and_per_call_timings(tmp_path, monkeypatch):
     monkeypatch.setattr(scheduler_module.project_analyzer, "last_attempted", 0, raising=False)
     monkeypatch.setattr(scheduler.evolution_engine, "run_cruise_evolution_check",
                         lambda _d: {"overall_score": 90})
-    monkeypatch.setattr(scheduler_module, "run_cruise", scheduler.run_cruise, raising=False)
+    monkeypatch.setattr("backend.pm.reread.run", lambda limit=5: {"processed": 0, "limit": limit, "items": []})
 
     result = scheduler.run_cruise(trigger="unit")
     timing = result["timing"]
