@@ -504,6 +504,13 @@ def validate_answer(answer: str, contract: dict[str, Any]) -> tuple[bool, str, d
                 continue
             name = re.escape(m["name"])
             for hit in re.finditer(name + r"[^0-9]{0,20}?(\d+(?:\.\d+)?)", visible):
+                number_at = hit.start(1)
+                # "实施方案 v1" next to a metric called "实施方案 v" is a version
+                # number, not a statement of that metric's value: the letter before
+                # the digit tells them apart, so a document name never fails the
+                # gate as a wrong metric value.
+                if number_at > 0 and visible[number_at - 1] in "vV版":
+                    continue
                 if hit.group(1) != str(m["value"]):
                     return False, "metric_value_mismatch:%s" % m["name"], {
                         "stated": hit.group(1), "authoritative": str(m["value"])}

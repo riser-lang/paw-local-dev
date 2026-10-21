@@ -23,6 +23,8 @@ from backend.provider import adapter, model_calls
 from backend.runtime_core import planner as planner_module
 from backend.runtime_core import scanner as scanner_module
 from backend.runtime_core import scheduler as scheduler_module
+from backend.brain.api import local_agy_facade
+from backend.brain.context import agy_answer_contract
 from backend.core import file_types
 from tests.unit.test_scan_model_calls import provider, stub  # noqa: F401  (pytest fixtures)
 
@@ -329,3 +331,54 @@ def test_pending_target_still_names_the_value_it_replaces(version_db):
     # The evidence the installed-app case prints says which file proposed "30".
     assert targets[0]["previous_source_title"] == "青苗计划_方案_v1.md"
     assert targets[0]["source_title"] == "青苗计划_方案_v2.md"
+
+
+# ── Evidence gate: diagnostics and a version number is not a metric value ────
+def _gate_contract():
+    return {
+        "evidence_index": [{"evidence_id": "PROJECT_DATA_METRIC:m1", "layer": "PROJECT_DATA_METRIC",
+                            "title": "实施方案 v", "authority": "FORMAL_FACT",
+                            "temporal_state": "current", "is_formal_fact": True,
+                            "source_ref": "metric_definition/m1"}],
+        "metric_facts": [{"name": "实施方案 v", "value": 2}],
+        "advice_allowed": False,
+        "synthesis_required": False,
+        "recommendation_allowed": False,
+        "context_items": [],
+    }
+
+
+def _gate_answer(text):
+    claims = [{"kind": "fact", "text": text, "evidence": ["PROJECT_DATA_METRIC:m1"]}]
+    return text + "\n<<<EVIDENCE_MAP " + json.dumps({"claims": claims}, ensure_ascii=False) + " EVIDENCE_MAP>>>"
+
+
+def test_a_version_number_is_not_read_as_the_metric_value():
+    """'实施方案 v1' next to a metric called '实施方案 v' is a version, not a value."""
+    contract = _gate_contract()
+    ok, reason, _detail = agy_answer_contract.validate_answer(
+        _gate_answer("青禾试点计划实施方案 v1 的目标是第一阶段培养 12 名导师。"), contract)
+    assert ok, reason
+    # A real wrong value for the metric is still caught.
+    ok, reason, detail = agy_answer_contract.validate_answer(
+        _gate_answer("实施方案 v 的取值是 9。"), contract)
+    assert not ok and reason.startswith("metric_value_mismatch")
+    assert detail["authoritative"] == "2"
+
+
+def test_gate_diagnostics_name_the_reason_and_the_bad_ids():
+    turn = {"contract": _gate_contract()}
+    raw = _gate_answer("青禾试点计划实施方案 v1 的目标是第一阶段培养 12 名导师。")
+    raw = raw.replace("PROJECT_DATA_METRIC:m1", "PROJECT_DATA_METRIC:invented")
+    ok, reason, detail = agy_answer_contract.validate_answer(raw, turn["contract"])
+    assert not ok and reason.startswith("invalid_evidence_ref")
+    diag = local_agy_facade._gate_diagnostics(
+        turn, [{"stage": "first", "raw": raw, "ok": ok, "reason": reason, "detail": detail}])
+    assert diag["evidence_count"] == 1
+    assert diag["evidence_index"][0]["id"] == "PROJECT_DATA_METRIC:m1"
+    attempt = diag["attempts"][0]
+    assert attempt["reason"].startswith("invalid_evidence_ref")
+    assert attempt["unsupported_evidence_ids"] == ["PROJECT_DATA_METRIC:invented"]
+    assert attempt["answer_excerpt"].startswith("青禾试点计划实施方案")
+    # No prompt and no credential may reach the diagnostics.
+    assert "系统指令与不可信数据隔离声明" not in json.dumps(diag, ensure_ascii=False)

@@ -66,6 +66,74 @@ router = APIRouter()
 MAX_MESSAGE_LEN = 4000
 ALLOWED_MODES = frozenset({"chat", "extract", "analyze", "plan"})
 
+# How much of a rejected model answer is kept as evidence.  The answer is what
+# the gate judged (the user's own output, no prompt), capped so a runaway model
+# cannot bloat the log or the acceptance report.
+GATE_DIAGNOSTIC_ANSWER_CHARS = 4000
+
+
+def _evidence_index_dump(contract: dict, limit: int = 40) -> List[Dict[str, Any]]:
+    """The evidence the gate was allowed to accept, as ids not paragraphs."""
+    out = []
+    for item in (contract.get("evidence_index") or [])[:limit]:
+        out.append({
+            "id": item.get("evidence_id"),
+            "layer": item.get("layer"),
+            "title": str(item.get("title") or "")[:60],
+            "authority": item.get("authority"),
+            "temporal_state": item.get("temporal_state"),
+            "formal": bool(item.get("is_formal_fact")),
+            "source": str(item.get("source_ref") or "")[:80],
+        })
+    return out
+
+
+def _unsupported_evidence_ids(raw: str, contract: dict) -> List[str]:
+    """Evidence ids the answer cited that the gate cannot accept."""
+    try:
+        _visible, evmap = agy_v2_answer.extract_evidence_map(raw or "")
+    except Exception:
+        return []
+    valid = {str(e.get("evidence_id")) for e in (contract.get("evidence_index") or [])}
+    missing: List[str] = []
+    for claim in ((evmap or {}).get("claims") or []):
+        refs = (claim.get("evidence") or []) + (claim.get("derived_from") or [])
+        for ref in refs:
+            if isinstance(ref, str) and ref not in valid and ref not in missing:
+                missing.append(ref)
+    return missing[:20]
+
+
+def _gate_diagnostics(turn: dict, attempts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """What the evidence gate saw, kept next to the answer.
+
+    A fail-closed answer used to say only "no confirmed basis", which is
+    impossible to debug from outside the app.  This records the attempt reasons,
+    the evidence ids the answer could not cite, and the evidence index itself
+    (ids, layers, authority, current/replaced state, source file) so the
+    installed-app acceptance report carries the evidence gate's view.
+    """
+    contract = turn.get("contract") or {}
+    diag: Dict[str, Any] = {
+        "evidence_index": _evidence_index_dump(contract),
+        "evidence_count": len(contract.get("evidence_index") or []),
+        "attempts": [],
+    }
+    for attempt in attempts:
+        raw = str(attempt.get("raw") or "")
+        entry = {
+            "stage": attempt.get("stage"),
+            "ok": bool(attempt.get("ok")),
+            "reason": attempt.get("reason"),
+            "detail": attempt.get("detail") or {},
+            "answer_chars": len(raw),
+            "answer_excerpt": raw[:GATE_DIAGNOSTIC_ANSWER_CHARS],
+        }
+        if not attempt.get("ok"):
+            entry["unsupported_evidence_ids"] = _unsupported_evidence_ids(raw, contract)
+        diag["attempts"].append(entry)
+    return diag
+
 
 class WebAgyCreateRequest(BaseModel):
     project_id: Optional[str] = None
@@ -211,6 +279,11 @@ def _build_retry_suffix(gate_reason: str, gate_detail: Any, contract: Dict[str, 
         valid_ids = [e["evidence_id"] for e in contract.get("evidence_index") or []]
         sample = "、".join(valid_ids[:15])
         repair = f"回答中引用了不存在的 evidence id，只能使用给定的有效 id：{sample}。"
+    elif isinstance(gate_reason, str) and gate_reason.startswith("metric_value_mismatch"):
+        name = gate_reason.split(":", 1)[-1]
+        detail = gate_detail if isinstance(gate_detail, dict) else {}
+        repair = (f"指标「{name}」的权威数值是 {detail.get('authoritative')}，"
+                  f"上次回答写成了 {detail.get('stated')}。请按权威数值陈述，不要推算或改写数字。")
     else:
         repair = _RETRY_REPAIR.get(gate_reason, "请严格遵循证据引用要求，只引用真实存在的 evidence id。")
 
@@ -1213,6 +1286,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     from backend.pm import answer_advice
     response_text,advice_filter=answer_advice.clean(response_text,turn['contract'],agy_v2_answer._claim_kind)
     ok, gate_reason, gate_detail = agy_v2_answer.validate_answer(response_text, turn["contract"])
+    gate_attempts = [{"stage": "first", "raw": response_text, "ok": ok,
+                      "reason": gate_reason, "detail": gate_detail}]
     grounded = False
 
     if not ok and first_call_seconds > 60:
@@ -1236,6 +1311,8 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         if retry_text:
             retry_text,retry_filter=answer_advice.clean(retry_text,turn['contract'],agy_v2_answer._claim_kind)
             ok2, gate_reason2, gate_detail2 = agy_v2_answer.validate_answer(retry_text, turn["contract"])
+            gate_attempts.append({"stage": "gate_retry", "raw": retry_text, "ok": ok2,
+                                  "reason": gate_reason2, "detail": gate_detail2})
             if ok2:
                 response_text = retry_text
                 advice_filter=retry_filter
@@ -1298,6 +1375,22 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
     search_meta = usage.get("search_info") or {}
     web_search_used = bool(search_meta.get("used"))
 
+    grounding = grounding_metadata(turn, grounded=grounded, gate=gate_reason)
+    grounding["gate_diagnostics"] = _gate_diagnostics(turn, gate_attempts)
+    if not grounded:
+        # One line per rejected attempt: reason, evidence count and the ids the
+        # answer cited that the gate cannot accept.  Ids and reasons only, never
+        # the prompt or the credential.
+        for attempt in grounding["gate_diagnostics"]["attempts"]:
+            if attempt.get("ok"):
+                continue
+            logger.info(
+                "证据门拒绝（%s）reason=%s 证据=%d 不合格引用=%s detail=%s",
+                attempt.get("stage"), attempt.get("reason"),
+                grounding["gate_diagnostics"]["evidence_count"],
+                (attempt.get("unsupported_evidence_ids") or [])[:5],
+                str(attempt.get("detail") or {})[:200])
+
     evidence_idx = {e["evidence_id"]: e for e in turn["contract"].get("evidence_index", [])}
     returned_sources = []
     if grounded and isinstance(answer_map, dict):
@@ -1324,7 +1417,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         "source_files": source_files,
         "authority_notes": turn["contract"].get("authority_notes", []),
         "clarification": turn["contract"].get("clarification"),
-        "grounding": grounding_metadata(turn, grounded=grounded, gate=gate_reason),
+        "grounding": grounding,
         "advice_filter": advice_filter,
         "knowledge_gap_id": knowledge_gap_id,
         "evidence_map": answer_map if grounded else None,
