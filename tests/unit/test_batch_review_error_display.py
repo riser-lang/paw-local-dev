@@ -60,9 +60,16 @@ def test_final_icon_contains_four_independent_size_entries():
 
 
 def test_versioned_favicon_route_serves_the_shipped_icon_bytes():
+    from fastapi import FastAPI
     from fastapi.testclient import TestClient
+    from fastapi.staticfiles import StaticFiles
 
-    from backend.main import app
+    app = FastAPI()
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(ROOT / "frontend/dist/assets")),
+        name="web-assets",
+    )
 
     expected = (ROOT / "assets/paw-app.ico").read_bytes()
     response = TestClient(app).get("/assets/paw-app.ico?v=2.5.0-rc3")
