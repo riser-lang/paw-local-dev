@@ -635,3 +635,75 @@ def answer_contract_spec() -> dict[str, Any]:
                         "on_unbacked_recommendation": True,
                         "on_recommendation_as_fact": True},
     }
+
+# ── Evidence gate diagnostics ───────────────────────────────────────────────
+# Kept here (no FastAPI, no provider) so the unit runner can assert the gate's
+# view of an answer, and so the installed-app acceptance report can carry it.
+
+# How much of a rejected model answer is kept as evidence.  The answer is what
+# the gate judged (the user's own output, no prompt), capped so a runaway model
+# cannot bloat the log or the acceptance report.
+GATE_DIAGNOSTIC_ANSWER_CHARS = 4000
+
+
+def evidence_index_dump(contract: dict, limit: int = 40) -> list[dict]:
+    """The evidence the gate was allowed to accept, as ids not paragraphs."""
+    out = []
+    for item in (contract.get("evidence_index") or [])[:limit]:
+        out.append({
+            "id": item.get("evidence_id"),
+            "layer": item.get("layer"),
+            "title": str(item.get("title") or "")[:60],
+            "authority": item.get("authority"),
+            "temporal_state": item.get("temporal_state"),
+            "formal": bool(item.get("is_formal_fact")),
+            "source": str(item.get("source_ref") or "")[:80],
+        })
+    return out
+
+
+def unsupported_evidence_ids(raw: str, contract: dict) -> List[str]:
+    """Evidence ids the answer cited that the gate cannot accept."""
+    try:
+        _visible, evmap = extract_evidence_map(raw or "")
+    except Exception:
+        return []
+    valid = {str(e.get("evidence_id")) for e in (contract.get("evidence_index") or [])}
+    missing: List[str] = []
+    for claim in ((evmap or {}).get("claims") or []):
+        refs = (claim.get("evidence") or []) + (claim.get("derived_from") or [])
+        for ref in refs:
+            if isinstance(ref, str) and ref not in valid and ref not in missing:
+                missing.append(ref)
+    return missing[:20]
+
+
+def gate_diagnostics(turn: dict, attempts: list[dict]) -> dict:
+    """What the evidence gate saw, kept next to the answer.
+
+    A fail-closed answer used to say only "no confirmed basis", which is
+    impossible to debug from outside the app.  This records the attempt reasons,
+    the evidence ids the answer could not cite, and the evidence index itself
+    (ids, layers, authority, current/replaced state, source file) so the
+    installed-app acceptance report carries the evidence gate's view.
+    """
+    contract = turn.get("contract") or {}
+    diag: dict = {
+        "evidence_index": evidence_index_dump(contract),
+        "evidence_count": len(contract.get("evidence_index") or []),
+        "attempts": [],
+    }
+    for attempt in attempts:
+        raw = str(attempt.get("raw") or "")
+        entry = {
+            "stage": attempt.get("stage"),
+            "ok": bool(attempt.get("ok")),
+            "reason": attempt.get("reason"),
+            "detail": attempt.get("detail") or {},
+            "answer_chars": len(raw),
+            "answer_excerpt": raw[:GATE_DIAGNOSTIC_ANSWER_CHARS],
+        }
+        if not attempt.get("ok"):
+            entry["unsupported_evidence_ids"] = unsupported_evidence_ids(raw, contract)
+        diag["attempts"].append(entry)
+    return diag

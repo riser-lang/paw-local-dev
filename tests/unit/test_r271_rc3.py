@@ -23,7 +23,6 @@ from backend.provider import adapter, model_calls
 from backend.runtime_core import planner as planner_module
 from backend.runtime_core import scanner as scanner_module
 from backend.runtime_core import scheduler as scheduler_module
-from backend.brain.api import local_agy_facade
 from backend.brain.context import agy_answer_contract
 from backend.core import file_types
 from tests.unit.test_scan_model_calls import provider, stub  # noqa: F401  (pytest fixtures)
@@ -372,7 +371,7 @@ def test_gate_diagnostics_name_the_reason_and_the_bad_ids():
     raw = raw.replace("PROJECT_DATA_METRIC:m1", "PROJECT_DATA_METRIC:invented")
     ok, reason, detail = agy_answer_contract.validate_answer(raw, turn["contract"])
     assert not ok and reason.startswith("invalid_evidence_ref")
-    diag = local_agy_facade._gate_diagnostics(
+    diag = agy_answer_contract.gate_diagnostics(
         turn, [{"stage": "first", "raw": raw, "ok": ok, "reason": reason, "detail": detail}])
     assert diag["evidence_count"] == 1
     assert diag["evidence_index"][0]["id"] == "PROJECT_DATA_METRIC:m1"
