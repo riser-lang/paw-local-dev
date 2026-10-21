@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+<title id="title">PAW 图标方向 A</title><desc id="desc">暖米色与赤陶色的个人 AI 工作台图标概念。16 与 32 像素版本为独立简化图形。</desc>
+<defs>
+<symbol id="size-16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="3" fill="#B66F51"/><path d="M3 4h10v2H3zm1 4h2v5H4zm4 0h3v2H8zm2 2h2v3h-2z" fill="#FCFAF6"/></symbol>
+<symbol id="size-32" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="5" fill="#B66F51"/><path d="M6 6h20v5H6zm2 10h4v10H8zm7 0h9v4h-9zm5 4h4v6h-4z" fill="#FCFAF6"/></symbol>
+</defs><rect x="4" y="4" width="248" height="248" rx="48" fill="#F7F3EB"/>
+<g transform="translate(0 0)"><rect x="16" y="16" width="224" height="224" rx="40" fill="#B66F51"/><rect x="38" y="39" width="180" height="180" rx="18" fill="#FCFAF6"/><path d="M56 39h144a18 18 0 0 1 18 18v23H38V57a18 18 0 0 1 18-18Z" fill="#EAD9CE"/><circle cx="58" cy="60" r="4" fill="#B66F51"/><circle cx="74" cy="60" r="4" fill="#B66F51"/><circle cx="90" cy="60" r="4" fill="#B66F51"/><rect x="53" y="99" width="42" height="99" rx="9" fill="#B66F51"/><path d="M67 113h25l15 8v25l-15 8H81v29H67Z" fill="#FCFAF6"/><path d="M119 108h82v10h-82zm0 24h76v9h-76z" fill="#EAD9CE"/><rect x="119" y="156" width="82" height="31" rx="8" fill="#EAD9CE"/><rect x="131" y="166" width="58" height="9" fill="#B66F51"/></g></svg>
