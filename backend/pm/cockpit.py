@@ -22,6 +22,18 @@ def day(value):return stamp(value)[:10] if stamp(value) else None
 def table(conn,name):return bool(conn.execute('SELECT 1 FROM sqlite_master WHERE name=?',(name,)).fetchone())
 
 
+def _retired_source_title(conn,source_refs):
+    """Title of the source a retired proposal came from, when it can be read."""
+    try:
+        refs=json.loads(source_refs or '[]')
+        refs=refs.get('refs',[]) if isinstance(refs,dict) else refs
+        if not refs:return None
+        row=conn.execute('SELECT title FROM pm_source WHERE source_version_id=?',(str(refs[0]),)).fetchone()
+        return row[0] if row else None
+    except (ValueError,TypeError,sqlite3.Error):
+        return None
+
+
 def source(conn,sid,excerpt=None,href=None):
     row=conn.execute('SELECT * FROM pm_source WHERE source_version_id=?',(sid,)).fetchone()
     if not row:return None
@@ -157,27 +169,50 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
         else:
             sql=None
         previous_by_label={}
-        for raw in (conn.execute(sql) if sql else ()):
+        retired_refs={}
+        def _target_fields(raw):
+            """(payload, label, target) when this candidate proposes a target."""
             try:
                 proposed=json.loads(raw['proposed_change'] or '{}')
             except (ValueError,TypeError):
-                continue
+                return None
             payload=proposed.get('payload') if isinstance(proposed,dict) else None
             if not isinstance(payload,dict):payload=proposed if isinstance(proposed,dict) else {}
             project_ref=payload.get('project_id') or payload.get('resolved_project_id')
             project_name=payload.get('project_name') or payload.get('project')
-            if project_ref and str(project_ref)!=pid:continue
-            if project_name and str(project_name).strip()!=p['name']:continue
+            if project_ref and str(project_ref)!=pid:return None
+            if project_name and str(project_name).strip()!=p['name']:return None
             target=payload.get('target_value',payload.get('target'))
             label=str(payload.get('metric_name') or payload.get('name') or payload.get('title') or raw['raw_excerpt'] or '').strip()
-            if str(raw['candidate_type'] or '').lower() not in {'metric','data','data_asset'} and target is None:continue
-            if target is None:continue
+            if str(raw['candidate_type'] or '').lower() not in {'metric','data','data_asset'} and target is None:return None
+            if target is None:return None
+            return payload,label,target
+        # The value a pending change moves away from is still readable after the
+        # source version that proposed it was replaced: that proposal is retired
+        # (it can never be accepted) but its target is the "30" of "from 30 to
+        # 40".  Seed the comparison from every candidate that already left the
+        # review list, so retiring an old version's proposal never hides the
+        # pending change of the current version.
+        if sql:
+            for raw in conn.execute(sql.replace("status='pending'","status<>'pending'")):
+                seeded=_target_fields(raw)
+                if seeded:
+                    # Rows are ordered oldest first: the last retired value is the
+                    # one this pending change actually moves away from.
+                    previous_by_label[seeded[1]]=seeded[2]
+                    retired_refs[seeded[1]]=raw['source_refs']
+        for raw in (conn.execute(sql) if sql else ()):
+            fields=_target_fields(raw)
+            if not fields:continue
+            payload,label,target=fields
             previous=payload.get('previous_target',payload.get('current_target'))
             if previous is None and table(conn,'metric_definition'):
                 match=conn.execute('SELECT target_value FROM metric_definition WHERE project_id=? AND name=? ORDER BY id LIMIT 1',(pid,label)).fetchone()
                 previous=match[0] if match else None
+            from_history=False
             if previous is None:
                 previous=previous_by_label.get(label)
+                from_history=previous is not None
             previous_by_label.setdefault(label,target)
             if previous is None:continue
             source_label=''
@@ -191,7 +226,11 @@ def project_vm(conn,pid,health_run=None,include_weekly=True):
                 pass
             pending_targets.append({'id':str(raw['id']),'name':label or '项目目标','previous':previous,
                 'target':target,'pending_label':f'待确认：目标由 {previous:g} 改为 {target:g}' if isinstance(previous,(int,float)) and isinstance(target,(int,float)) else f'待确认：目标由 {previous} 改为 {target}','effective_date':payload.get('effective_date') or payload.get('valid_from'),
-                'source_title':source_label})
+                'source_title':source_label,
+                # The value above may come from the version that this one replaces;
+                # naming that file is the evidence for both the reviewer and the
+                # page ("由 30 改为 40" needs to say which document said 30).
+                'previous_source_title':_retired_source_title(conn,retired_refs.get(label)) if from_history else None})
         # A pending risk in a scanned weekly report should be visible in the
         # dossier's risk section while the user reviews the source evidence.
         if 'risks' in entries and sql:

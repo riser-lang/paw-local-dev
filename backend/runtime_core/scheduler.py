@@ -220,23 +220,21 @@ class PawScheduler:
             # Built-in AI Project Explainer & 30-Second Summary Analysis
             analyzed_projects = []
             projects_attempted = 0
-            projects_deferred = False
             phase_started = time.perf_counter()
             if analyze_projects:
-                if files_processed or captures_processed:
-                    # This cruise already spent its model budget on the files it
-                    # read; the project drafts are produced right after the cruise
-                    # returns instead of making the user wait for them again.
-                    projects_deferred = True
-                    threading.Thread(target=self._analyze_projects_background,
-                                     name="CruiseProjectAnalysis", daemon=True).start()
-                else:
-                    try:
-                        analyzed_projects = project_analyzer.analyze_projects(max_projects=max(0,item_budget-files_attempted-captures_processed), force=force_rescan)
-                    except Exception as exc:
-                        logger.warning(f"ProjectAnalyzer during cruise warning: {exc}")
-                    finally:
-                        projects_attempted = getattr(project_analyzer,'last_attempted',len(analyzed_projects))
+                # Kept on the cruise thread on purpose.  Running it in a
+                # background thread looked attractive (the cruise could return
+                # earlier) but two model callers inside one app process made the
+                # scan phase of the acceptance cases time out instead of slow:
+                # a cruise's project drafts competed with the next scan's model
+                # calls, and the failure moved between cases.  A predictable,
+                # single-threaded cruise is worth a slower cruise.
+                try:
+                    analyzed_projects = project_analyzer.analyze_projects(max_projects=max(0,item_budget-files_attempted-captures_processed), force=force_rescan)
+                except Exception as exc:
+                    logger.warning(f"ProjectAnalyzer during cruise warning: {exc}")
+                finally:
+                    projects_attempted = getattr(project_analyzer,'last_attempted',len(analyzed_projects))
             phase_seconds["projects"] = round(time.perf_counter() - phase_started, 2)
 
             from backend.pm.reread import run as run_targeted_reread
@@ -277,7 +275,6 @@ class PawScheduler:
                 "captures_analyzed": captures_processed,
                 "candidates_produced": new_candidates,
                 "projects_analyzed": len(analyzed_projects),
-                "projects_deferred": projects_deferred,
                 "targeted_reread": reread,
                 "projects_details": [p.get("name") for p in analyzed_projects],
                 "evolution": evo_diagnosis,
@@ -306,20 +303,6 @@ class PawScheduler:
             model_calls.end_run(run_ctx)
             with self._lock:
                 self.cruise_status = "idle"
-
-    def _analyze_projects_background(self) -> None:
-        """Produce the project drafts a busy cruise deferred, without blocking it."""
-        try:
-            updated = project_analyzer.analyze_projects(max_projects=10)
-        except Exception as exc:
-            logger.warning(f"Background project analysis warning: {exc}")
-            return
-        with self._lock:
-            result = self.latest_cruise_result
-            if isinstance(result, dict):
-                result["projects_analyzed"] = len(updated)
-                result["projects_deferred"] = False
-                result["projects_details"] = [p.get("name") for p in updated]
 
     def process_capture(self, capture_id: str) -> List[str]:
         """Process a single quick capture record with AI Cruise."""
