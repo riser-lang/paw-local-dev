@@ -303,10 +303,12 @@ class GovernanceService:
             }
         try:
             if self._is_source_recorded(file_hash):
-                self.release_source(file_hash, pipeline=pipeline or "unknown", claimed=False)
+                # Release the claim only: the version already has its completion
+                # row, and writing another one here would mark it failed.
+                self.release_source(file_hash)
                 return False
         except Exception:
-            self.release_source(file_hash, pipeline=pipeline or "unknown", claimed=False)
+            self.release_source(file_hash)
             raise
         return True
 

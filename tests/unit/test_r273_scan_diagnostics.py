@@ -55,6 +55,41 @@ def test_claim_registry_names_the_owner_and_the_wait(monkeypatch):
     assert time.monotonic() - waited < 2.0
 
 
+def test_claiming_an_already_analysed_version_keeps_its_completion_row(tmp_path, monkeypatch):
+    """The completion row is what the acceptance barrier reads.
+
+    Claiming a version that another pipeline already analysed must not write a
+    second row: a row with ``candidates_created`` unset means "failed", which
+    would tell the barrier the file was never analysed and stall it.
+    """
+    import sqlite3
+
+    db = tmp_path / "workspace.db"
+    conn = sqlite3.connect(str(db))
+    with conn:
+        conn.execute("CREATE TABLE analyzed_source (file_hash TEXT PRIMARY KEY, file_name TEXT,"
+                     " pipeline TEXT, candidates_created INTEGER, analyzed_at TEXT, completion_state TEXT)")
+        conn.execute("INSERT INTO analyzed_source VALUES ('hash-done','doc.docx','watcher',4,'now','complete')")
+    conn.close()
+
+    def fake_get_db():
+        connection = sqlite3.connect(str(db))
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    monkeypatch.setattr(governance_service, "get_db", fake_get_db)
+    monkeypatch.setattr(gov, "_is_source_recorded", lambda _hash: True)
+
+    assert gov.claim_source("hash-done", "scan") is False
+    assert gov.claim_registry() == {}
+
+    conn = sqlite3.connect(str(db))
+    row = conn.execute("SELECT pipeline, candidates_created, completion_state FROM analyzed_source "
+                       "WHERE file_hash='hash-done'").fetchone()
+    conn.close()
+    assert row == ("watcher", 4, "complete")
+
+
 def test_wait_reports_the_owner_it_is_waiting_for(caplog):
     gov.claim_source("hash-wait", "cruise")
     with caplog.at_level(logging.INFO, logger="paw.scan.diag"):
