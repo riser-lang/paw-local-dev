@@ -34,11 +34,19 @@ from backend.reader.contract import ReaderInput, artifact_sha256
 from backend.reader.dispatch import isolated_read_artifact
 from backend.runtime_core.event_bus import EventType, event_bus
 from backend.runtime_core.planner import agent_planner
+from backend.runtime_core.scan_diagnostics import Phase2Watchdog, note as scan_note
 
 logger = logging.getLogger("paw.scanner")
 
 CHECKPOINT_FILE = DATA_DIR / "scan_checkpoint.json"
 from backend.core.file_types import SUPPORTED_EXTENSIONS as SUPPORTED_EXTS  # one list for scan, watch and cruise
+
+# How long Phase 2 waits for another pipeline (watcher, cruise) that owns the
+# same file version.  The owner records the version when it finishes, so a long
+# wait adds nothing: the scan reports its own completion and the acceptance
+# barrier reads the owner's row.  Without a bound one slow owner turns a two
+# second scan into a minute-long "stuck" scan.
+SCAN_OWNER_WAIT_SECONDS = 15.0
 
 # Version suffix pattern for multi-version source grouping (R3)
 VERSION_SUFFIX_RE = re.compile(
@@ -110,6 +118,13 @@ class PawScanner:
         self._pause_event.set()
         self._lock = threading.Lock()
 
+        # Phase 2 diagnostics: which file the worker is on, how long it has been
+        # there and what it is waiting for.  Read by Phase2Watchdog; see
+        # backend/runtime_core/scan_diagnostics.py.
+        self._diag_lock = threading.Lock()
+        self._phase2_state: Dict[str, Any] = {}
+        self._watchdog: Optional["Phase2Watchdog"] = None
+
         self._load_checkpoint()
 
     # ── Checkpoint Persistence (Requirement 3.2.3) ───────────────────────────
@@ -130,6 +145,46 @@ class PawScanner:
             )
         except Exception as e:
             logger.warning(f"Failed to save checkpoint: {e}")
+
+    # ── Phase 2 diagnostics ──────────────────────────────────────────────────
+
+    def phase2_diagnostics(self) -> Dict[str, Any]:
+        """Current Phase 2 step, for the stall watchdog and for tests."""
+        with self._diag_lock:
+            return dict(self._phase2_state)
+
+    def _phase2_begin(self, file_name: str, file_hash: str) -> None:
+        now = time.monotonic()
+        with self._diag_lock:
+            self._phase2_state = {
+                "active": True,
+                "file": file_name,
+                "hash": file_hash,
+                "stage": "start",
+                "file_started_at": now,
+                "progress_at": now,
+                "file_seconds": 0.0,
+            }
+
+    def _phase2_progress(self, stage: str, **extra: Any) -> None:
+        now = time.monotonic()
+        with self._diag_lock:
+            if not self._phase2_state:
+                return
+            self._phase2_state["stage"] = stage
+            self._phase2_state["progress_at"] = now
+            self._phase2_state["file_seconds"] = now - float(
+                self._phase2_state.get("file_started_at") or now
+            )
+            self._phase2_state.update(extra)
+
+    def _phase2_end(self, ok: Optional[bool]) -> None:
+        with self._diag_lock:
+            if not self._phase2_state:
+                return
+            self._phase2_state["active"] = False
+            self._phase2_state["stage"] = "done" if ok else "skipped"
+            self._phase2_state["progress_at"] = time.monotonic()
 
     # ── Pre-Scan Assessment (Requirement 3.2.9 & R1.1) ───────────────────────
 
@@ -247,8 +302,23 @@ class PawScanner:
                 daemon=True,
             )
             self._thread.start()
+            self._start_watchdog()
 
             return {"ok": True, "message": "扫描任务已在后台启动（阶段一：本地摄取启动）"}
+
+    def _start_watchdog(self) -> None:
+        """Dump thread stacks if one Phase 2 file stops making progress."""
+        try:
+            from backend.core.log_setup import ensure_file_logging
+            ensure_file_logging()
+        except Exception:
+            pass
+        old = self._watchdog
+        if old is not None:
+            old.stop()
+        watchdog = Phase2Watchdog(self)
+        self._watchdog = watchdog
+        watchdog.start()
 
     def pause_scan(self) -> Dict[str, Any]:
         with self._lock:
@@ -446,10 +516,34 @@ class PawScanner:
             # Already analysed by any pipeline: skip before spending a daily call.
             # A watcher/cruise can own this version while the scanner runs.
             # Completion must include that owner, not just this worker's loop.
-            governance.wait_for_source_completion(cp_entry.get('hash', ''))
+            scan_note("phase2_file_start", file=p.name, hash=(cp_entry.get("hash") or "")[:12],
+                      pipeline=governance.claim_registry().get(cp_entry.get("hash", ""), {}).get("pipeline", "-"))
+            self._phase2_begin(p.name, cp_entry.get("hash", ""))
+            barrier_started = time.monotonic()
+            self._phase2_progress("claim_barrier")
+            try:
+                governance.wait_for_source_completion(cp_entry.get('hash', ''),
+                                                      timeout=SCAN_OWNER_WAIT_SECONDS)
+            except TimeoutError:
+                # Another pipeline still owns this version.  Its own record will
+                # settle the completion barrier; this scan must not hang on it.
+                scan_note("phase2_owner_still_running", file=p.name,
+                          hash=(cp_entry.get("hash") or "")[:12],
+                          seconds=round(time.monotonic() - barrier_started, 1))
+                cp_entry["phase2_status"] = "owner_still_running"
+                self._checkpoint[file_key] = cp_entry
+                self.phase2_processed += 1
+                self._phase2_end(False)
+                continue
+            barrier_seconds = time.monotonic() - barrier_started
+            if barrier_seconds >= 1.0:
+                scan_note("phase2_barrier_wait", file=p.name, seconds=round(barrier_seconds, 1))
+            self._phase2_progress("claimed")
             if governance.is_source_analyzed(cp_entry.get("hash", "")):
                 cp_entry["phase2_status"] = "skipped_already_analyzed"
                 self.phase2_processed += 1
+                scan_note("phase2_file_end", file=p.name, ok="skipped", seconds=round(barrier_seconds, 1))
+                self._phase2_end(False)
                 continue
 
             # Check daily call limit (R1.2, R1.3)
@@ -466,7 +560,18 @@ class PawScanner:
             evidence_file = cp_entry.get("evidence_result_path")
             f_hash = cp_entry.get("hash", "")
 
-            success = self._process_phase2_file(p, file_key, evidence_file, f_hash)
+            self._phase2_progress("model")
+            file_started = time.monotonic()
+            try:
+                success = self._process_phase2_file(p, file_key, evidence_file, f_hash)
+            except Exception:
+                scan_note("phase2_file_end", file=p.name, ok="error",
+                          seconds=round(time.monotonic() - file_started, 1))
+                self._phase2_end(False)
+                raise
+            scan_note("phase2_file_end", file=p.name, ok=bool(success),
+                      seconds=round(time.monotonic() - file_started, 1))
+            self._phase2_end(bool(success))
             self.phase2_processed += 1
             if success:
                 self.phase2_success += 1
@@ -619,16 +724,39 @@ class PawScanner:
 
         # Shared with watcher and cruise: an already-analysed file version is not
         # sent to the model again (saves quota and avoids re-filing decided proposals).
-        if not governance.claim_source(f_hash):
-            governance.wait_for_source_completion(f_hash)
+        if not governance.claim_source(f_hash, "scan"):
+            owner = (governance.claim_registry().get(f_hash) or {}).get("pipeline") or "-"
+            scan_note("phase2_claim_busy", file=p.name, hash=f_hash[:12], owner=owner)
+            self._phase2_progress("waiting_owner", owner=owner)
+            wait_started = time.monotonic()
+            try:
+                governance.wait_for_source_completion(f_hash, timeout=SCAN_OWNER_WAIT_SECONDS)
+            except TimeoutError:
+                scan_note("phase2_owner_still_running", file=p.name, hash=f_hash[:12],
+                          owner=owner, seconds=round(time.monotonic() - wait_started, 1))
+                cp_entry = self._checkpoint.get(file_key, {})
+                cp_entry["phase2_status"] = "owner_still_running"
+                self._checkpoint[file_key] = cp_entry
+                return False
+            scan_note("phase2_claim_wait_done", file=p.name, hash=f_hash[:12],
+                      seconds=round(time.monotonic() - wait_started, 1))
             if not governance.is_source_analyzed(f_hash):
-                raise RuntimeError('其他管线未完成资料分析；本次扫描不能标记为完成')
+                # The owner finished without recording a completion (for example
+                # its model call failed).  Leave the file for the next run rather
+                # than failing the whole scan.
+                scan_note("phase2_claim_unfinished", file=p.name, hash=f_hash[:12], owner=owner)
+                cp_entry = self._checkpoint.get(file_key, {})
+                cp_entry["phase2_status"] = "owner_finished_unrecorded"
+                self._checkpoint[file_key] = cp_entry
+                return False
             cp_entry = self._checkpoint.get(file_key, {})
             cp_entry["phase2_status"] = "skipped_already_analyzed"
             self._checkpoint[file_key] = cp_entry
             return False
 
         cids = None
+        call_mark = model_calls.count()
+        model_started = time.monotonic()
         try:
             cids = agent_planner.plan_document_impact(evidence_data, str(p), f_hash)
             self.new_candidates_count += len(cids)
@@ -642,6 +770,14 @@ class PawScanner:
             logger.warning(f"AgentPlanner evaluation failed on {p.name}: {err}")
             return False
         finally:
+            rows = model_calls.rows_since(call_mark)
+            scan_note("phase2_model_done", file=p.name, hash=f_hash[:12],
+                      seconds=round(time.monotonic() - model_started, 1),
+                      calls=len(rows),
+                      wait_seconds=round(sum(float(row.get("seconds") or 0) for row in rows), 1),
+                      timeouts=sum(1 for row in rows if row.get("timed_out")),
+                      fallback=sum(1 for row in rows if row.get("fallback_rule")),
+                      candidates=len(cids) if cids is not None else "none")
             governance.release_source(f_hash, p.name, "scan",
                                       candidates_created=len(cids) if cids is not None else None)
 

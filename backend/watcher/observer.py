@@ -146,7 +146,7 @@ class LocalSourceWatcher:
 
         # Shared with cruise and folder scan: skip versions any pipeline already
         # analysed, so one saved file never costs two model calls.
-        if not governance.claim_source(file_hash):
+        if not governance.claim_source(file_hash, "watcher"):
             return None
         cids = None
         try:

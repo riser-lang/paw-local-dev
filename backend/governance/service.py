@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +30,22 @@ from backend.governance.committer import (
 from backend.runtime_core.event_bus import EventType, event_bus
 
 _schema_migration_lock = threading.Lock()
+
+logger = logging.getLogger("paw.governance")
+
+# A wait shorter than this is normal hand-off between pipelines and is not logged.
+SLOW_WAIT_SECONDS = 2.0
+SLOW_DB_SECONDS = 2.0
+
+
+def _diag(event: str, **fields: Any) -> None:
+    """One diagnostics line for the shared claim registry (no prompts, no keys)."""
+    try:
+        from backend.runtime_core.scan_diagnostics import note
+        note(event, **fields)
+    except Exception:
+        logger.info("%s %s", event, fields)
+
 
 
 def _now_iso() -> str:
@@ -166,7 +184,9 @@ def _find_active_project_by_name(name: str) -> Optional[str]:
     finally:
         conn.close()
 _source_lock = threading.Condition()
-_sources_in_progress: set = set()
+# file_hash -> {"pipeline": str, "since": float, "thread": str}.  Keeping the
+# owner lets a waiter say who it is waiting for instead of only that it waits.
+_sources_in_progress: Dict[str, Dict[str, Any]] = {}
 
 
 def get_db() -> sqlite3.Connection:
@@ -218,7 +238,24 @@ class GovernanceService:
 
     def wait_for_source_completion(self, file_hash: str, timeout: float = 60) -> None:
         from backend.pm.source_barrier import wait_until_idle
-        wait_until_idle(_source_lock, _sources_in_progress, file_hash, timeout)
+        started = time.monotonic()
+        with _source_lock:
+            owner = dict(_sources_in_progress.get(file_hash) or {})
+        try:
+            wait_until_idle(_source_lock, _sources_in_progress, file_hash, timeout)
+        except TimeoutError:
+            _diag("claim_wait_timeout", hash=file_hash[:12], seconds=round(time.monotonic() - started, 1),
+                  owner=owner.get("pipeline") or "-", held=round(time.monotonic() - float(owner.get("since") or started), 1))
+            raise
+        waited = time.monotonic() - started
+        if owner and waited >= SLOW_WAIT_SECONDS:
+            _diag("claim_wait", hash=file_hash[:12], seconds=round(waited, 1),
+                  owner=owner.get("pipeline") or "-", thread=owner.get("thread") or "-")
+
+    def claim_registry(self) -> Dict[str, Dict[str, Any]]:
+        """Snapshot of the files currently claimed, for diagnostics and tests."""
+        with _source_lock:
+            return {key: dict(value) for key, value in _sources_in_progress.items()}
 
     def _is_source_recorded(self, file_hash: str) -> bool:
         """True when this exact file version was analysed before.
@@ -228,6 +265,7 @@ class GovernanceService:
         """
         if not file_hash:
             return False
+        started = time.monotonic()
         conn = get_db()
         try:
             recorded = conn.execute("SELECT completion_state FROM analyzed_source WHERE file_hash = ?", (file_hash,)).fetchone()
@@ -243,8 +281,12 @@ class GovernanceService:
             ).fetchone() is not None
         finally:
             conn.close()
+            elapsed = time.monotonic() - started
+            if elapsed >= SLOW_DB_SECONDS:
+                _diag("db_read_slow", what="is_source_recorded", seconds=round(elapsed, 1),
+                      hash=file_hash[:12])
 
-    def claim_source(self, file_hash: str) -> bool:
+    def claim_source(self, file_hash: str, pipeline: str = "") -> bool:
         """Reserve a file version for analysis.
 
         Returns False when it was already analysed or another pipeline is
@@ -254,36 +296,75 @@ class GovernanceService:
         with _source_lock:
             if file_hash in _sources_in_progress:
                 return False
-            _sources_in_progress.add(file_hash)
+            _sources_in_progress[file_hash] = {
+                "pipeline": pipeline or "unknown",
+                "since": time.monotonic(),
+                "thread": threading.current_thread().name,
+            }
         try:
             if self._is_source_recorded(file_hash):
-                self.release_source(file_hash)
+                self.release_source(file_hash, pipeline=pipeline or "unknown", claimed=False)
                 return False
         except Exception:
-            self.release_source(file_hash)
+            self.release_source(file_hash, pipeline=pipeline or "unknown", claimed=False)
             raise
         return True
 
     def release_source(self, file_hash: str, file_name: str = "", pipeline: str = "",
-                       candidates_created: Optional[int] = None) -> None:
+                       candidates_created: Optional[int] = None, claimed: bool = True) -> None:
         """Release a claim; when ``candidates_created`` is given, record the version as analysed."""
+        with _source_lock:
+            owner = dict(_sources_in_progress.get(file_hash) or {})
+        held = time.monotonic() - float(owner.get("since") or time.monotonic())
         try:
             if candidates_created is not None or pipeline:
-                conn = get_db()
-                try:
-                    with conn:
-                        conn.execute(
-                            "INSERT OR REPLACE INTO analyzed_source (file_hash, file_name, pipeline, candidates_created, analyzed_at, completion_state) "
-                            "VALUES (?, ?, ?, ?, ?, ?)",
-                            (file_hash, file_name, pipeline, int(candidates_created or 0), _now_iso(),
-                             'complete' if candidates_created is not None else 'failed'),
-                        )
-                finally:
-                    conn.close()
+                started = time.monotonic()
+                self._record_analyzed(file_hash, file_name, pipeline, candidates_created)
+                waited = time.monotonic() - started
+                if waited >= SLOW_DB_SECONDS:
+                    _diag("db_write_slow", what="analyzed_source", seconds=round(waited, 1),
+                          hash=file_hash[:12], held=round(held, 1))
         finally:
             with _source_lock:
-                _sources_in_progress.discard(file_hash)
+                _sources_in_progress.pop(file_hash, None)
                 _source_lock.notify_all()
+            if claimed and held >= SLOW_WAIT_SECONDS:
+                _diag("claim_held", hash=file_hash[:12], pipeline=owner.get("pipeline") or pipeline or "-",
+                      seconds=round(held, 1), ok=candidates_created is not None)
+
+    def _record_analyzed(self, file_hash: str, file_name: str, pipeline: str,
+                         candidates_created: Optional[int]) -> None:
+        """Write the completion row with a short, retried wait for the write lock.
+
+        The default 30 s busy timeout is longer than a whole scan window, and the
+        claim is held while this write waits: a writer that keeps the database
+        busy could stall every pipeline behind one row.  Waiting 4 s at a time
+        and retrying keeps the claim short; the total is still bounded.
+        """
+        deadline = time.monotonic() + 12.0
+        payload = (file_hash, file_name, pipeline, int(candidates_created or 0), _now_iso(),
+                   'complete' if candidates_created is not None else 'failed')
+        while True:
+            conn = get_db()
+            try:
+                conn.execute("PRAGMA busy_timeout = 4000")
+                with conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO analyzed_source (file_hash, file_name, pipeline, candidates_created, analyzed_at, completion_state) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        payload,
+                    )
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() or time.monotonic() >= deadline:
+                    _diag("db_write_failed", what="analyzed_source", hash=file_hash[:12],
+                          error=type(exc).__name__)
+                    raise
+                _diag("db_write_busy", what="analyzed_source", hash=file_hash[:12],
+                      elapsed=round(time.monotonic() - (deadline - 12.0), 1))
+                time.sleep(0.4)
+            finally:
+                conn.close()
 
     def list_candidates(self, status: str = "pending", limit: int = 500) -> List[Dict[str, Any]]:
         conn = get_db()

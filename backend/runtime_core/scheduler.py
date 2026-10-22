@@ -161,7 +161,7 @@ class PawScheduler:
                         # A file version that any pipeline already analysed is never
                         # sent to the model again, including on a deep cruise:
                         # re-analysis only re-files proposals the user already decided.
-                        if f_hash in self._processed_hashes or not governance.claim_source(f_hash):
+                        if f_hash in self._processed_hashes or not governance.claim_source(f_hash, "cruise"):
                             self._processed_hashes.add(f_hash)
                             files_unchanged += 1
                             continue
@@ -324,7 +324,7 @@ class PawScheduler:
 
         # 1. Fire SOURCE_READY for capture
         cap_hash = hashlib.sha256((capture_id+'\0'+raw_text).encode("utf-8")).hexdigest()
-        if not governance.claim_source(cap_hash):
+        if not governance.claim_source(cap_hash, "capture"):
             if governance.is_source_analyzed(cap_hash):mark_capture_processed(capture_id)
             return []
         event_bus.publish(

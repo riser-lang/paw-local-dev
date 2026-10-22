@@ -58,6 +58,11 @@ evolution_engine = EvolutionEngine()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from backend.core.startup_trace import event as trace_startup
+    try:
+        from backend.core.log_setup import ensure_file_logging
+        ensure_file_logging()
+    except Exception:
+        pass
     trace_startup('lifespan_migration')
     # Startup: widen legacy CHECK constraints so project merges can be proposed
     # and committed (backs up workspace.db first; no-op once migrated).

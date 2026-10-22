@@ -217,6 +217,39 @@ jobs:
         run: |
           python scripts/scan_secrets_leak.py --scan-dir . --secret-value "${{ secrets.AGY_CREDENTIAL }}"
 
+      - name: Collect Scan Diagnostics (redacted)
+        id: collect_scan
+        if: failure()
+        shell: pwsh
+        run: |
+          chcp 65001
+          $out = 'scan_diagnostics'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $data = Join-Path $env:LOCALAPPDATA 'PAW'
+          if (Test-Path (Join-Path $data 'logs')) { Copy-Item (Join-Path $data 'logs') (Join-Path $out 'logs') -Recurse -Force }
+          foreach ($name in @('scan_checkpoint.json', 'workspace.db')) {
+            $p = Join-Path $data $name
+            if (Test-Path $p) { Copy-Item $p (Join-Path $out $name) -Force }
+          }
+          $mirror = Join-Path $env:TEMP 'paw-scan-diagnostics'
+          if (Test-Path $mirror) { Copy-Item $mirror (Join-Path $out 'mirror') -Recurse -Force }
+          # A frozen build may redirect TEMP into its own extraction directory;
+          # take any application log the job can still see.
+          New-Item -ItemType Directory -Force -Path (Join-Path $out 'stray-logs') | Out-Null
+          Get-ChildItem -Path $env:TEMP -Recurse -Filter 'paw-desktop.log' -ErrorAction SilentlyContinue |
+            Copy-Item -Destination (Join-Path $out 'stray-logs') -Force
+          Get-ChildItem -Recurse $out | Select-Object FullName, Length | Format-Table -AutoSize
+          python scripts/check_scan_diagnostics.py --dir $out
+
+      - name: Upload Scan Diagnostics
+        if: failure() && steps.collect_scan.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-diagnostics-${{ matrix.block }}-attempt-${{ github.run_attempt }}
+          path: scan_diagnostics/
+          if-no-files-found: ignore
+          retention-days: 10
+
       - name: Upload Block Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
