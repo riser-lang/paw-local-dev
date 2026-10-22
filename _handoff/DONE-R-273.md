@@ -94,8 +94,14 @@ rc2 满负载逐次：34.9 / 56.1 / 56.5 / 37.4 / 31.1 / 38.2 / 41.5 / 52.4 / 56
 
 ## 7. 检查结果
 
-- `python -m pytest tests/unit -q`：256 passed
+- `python -m pytest tests/unit -q`：257 passed
 - `python tests/paw_lint.py`：lint clean
-- push / PR 完整流水线与标签运行号见审核回复。
+- 第一次提交 `e1dc3db` 的 PR 完整流水线**第一次运行 RED**：`B4-01` 报
+  `Scanner did not reach completed within 40s (last state=completed)`。根因是本轮给
+  `claim_source()` 加了 `pipeline` 参数后，它“该版本已被分析过”的分支会用
+  `release_source(pipeline=...)` 写一条 `candidates_created` 为空的记录，也就是把
+  owner 刚写好的 `complete` 覆盖成 `failed`，完成屏障因此永远不算完成。修法是这条
+  分支只释放 claim、不写记录（`9d31f19`），并补一条测试固定住原记录不变。
+- 修好后的最终提交 `9d31f19`：push 与 PR 完整流水线、单测、安装包构建的运行号与结果见审核回复。
 
 执行者进度：R-273，分支 `deepseek/R-273-scan-stall`；把 phase2 三处无上限等待全部加上限并加诊断与失败 artifact；本地 40 次安装版 + 60 次开发态未复现停顿，已给出等待链复现证据；停下原因：等待合并后再打 v2.5.0-rc4。
