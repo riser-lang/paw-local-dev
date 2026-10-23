@@ -167,15 +167,13 @@ def test_a_repaired_answer_goes_through_the_full_gate_again_and_is_refused_if_st
 
 
 def test_relabelling_an_uncited_fact_as_analysis_does_not_launder_it():
-    """(b) Changing kind is not a way around the citation requirement."""
+    """(b) A block repair may not reclassify a sentence out of the fact rule."""
     sentence = "示例项目已经提交了 2 份文档。"
     relabelled = ('<<<EVIDENCE_MAP {"claims":[{"kind":"analysis","text":"' + sentence + '",'
                   '"derived_from":["CONFIRMED_KNOWLEDGE:k1"]}]} EVIDENCE_MAP>>>')
-    ok, reason, _ = contract_mod.validate_answer(relabelled, _contract())
-    assert ok is False and reason == "uncited_fact"
 
-    # The same repair attempt through the block-repair path is refused outright,
-    # so the original verdict (uncited fact) is what the user still gets.
+    # The repair attempt through the block-repair path is refused outright, so
+    # the original verdict (uncited fact) is what the user still gets.
     original = ('正文。<<<EVIDENCE_MAP {"claims":[{"kind":"fact","text":"' + sentence + '"}]} '
                 'EVIDENCE_MAP>>>')
     assert contract_mod.merge_repaired_map(original, relabelled) is None

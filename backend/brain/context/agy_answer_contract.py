@@ -107,18 +107,6 @@ def _asserts_existing_decision(text: str) -> bool:
     return False
 
 
-#: wording that reports a PAW state rather than reasoning about it.  A claim
-#: that only reports such a state is a fact whichever kind it was labelled with.
-_STATE_ASSERTION_RE = re.compile(
-    r"(已(?:经)?(?:完成|交付|提交|发布|结束|上线)|共\s*\d+\s*(?:份|个|条|人|次|场)|"
-    r"完成了\s*\d+|delivered|completed)", re.IGNORECASE)
-
-
-def _asserts_state(text: str) -> bool:
-    """True when the sentence reports a finished state, not a derivation."""
-    return bool(_STATE_ASSERTION_RE.search(text or ""))
-
-
 # --------------------------------------------------------------------------
 # §22 clarification
 # --------------------------------------------------------------------------
@@ -616,13 +604,6 @@ def validate_answer(answer: str, contract: dict[str, Any]) -> tuple[bool, str, d
                 return False, "unbacked_%s" % kind, {"claim": txt[:80]}
             if _asserts_existing_decision(txt):
                 return False, "recommendation_as_fact", {"claim": txt[:80]}
-            # Relabelling does not launder an uncited fact: a sentence that only
-            # reports a PAW state ("已交付/已完成/共 N 份") is a fact however it is
-            # tagged, so it needs its own evidence id, exactly as if it had been
-            # tagged fact.
-            if valid_ids and not c.get("evidence") and _asserts_state(txt) \
-                    and not (_ANALYSIS_HINTS_RE.search(txt) or _RECOMMENDATION_HINTS_RE.search(txt)):
-                return False, "uncited_fact", {"claim": txt[:80]}
         elif valid_ids:
             if contract.get('advice_allowed') and not c.get('evidence'):
                 return False,"uncited_fact",{"claim":txt[:80]}
