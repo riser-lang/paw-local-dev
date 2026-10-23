@@ -107,6 +107,18 @@ def _asserts_existing_decision(text: str) -> bool:
     return False
 
 
+#: wording that reports a PAW state rather than reasoning about it.  A claim
+#: that only reports such a state is a fact whichever kind it was labelled with.
+_STATE_ASSERTION_RE = re.compile(
+    r"(已(?:经)?(?:完成|交付|提交|发布|结束|上线)|共\s*\d+\s*(?:份|个|条|人|次|场)|"
+    r"完成了\s*\d+|delivered|completed)", re.IGNORECASE)
+
+
+def _asserts_state(text: str) -> bool:
+    """True when the sentence reports a finished state, not a derivation."""
+    return bool(_STATE_ASSERTION_RE.search(text or ""))
+
+
 # --------------------------------------------------------------------------
 # §22 clarification
 # --------------------------------------------------------------------------
@@ -361,14 +373,15 @@ def answer_format_header(contract: dict[str, Any]) -> str:
         "2. 每一句都要按它的真实性质打 kind，打错会被判为事实错误：\n"
         "   - 工作台里已有的事实陈述 → kind=fact，用 evidence 指证据 id。\n"
         "   - 由事实推导出的判断（意味着/落后/风险）→ kind=analysis，用 derived_from。\n"
-        "   - 让用户去做的事（把…作为…、建议、应当、优先、推进、校准、下一步）\n"
+        "   - 让用户去做的事（把…作为…、建议、应当、优先、推进、下一步）\n"
         "     → kind=recommendation，用 derived_from。**即使是基于事实也很确定，\n"
         "     只要句子在让人做事，就不是 fact。**\n"
-        "   例：「P1 已完成 3 场访谈。」→ fact；「把 P2 的访谈纪要作为校准依据。」\n"
-        "   → recommendation；「P2 的进度落后于计划。」→ analysis。\n"
+        "   例：「示例项目已经提交了 2 份文档。」→ fact；"
+        "「把 A 阶段的记录作为下一版依据。」\n"
+        "   → recommendation；「A 阶段的进度比计划慢。」→ analysis。\n"
         "3. 分析/建议句里不能写「已确认/已确定/已正式批准」这类既成事实说法：\n"
-        "   ✗「P2 的校准范围已确定，基准是 2026-10-25。」\n"
-        "   ✓「P2 的校准范围还没有定，建议把基准定在 2026-10-25。」\n"
+        "   ✗「示例项目的交付范围已确定，日期定在某月某日。」\n"
+        "   ✓「示例项目的交付范围还没有定，建议先把日期定下来。」\n"
         "   工作台没有确认过的事，只能写成建议、判断或待确认。\n"
         "4. 一句话里既有事实又有建议时，拆成两条 claims：事实那条 kind=fact 带 evidence，\n"
         "   建议那条 kind=recommendation 带 derived_from，不要合成一条标成 recommendation。\n"
@@ -441,6 +454,20 @@ def merge_repaired_map(answer_text: str, repair_text: str) -> Optional[str]:
         return None
     if not isinstance(parsed, dict):
         return None
+    # A repair may correct the block, not reclassify the answer: relabelling a
+    # sentence that was an uncited fact as "analysis" must not get it through.
+    original = extract_evidence_map(answer_text or "")[1] or {}
+    original_facts = {str(c.get("text") or "").strip()
+                      for c in (original.get("claims") or [])
+                      if isinstance(c, dict) and _claim_kind(c) == "fact"
+                      and not (c.get("evidence") or [])}
+    for claim in parsed.get("claims") or []:
+        if not isinstance(claim, dict):
+            continue
+        text = str(claim.get("text") or "").strip()
+        if text in original_facts and _claim_kind(claim) in DERIVED_KINDS \
+                and not (claim.get("evidence") or []):
+            return None
     return (body.rstrip() + "\n\n" + EVIDENCE_MAP_OPEN + " " + inner.strip() + " "
             + EVIDENCE_MAP_CLOSE)
 
@@ -589,6 +616,13 @@ def validate_answer(answer: str, contract: dict[str, Any]) -> tuple[bool, str, d
                 return False, "unbacked_%s" % kind, {"claim": txt[:80]}
             if _asserts_existing_decision(txt):
                 return False, "recommendation_as_fact", {"claim": txt[:80]}
+            # Relabelling does not launder an uncited fact: a sentence that only
+            # reports a PAW state ("已交付/已完成/共 N 份") is a fact however it is
+            # tagged, so it needs its own evidence id, exactly as if it had been
+            # tagged fact.
+            if valid_ids and not c.get("evidence") and _asserts_state(txt) \
+                    and not (_ANALYSIS_HINTS_RE.search(txt) or _RECOMMENDATION_HINTS_RE.search(txt)):
+                return False, "uncited_fact", {"claim": txt[:80]}
         elif valid_ids:
             if contract.get('advice_allowed') and not c.get('evidence'):
                 return False,"uncited_fact",{"claim":txt[:80]}

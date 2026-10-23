@@ -47,10 +47,25 @@ def test_the_format_and_tagging_rules_are_the_first_thing_in_the_prompt():
     header = contract_mod.answer_format_header(_contract())
     assert contract_mod.EVIDENCE_MAP_OPEN in header
     assert "kind=fact" in header and "kind=recommendation" in header
-    # Both failing shapes get a worked example.
-    assert "把 P2 的访谈纪要作为校准依据" in header
+    # Both failing shapes get a worked example, in generic terms only.
+    assert "示例项目" in header and "A 阶段" in header
     assert "已确定" in header and "还没有定" in header
     assert len(header) < 1400, "the header has to stay cheap enough to send every turn"
+
+
+def test_the_examples_do_not_come_from_the_exam_or_the_acceptance_corpus():
+    """The prompt must not teach from the graded material (reviewer rule).
+
+    Examples that match the exam corpus or the acceptance samples would both look
+    like training on the test and risk being copied into a judge's answer.
+    """
+    header = contract_mod.answer_format_header(_contract())
+    repaired = contract_mod.build_map_repair_prompt(
+        _contract(), "示例正文。", "missing_evidence_map", {})
+    for text in (header, repaired, "".join(facade._RETRY_REPAIR.values())):
+        for term in ("青苗", "星火", "导师计划", "人才盘点", "年度预算", "九宫格",
+                     "2026-10-25", "校准", "访谈", "P1", "P2"):
+            assert term not in text, f"corpus-flavoured term in a prompt: {term}"
 
 
 def test_render_prompt_puts_the_header_before_the_detail_rules():
@@ -128,9 +143,58 @@ def test_an_unclosed_marker_in_the_prose_does_not_swallow_the_repaired_block():
     assert ok, reason
 
 
-def test_the_header_asks_for_splitting_a_mixed_sentence():
-    header = contract_mod.answer_format_header(_contract())
-    assert "拆成两条" in header
+def test_a_repaired_answer_goes_through_the_full_gate_again_and_is_refused_if_still_wrong():
+    """(a) A repaired block is only a proposal: validate_answer decides again.
+
+    Two independent repairs are shown to be refused for two different reasons,
+    so "repaired" can never be read as "accepted".
+    """
+    prose = "示例项目已经提交了 2 份文档。"
+
+    # 1. the repair cites an id that does not exist in this turn
+    bad_ref = ('<<<EVIDENCE_MAP {"claims":[{"kind":"fact","text":"示例项目已经提交了 2 份文档。",'
+               '"evidence":["CONFIRMED_KNOWLEDGE:nope"]}]} EVIDENCE_MAP>>>')
+    merged = contract_mod.merge_repaired_map(prose, bad_ref)
+    ok, reason, _ = contract_mod.validate_answer(merged, _contract())
+    assert ok is False and reason.startswith("invalid_evidence_ref")
+
+    # 2. the repair leaves the fact without any citation
+    uncited = ('<<<EVIDENCE_MAP {"claims":[{"kind":"fact","text":"示例项目已经提交了 2 份文档。"}]} '
+               'EVIDENCE_MAP>>>')
+    merged = contract_mod.merge_repaired_map(prose, uncited)
+    ok, reason, _ = contract_mod.validate_answer(merged, _contract())
+    assert ok is False and reason in ("uncited_fact", "uncited_paw_claim")
+
+
+def test_relabelling_an_uncited_fact_as_analysis_does_not_launder_it():
+    """(b) Changing kind is not a way around the citation requirement."""
+    sentence = "示例项目已经提交了 2 份文档。"
+    relabelled = ('<<<EVIDENCE_MAP {"claims":[{"kind":"analysis","text":"' + sentence + '",'
+                  '"derived_from":["CONFIRMED_KNOWLEDGE:k1"]}]} EVIDENCE_MAP>>>')
+    ok, reason, _ = contract_mod.validate_answer(relabelled, _contract())
+    assert ok is False and reason == "uncited_fact"
+
+    # The same repair attempt through the block-repair path is refused outright,
+    # so the original verdict (uncited fact) is what the user still gets.
+    original = ('正文。<<<EVIDENCE_MAP {"claims":[{"kind":"fact","text":"' + sentence + '"}]} '
+                'EVIDENCE_MAP>>>')
+    assert contract_mod.merge_repaired_map(original, relabelled) is None
+
+    # A genuine analysis of the same sentence (with a reasoning marker) passes.
+    genuine = ('<<<EVIDENCE_MAP {"claims":[{"kind":"analysis",'
+               '"text":"可以看出，示例项目已经提交了 2 份文档，说明进度正常。",'
+               '"derived_from":["CONFIRMED_KNOWLEDGE:k1"]}]} EVIDENCE_MAP>>>')
+    ok, reason, _ = contract_mod.validate_answer(genuine, _contract())
+    assert ok, reason
+
+
+def test_a_repaired_answer_goes_through_the_gate_and_is_accepted_when_correct():
+    prose = "示例项目已经提交了 2 份文档。"
+    good = ('<<<EVIDENCE_MAP {"claims":[{"kind":"fact","text":"示例项目已经提交了 2 份文档。",'
+            '"evidence":["CONFIRMED_KNOWLEDGE:k1"]}]} EVIDENCE_MAP>>>')
+    merged = contract_mod.merge_repaired_map(prose, good)
+    ok, reason, _ = contract_mod.validate_answer(merged, _contract())
+    assert ok, reason
 
 
 def test_retry_text_shows_the_whole_offending_sentence_and_what_to_write_instead():

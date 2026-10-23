@@ -888,7 +888,7 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         }
 
     # 1.9 Topic switch: the message names other projects than the one this session
-    # was about (e.g. "介绍一下人才盘点这个项目" after asking about PAW), so the
+    # was about (e.g. "介绍一下另一个项目" after asking about PAW), so the
     # remembered project and "这个" must not carry over.
     if session.get("project_id"):
         named = _matching_projects(req.message)
