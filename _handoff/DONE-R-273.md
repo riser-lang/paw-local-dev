@@ -142,3 +142,17 @@ rc2 满负载逐次：34.9 / 56.1 / 56.5 / 37.4 / 31.1 / 38.2 / 41.5 / 52.4 / 56
 1. 提示词最前面新增「先看这两条」：机器块模板（含三种 kind 的完整示例）、句子归类示例（fact / analysis / recommendation），以及「分析/建议句不能写已确认/已确定/已批准」的正反例（✗「P2 的校准范围已确定」/ ✓「还没有定，建议把基准定在 2026-10-25」）。
 2. 重试分两类：**块级问题**（缺块、JSON 坏、引用 id 不存在、缺 evidence/derived_from）改为「只重生成机器块」的轻量请求——正文逐字保留，合并后仍跑同一套 `validate_answer`；**句子级问题**（recommendation_as_fact、unsolicited_advice、draft_stated_as_confirmed）仍然整篇重答，因为句子本身要改。重试文本现在引用**完整**的争议句（原来截断到 50 字），并明确写出该怎么改。
 3. 这样也顺带压缩了慢回答：块级修复比整篇重答快，减少「第一次超时 + 重试超时」越过 60 秒窗口的概率。
+
+### 8.4 唯一一次真实模型运行（run 39953630173，提交 `926af01`）的结果与逐题根因
+
+| 题目 | 结果 | 第一次 | 重试 | 根因 |
+|---|---|---|---|---|
+| PM-U1-03 | FAIL | `recommendation_as_fact` | `recommendation_as_fact` | 建议句写成既成事实 |
+| PM-U4-01 | FAIL | `missing_evidence_map` | `missing_evidence_map` | 模型只输出了 `<<<EVIDENCE_MAP`、**没有闭合标记**；修复块被接在残留的开标记后面，正则从旧标记吃到新结尾，JSON 仍解析失败（`answer_chars` 5362 → 9778，证明块确实追加了） |
+| PM-S1-03 | FAIL | `recommendation_as_fact` | `recommendation_as_fact` | 同 PM-U1-03 |
+| X01/X02/X18/X19/X20 | PASS | ok | — | X20 上一轮两次 `recommendation_as_fact`，本轮第一次即通过 → 提示词改动生效 |
+
+据此又补了两处（提交 `ed27ab0` 与随后一次提交）：
+
+- 提示词新增第 4 条：一句话里既有事实又有建议时必须拆成两条 claims（fact 带 evidence、recommendation 带 derived_from），这是 `recommendation_as_fact` 反复出现的那类句子。
+- `merge_repaired_map` 在拼接前**删除正文里残留的 `<<<EVIDENCE_MAP` / `EVIDENCE_MAP>>>` 标记**，并把「只回了一个裸 JSON 对象」也当作块接受（仍要过同一套校验）——直接对应 PM-U4-01 的证据。

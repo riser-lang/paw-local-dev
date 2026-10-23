@@ -414,8 +414,16 @@ def build_map_repair_prompt(contract: dict[str, Any], answer_text: str,
 
 
 def merge_repaired_map(answer_text: str, repair_text: str) -> Optional[str]:
-    """Return the original prose with the repaired block attached, or None."""
+    """Return the original prose with the repaired block attached, or None.
+
+    A model that emitted the opening marker without the closing one leaves the
+    whole answer unparseable; that stray marker is removed before the repaired
+    block is appended, otherwise the new block would sit inside the old broken
+    one and fail the same way.
+    """
     body, _ = extract_evidence_map(answer_text or "")
+    stray = re.compile(re.escape(EVIDENCE_MAP_OPEN) + r"|" + re.escape(EVIDENCE_MAP_CLOSE))
+    body = stray.sub("", body or "").rstrip()
     match = _EVIDENCE_MAP_RE.search(repair_text or "")
     inner = match.group("body").strip() if match else ""
     if not inner:

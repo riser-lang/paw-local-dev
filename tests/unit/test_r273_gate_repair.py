@@ -116,6 +116,18 @@ def test_a_bare_json_repair_is_accepted_and_still_validated():
     assert ok, reason
 
 
+def test_an_unclosed_marker_in_the_prose_does_not_swallow_the_repaired_block():
+    """The real PM-U4-01 shape: `<<<EVIDENCE_MAP` with no closing marker."""
+    prose = "## 1. 综合判断\n\n建议先把口径统一。<<<EVIDENCE_MAP {\"claims\":["
+    repaired = ('<<<EVIDENCE_MAP {"claims":[{"kind":"recommendation","text":"建议先把口径统一。",'
+                '"derived_from":["CONFIRMED_KNOWLEDGE:k1"]}]} EVIDENCE_MAP>>>')
+    merged = contract_mod.merge_repaired_map(prose, repaired)
+    assert merged is not None
+    assert merged.count("<" + "<<" + "EVIDENCE_MAP") == 1, "the stray opening marker must be removed"
+    ok, reason, _ = contract_mod.validate_answer(merged, _contract())
+    assert ok, reason
+
+
 def test_the_header_asks_for_splitting_a_mixed_sentence():
     header = contract_mod.answer_format_header(_contract())
     assert "拆成两条" in header
