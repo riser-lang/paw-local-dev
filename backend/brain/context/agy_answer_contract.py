@@ -335,6 +335,132 @@ def answer_structure(contract: dict[str, Any]) -> str:
     return _answer_structure(contract)
 
 
+def _evidence_map_template() -> str:
+    return (
+        EVIDENCE_MAP_OPEN + " "
+        '{"claims":['
+        '{"kind":"fact","text":"...","evidence":["LAYER:item_id"]},'
+        '{"kind":"analysis","text":"...","derived_from":["LAYER:item_id"]},'
+        '{"kind":"recommendation","text":"...","derived_from":["LAYER:item_id"]}'
+        "]} " + EVIDENCE_MAP_CLOSE
+    )
+
+
+def answer_format_header(contract: dict[str, Any]) -> str:
+    """The two rules the model gets wrong most often, at the very top.
+
+    Measured on the real-model runs: answers that lost the machine block, and
+    sentences that ask the user to do something but were tagged ``fact``.  The
+    detailed rules still appear later in the prompt; this block is the recency
+    and prominence the two failures needed, with worked examples.
+    """
+    return (
+        "【先看这两条（不满足就一定被拒）】\n"
+        "1. 正文写完后，最后必须单独有一行机器块，不能省略、不能改写格式：\n"
+        f"   {_evidence_map_template()}\n"
+        "2. 每一句都要按它的真实性质打 kind，打错会被判为事实错误：\n"
+        "   - 工作台里已有的事实陈述 → kind=fact，用 evidence 指证据 id。\n"
+        "   - 由事实推导出的判断（意味着/落后/风险）→ kind=analysis，用 derived_from。\n"
+        "   - 让用户去做的事（把…作为…、建议、应当、优先、推进、下一步）\n"
+        "     → kind=recommendation，用 derived_from。**即使是基于事实也很确定，\n"
+        "     只要句子在让人做事，就不是 fact。**\n"
+        "   例：「示例项目已经提交了 2 份文档。」→ fact；"
+        "「把 A 阶段的记录作为下一版依据。」\n"
+        "   → recommendation；「A 阶段的进度比计划慢。」→ analysis。\n"
+        "3. 分析/建议句里不能写「已确认/已确定/已正式批准」这类既成事实说法：\n"
+        "   ✗「示例项目的交付范围已确定，日期定在某月某日。」\n"
+        "   ✓「示例项目的交付范围还没有定，建议先把日期定下来。」\n"
+        "   工作台没有确认过的事，只能写成建议、判断或待确认。\n"
+        "4. 一句话里既有事实又有建议时，拆成两条 claims：事实那条 kind=fact 带 evidence，\n"
+        "   建议那条 kind=recommendation 带 derived_from，不要合成一条标成 recommendation。\n"
+        "证据 id 只能取下面「可用的证据 id」里出现过的值。"
+    )
+
+
+def build_map_repair_prompt(contract: dict[str, Any], answer_text: str,
+                            gate_reason: str, gate_detail: Any) -> str:
+    """Ask only for a corrected machine block, for the answer already written.
+
+    The prose is kept verbatim; only the block is regenerated, and the result is
+    validated by the same gate.  This is a ranking/tagging repair, not a second
+    chance at the prose: it cannot make an unbacked claim pass, it can only
+    describe the same sentences correctly.
+    """
+    claim = ""
+    if isinstance(gate_detail, dict) and gate_detail.get("claim"):
+        claim = "\n上次被判定的句子：" + str(gate_detail["claim"])[:160]
+    reason_hint = {
+        "missing_evidence_map": "上次完全没有证据映射块。",
+        "malformed_evidence_map": "上次的证据映射块不是合法 JSON。",
+        "recommendation_as_fact": "上次把一句建议/判断写成了既成事实（已确认/已确定/已批准）。"
+                                  "合法做法：去掉「已…确认/确定/批准」这类措辞，"
+                                  "改写成「建议/可以/我的判断」，并保留 derived_from；不要改正文以外的格式。",
+        "unbacked_analysis": "上次的分析句缺少 derived_from。",
+        "unbacked_recommendation": "上次的建议句缺少 derived_from。",
+        "uncited_paw_claim": "上次有事实句没有对应的 evidence。",
+        "invalid_evidence_ref": "上次引用了不存在的 evidence id。",
+    }.get(str(gate_reason).split(":", 1)[0], "上次的证据映射块没有通过校验。")
+    ids = "\n".join("- %s" % e["evidence_id"] for e in contract["evidence_index"])
+    return (
+        "下面是 PAW 助手已经写好的回答正文。正文不要改动，也不要重新回答。\n"
+        "我只缺机器可读的证据映射块。请只输出下面这一行的内容，不要输出任何正文、"
+        "解释或代码围栏：\n"
+        f"{_evidence_map_template()}\n\n"
+        f"上次的问题：{reason_hint}{claim}\n"
+        "规则：claims 里每一条 text 必须逐字取自下面的正文；fact 用 evidence，"
+        "analysis/recommendation 用 derived_from；只能使用这些 id：\n"
+        f"{ids}\n\n"
+        "--- 正文开始 ---\n" + answer_text.strip() + "\n--- 正文结束 ---"
+    )
+
+
+def merge_repaired_map(answer_text: str, repair_text: str) -> Optional[str]:
+    """Return the original prose with the repaired block attached, or None.
+
+    A model that emitted the opening marker without the closing one leaves the
+    whole answer unparseable; that stray marker is removed before the repaired
+    block is appended, otherwise the new block would sit inside the old broken
+    one and fail the same way.
+    """
+    body, _ = extract_evidence_map(answer_text or "")
+    stray = re.compile(re.escape(EVIDENCE_MAP_OPEN) + r"|" + re.escape(EVIDENCE_MAP_CLOSE))
+    body = stray.sub("", body or "").rstrip()
+    match = _EVIDENCE_MAP_RE.search(repair_text or "")
+    inner = match.group("body").strip() if match else ""
+    if not inner:
+        # A model that answered with a bare JSON object still gave us the block;
+        # accept it rather than throwing the repair away.
+        raw = (repair_text or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start >= 0 and end > start:
+            inner = raw[start:end + 1]
+    if not inner:
+        return None
+    try:
+        parsed = json.loads(inner)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    # A repair may correct the block, not reclassify the answer: relabelling a
+    # sentence that was an uncited fact as "analysis" must not get it through.
+    original = extract_evidence_map(answer_text or "")[1] or {}
+    original_facts = {str(c.get("text") or "").strip()
+                      for c in (original.get("claims") or [])
+                      if isinstance(c, dict) and _claim_kind(c) == "fact"
+                      and not (c.get("evidence") or [])}
+    for claim in parsed.get("claims") or []:
+        if not isinstance(claim, dict):
+            continue
+        text = str(claim.get("text") or "").strip()
+        if text in original_facts and _claim_kind(claim) in DERIVED_KINDS \
+                and not (claim.get("evidence") or []):
+            return None
+    return (body.rstrip() + "\n\n" + EVIDENCE_MAP_OPEN + " " + inner.strip() + " "
+            + EVIDENCE_MAP_CLOSE)
+
+
+
 def render_prompt(contract: dict[str, Any], *, message: str,
                   conv: Optional[Any] = None) -> str:
     """Render the model prompt for this contract."""
@@ -347,6 +473,8 @@ def render_prompt(contract: dict[str, Any], *, message: str,
         "项目数据/指标、项目关系、已批准决策、待办、证据与来源版本；原始来源只在最后兜底。\n"
         "你不是「文件清单检索器」，也不是只会复述正式知识的审计机器人："
         "先直接回答用户真正的问题，再给支撑事实，最后才说明不确定处。")
+
+    parts.append("\n" + answer_format_header(contract))
 
     parts.append("\n" + _answer_structure(contract))
 

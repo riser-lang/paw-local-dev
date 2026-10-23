@@ -59,6 +59,13 @@ from backend.core.startup_trace import event as trace_startup
 trace_startup('runtime_import')
 import uvicorn
 from backend.core.config import settings
+# The desktop build has no console, so scan/cruise diagnostics are also written
+# to %LOCALAPPDATA%\PAW\logs with the secret-redaction filter installed.
+try:
+    from backend.core.log_setup import ensure_file_logging
+    ensure_file_logging()
+except Exception:
+    pass
 from backend.tray.tray_app import PawSystemTray
 trace_startup('runtime_loaded')
 

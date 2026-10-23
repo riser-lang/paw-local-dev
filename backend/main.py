@@ -58,6 +58,11 @@ evolution_engine = EvolutionEngine()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from backend.core.startup_trace import event as trace_startup
+    try:
+        from backend.core.log_setup import ensure_file_logging
+        ensure_file_logging()
+    except Exception:
+        pass
     trace_startup('lifespan_migration')
     # Startup: widen legacy CHECK constraints so project merges can be proposed
     # and committed (backs up workspace.db first; no-op once migrated).
@@ -149,6 +154,32 @@ app.add_middleware(
 
 
 # ── R5: Local Request Security & Anti-CSRF Middleware ────────────────────────
+
+# Scan-related requests are traced in the diagnostics log: when a client sees a
+# connection reset, this says whether the request reached the server at all and
+# whether a response was produced.
+_TRACED_PATH_PREFIXES = ("/v1/local/scanner", "/v1/local/system/shutdown")
+
+
+@app.middleware("http")
+async def scan_request_trace(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith(_TRACED_PATH_PREFIXES):
+        return await call_next(request)
+    import time as _time
+    from backend.runtime_core.scan_diagnostics import note as _trace
+    started = _time.monotonic()
+    _trace("http_request", method=request.method, path=path)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        _trace("http_error", method=request.method, path=path,
+               error=type(exc).__name__, seconds=round(_time.monotonic() - started, 3))
+        raise
+    _trace("http_response", method=request.method, path=path, status=response.status_code,
+           seconds=round(_time.monotonic() - started, 3))
+    return response
+
 
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):

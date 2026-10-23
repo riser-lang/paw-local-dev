@@ -29,6 +29,11 @@ SCAN_CALL_TIMEOUT_SECONDS = 20.0
 SCAN_MAX_TOKENS = 1500
 SCAN_MAX_RETRIES = 2
 SCAN_RETRY_STATUSES = (429, 503)
+# A retry multiplies the timeout: three attempts at 20 s plus backoff is 63 s,
+# which is longer than the whole acceptance window for one scan.  The budget
+# stops retrying once the time is spent, so one unavailable call can never hold
+# a file version (and the pipeline that owns it) for over a minute.
+SCAN_RETRY_BUDGET_SECONDS = 25.0
 
 # Background model work (cruise project analysis, advice, convergence, reread)
 # answers with a small JSON draft exactly like the scan path: no chain-of-thought
@@ -425,6 +430,7 @@ class UniversalOpenAIProvider(BaseProvider):
         prompt_chars = len(body["messages"][0]["content"]) + len(prompt)
         last_row = None
         attempt = 0
+        call_started = time.perf_counter()
 
         while True:
             attempt += 1
@@ -489,6 +495,13 @@ class UniversalOpenAIProvider(BaseProvider):
                         continue
 
                     if resp.status_code in SCAN_RETRY_STATUSES and retries_left > 0:
+                        spent = time.perf_counter() - call_started
+                        if spent >= SCAN_RETRY_BUDGET_SECONDS:
+                            logger.warning(
+                                "AI Provider retry budget spent (%.1fs, HTTP %s); using the rule engine",
+                                spent, resp.status_code)
+                            model_calls.mark_fallback(last_row)
+                            break
                         retries_left -= 1
                         time.sleep(backoff)
                         backoff *= 2.0
@@ -694,6 +707,12 @@ class UniversalOpenAIProvider(BaseProvider):
                             call_row["search_param_fallback"] = True
                         continue
                     if resp.status_code in SCAN_RETRY_STATUSES and retries_left > 0:
+                        spent = time.perf_counter() - call_started
+                        if spent >= SCAN_RETRY_BUDGET_SECONDS:
+                            logger.warning(
+                                "AI Provider retry budget spent (%.1fs, HTTP %s); giving up on this call",
+                                spent, resp.status_code)
+                            break
                         retries_left -= 1
                         time.sleep(retry_backoff)
                         retry_backoff *= 2.0

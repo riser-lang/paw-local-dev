@@ -8,7 +8,9 @@ Enforces:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+import time
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List, Optional
 
 from backend.governance.service import governance
 from backend.provider.adapter import get_active_provider
@@ -17,6 +19,22 @@ from backend.runtime_core.event_bus import EventType, event_bus
 from backend.workspace_api.repository import list_knowledge, list_projects
 
 logger = logging.getLogger("paw.planner")
+
+SLOW_STEP_SECONDS = 2.0
+
+
+@contextmanager
+def _timed(label: str, file_hash: str = "") -> Iterator[None]:
+    """Log one step when it takes long enough to matter for a 40 s scan window."""
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        elapsed = time.monotonic() - started
+        if elapsed >= SLOW_STEP_SECONDS:
+            from backend.runtime_core.scan_diagnostics import note
+            note("planner_step_slow", what=label, seconds=round(elapsed, 1),
+                 hash=(file_hash or "")[:12])
 
 
 class AgentPlanner:
@@ -31,11 +49,14 @@ class AgentPlanner:
     ) -> List[str]:
         """Core planning execution when ANALYSIS_READY event occurs."""
         from backend.pm.storage import ingest_evidence
-        ingest_evidence(evidence, file_hash)
+        with _timed("ingest_evidence", file_hash):
+            ingest_evidence(evidence, file_hash)
         from backend.pm.receipts import register as register_receipt
-        register_receipt(evidence,file_hash)
+        with _timed("register_receipt", file_hash):
+            register_receipt(evidence, file_hash)
         from backend.pm.versions import process_source
-        process_source(file_hash)
+        with _timed("process_source", file_hash):
+            process_source(file_hash)
         display_name = evidence.get("display_name") or "untitled"
         text_blocks = evidence.get("text_blocks", [])
         combined_text = " ".join(b.get("text", "") for b in text_blocks[:15])
@@ -47,12 +68,14 @@ class AgentPlanner:
         # current version.
         from backend.pm import storage
         from backend.pm import versions as pm_versions
-        with storage.connect() as conn:
-            replaced = pm_versions.is_replaced(conn, file_hash)
+        with _timed("version_is_replaced", file_hash):
+            with storage.connect() as conn:
+                replaced = pm_versions.is_replaced(conn, file_hash)
         if replaced:
             # Retire only this file's own proposals: the newer versions are the
             # current ones and their proposals stay.
-            pm_versions.withdraw_candidates_for([file_hash])
+            with _timed("withdraw_replaced", file_hash):
+                pm_versions.withdraw_candidates_for([file_hash])
             logger.info(f"{display_name} 已被更新版本替代，本次不生成提议")
             return []
 
@@ -138,8 +161,9 @@ class AgentPlanner:
         # built (phase 2 analyses files in parallel).  Re-check at the end: a batch
         # that belongs to a replaced version must not stay in the review list,
         # where it can never be accepted.
-        with storage.connect() as conn:
-            replaced_now = pm_versions.is_replaced(conn, file_hash)
+        with _timed("version_recheck", file_hash):
+            with storage.connect() as conn:
+                replaced_now = pm_versions.is_replaced(conn, file_hash)
         if replaced_now and created_candidate_ids:
             pm_versions.withdraw_candidates_for([file_hash])
             logger.info(f"{display_name} 在分析期间被更新版本替代，撤回本次 {len(created_candidate_ids)} 条提议")

@@ -231,7 +231,7 @@ def test_cruise_reports_per_file_and_per_call_timings(tmp_path, monkeypatch):
         return ["cand-1"]
 
     monkeypatch.setattr(scheduler, "process_source_file", fake_process)
-    monkeypatch.setattr(scheduler_module.governance, "claim_source", lambda _h: True)
+    monkeypatch.setattr(scheduler_module.governance, "claim_source", lambda _h, *a, **k: True)
     monkeypatch.setattr(scheduler_module.governance, "release_source", lambda *a, **k: None)
     monkeypatch.setattr(scheduler_module, "run_project_convergence", lambda **k: {"pending": [], "auto_merged": []})
     monkeypatch.setattr(scheduler_module.project_analyzer, "analyze_projects", lambda **k: [])
@@ -273,7 +273,7 @@ def test_project_drafts_are_produced_inside_the_cruise(tmp_path, monkeypatch):
         return [{"name": "青苗计划"}]
 
     monkeypatch.setattr(scheduler, "process_source_file", lambda path, file_hash: ["cand-1"])
-    monkeypatch.setattr(scheduler_module.governance, "claim_source", lambda _h: True)
+    monkeypatch.setattr(scheduler_module.governance, "claim_source", lambda _h, *a, **k: True)
     monkeypatch.setattr(scheduler_module.governance, "release_source", lambda *a, **k: None)
     monkeypatch.setattr(scheduler_module, "run_project_convergence", lambda **k: {"pending": [], "auto_merged": []})
     monkeypatch.setattr(scheduler_module.project_analyzer, "analyze_projects", fake_analyze)
