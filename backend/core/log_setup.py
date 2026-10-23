@@ -24,7 +24,11 @@ from backend.core.config import LOGS_DIR
 from backend.core.security import SensitiveDataLogFilter
 
 LOG_FILE_NAME = "paw-desktop.log"
-MIRROR_DIR_NAME = "paw-scan-diagnostics"
+# Not "paw..." prefixed on purpose: the acceptance cleanup deletes %TEMP%\PAW*
+# between cases, which used to wipe the mirrored copy along with the case that
+# had just failed.
+MIRROR_DIR_NAME = "scan-diagnostics"
+MIRROR_CRASH_FILE = "fatal-crash.log"
 MAX_BYTES = 8 * 1024 * 1024
 BACKUP_COUNT = 3
 MIRROR_MAX_BYTES = 4 * 1024 * 1024
@@ -73,6 +77,22 @@ def _handler(path: Path, max_bytes: int, backup_count: int) -> RotatingFileHandl
     return handler
 
 
+def _enable_fatal_dump() -> None:
+    """Let a fatal crash (segfault/abort) leave a stack in the mirrored copy.
+
+    A connection reset with no Python traceback can mean the process died in
+    native code; without this the artifact would only show the last log line.
+    """
+    try:
+        import faulthandler
+        directory = mirror_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        stream = open(directory / MIRROR_CRASH_FILE, "a", encoding="utf-8", errors="replace")
+        faulthandler.enable(file=stream, all_threads=True)
+    except Exception:
+        pass
+
+
 def ensure_file_logging() -> Path:
     """Attach the rotating file handlers once and return the log path.
 
@@ -101,6 +121,7 @@ def ensure_file_logging() -> Path:
                                       MIRROR_MAX_BYTES, MIRROR_BACKUP_COUNT)
             for name in ATTACHED_LOGGERS:
                 logging.getLogger(name).addHandler(mirror_handler)
+            _enable_fatal_dump()
         except Exception as exc:
             logging.getLogger("paw.scan.diag").warning(
                 "scan diagnostics mirror unavailable: %s", type(exc).__name__)

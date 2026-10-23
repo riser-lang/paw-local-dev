@@ -114,3 +114,31 @@ rc2 满负载逐次：34.9 / 56.1 / 56.5 / 37.4 / 31.1 / 38.2 / 41.5 / 52.4 / 56
   属 GitHub 侧状态滞后；另一次运行（dispatch）里同一个 block 正常 complete。
 
 执行者进度：R-273，分支 `deepseek/R-273-scan-stall`；把 phase2 三处无上限等待全部加上限并加诊断与失败 artifact；本地 40 次安装版 + 60 次开发态未复现停顿，已给出等待链复现证据；停下原因：等待合并后再打 v2.5.0-rc4。
+
+## 8. 审核后的补充（本轮）
+
+### 8.1 B4-01 的 `WinError 10054`：现有证据能确定到哪一步
+
+- 失败 run 的 artifact（`scan-diagnostics-B4-attempt-1`）**只保住了最后一例的日志**：验收清理规则里有 `%TEMP%\PAW*`（`scripts/clean_env.py` 的 `get_check_locations`），而我原来的镜像目录叫 `paw-scan-diagnostics`，每个用例开始时正好被删掉。这是本轮的 artifact 设计缺陷，不是应用缺陷。
+- 现有证据能确定的：第一例的时间线是 安装 → `/app` 200 → `POST /v1/local/settings` 200 → **之后没有任何 `scanner/start` 的服务端痕迹**，9.2 秒后直接开始下一例安装；该例报告里的错误是客户端 `httpx.ReadError: [WinError 10054]`。也就是说失败发生在 `POST /v1/local/scanner/start` 这一次请求上。
+- 现有证据**不能**确定的是：应用是崩溃了、还是 uvicorn 关掉了连接。因为那一例的应用日志已经被清理。
+- 已修（让下一次能直接回答）：镜像目录改名为 `%LOCALAPPDATA%\Temp\scan-diagnostics`（不再匹配 `PAW*`，用例之间不再被删）；新增 `fatal-crash.log`（`faulthandler.enable`，原生崩溃会写栈）；新增扫描相关请求的服务端 trace（`http_request` / `http_response` / `http_error`，含方法、路径、状态、耗时），这样连接被重置时能看出请求是否到达服务端、是否产生了响应。
+
+### 8.2 真实模型 RED 的逐题拒绝原因（run 39827152574 的 `grounding.gate_diagnostics`）
+
+| 题目 | 第一次 | 重试 | 结论 |
+|---|---|---|---|
+| PM-U1-03 | ok | — | PASS |
+| PM-U4-01 | 未运行（客户端 60 秒超时） | — | 第一次调用没在窗口内返回 |
+| PM-S1-03 | `recommendation_as_fact` | `recommendation_as_fact` | 建议句写成既成事实 |
+| X01 / X02 / X18 | ok | — | PASS |
+| X19 | `missing_evidence_map` | ok | 缺机器块，重试恢复 |
+| X20 | `recommendation_as_fact` | `recommendation_as_fact` | 建议句写成既成事实 |
+
+即：本轮两题失败都不是缺机器块，而是「把建议/判断写成已确认/已确定」；`missing_evidence_map` 只出现一次且重试恢复。
+
+### 8.3 修法（不放宽判定）
+
+1. 提示词最前面新增「先看这两条」：机器块模板（含三种 kind 的完整示例）、句子归类示例（fact / analysis / recommendation），以及「分析/建议句不能写已确认/已确定/已批准」的正反例（✗「P2 的校准范围已确定」/ ✓「还没有定，建议把基准定在 2026-10-25」）。
+2. 重试分两类：**块级问题**（缺块、JSON 坏、引用 id 不存在、缺 evidence/derived_from）改为「只重生成机器块」的轻量请求——正文逐字保留，合并后仍跑同一套 `validate_answer`；**句子级问题**（recommendation_as_fact、unsolicited_advice、draft_stated_as_confirmed）仍然整篇重答，因为句子本身要改。重试文本现在引用**完整**的争议句（原来截断到 50 字），并明确写出该怎么改。
+3. 这样也顺带压缩了慢回答：块级修复比整篇重答快，减少「第一次超时 + 重试超时」越过 60 秒窗口的概率。
