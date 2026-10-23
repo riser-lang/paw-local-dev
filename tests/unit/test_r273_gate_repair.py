@@ -107,6 +107,20 @@ def test_a_repair_without_a_block_is_not_glued_onto_the_answer():
     assert contract_mod.merge_repaired_map("正文。", "只有一句话，没有机器块") is None
 
 
+def test_a_bare_json_repair_is_accepted_and_still_validated():
+    prose = "P1 已完成 3 场访谈。"
+    bare = '{"claims":[{"kind":"fact","text":"P1 已完成 3 场访谈。","evidence":["CONFIRMED_KNOWLEDGE:k1"]}]}'
+    merged = contract_mod.merge_repaired_map(prose, bare)
+    assert merged is not None and contract_mod.EVIDENCE_MAP_OPEN in merged
+    ok, reason, _ = contract_mod.validate_answer(merged, _contract())
+    assert ok, reason
+
+
+def test_the_header_asks_for_splitting_a_mixed_sentence():
+    header = contract_mod.answer_format_header(_contract())
+    assert "拆成两条" in header
+
+
 def test_retry_text_shows_the_whole_offending_sentence_and_what_to_write_instead():
     claim = "建议把 P2 阶段的访谈纪要作为下一步校准依据，并在 2026-10-25 前完成校准"
     suffix = facade._build_retry_suffix("recommendation_as_fact", {"claim": claim}, _contract())

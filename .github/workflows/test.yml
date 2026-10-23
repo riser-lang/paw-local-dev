@@ -235,6 +235,12 @@ jobs:
           if (Test-Path $mirror) { Copy-Item $mirror (Join-Path $out 'mirror') -Recurse -Force }
           $old_mirror = Join-Path $env:TEMP 'paw-scan-diagnostics'
           if (Test-Path $old_mirror) { Copy-Item $old_mirror (Join-Path $out 'mirror-old') -Recurse -Force }
+          # An uninstall residue blocks the next case's clean check; name the file.
+          $install_dir = Join-Path $env:LOCALAPPDATA 'Programs\PAW Personal Work OS'
+          if (Test-Path $install_dir) {
+            Get-ChildItem -Force $install_dir | Select-Object Name, Length, LastWriteTime |
+              Out-File -FilePath (Join-Path $out 'install-dir-residue.txt') -Encoding utf8
+          }
           # A frozen build may redirect TEMP into its own extraction directory;
           # take any application log the job can still see.
           New-Item -ItemType Directory -Force -Path (Join-Path $out 'stray-logs') | Out-Null

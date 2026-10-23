@@ -370,6 +370,8 @@ def answer_format_header(contract: dict[str, Any]) -> str:
         "   ✗「P2 的校准范围已确定，基准是 2026-10-25。」\n"
         "   ✓「P2 的校准范围还没有定，建议把基准定在 2026-10-25。」\n"
         "   工作台没有确认过的事，只能写成建议、判断或待确认。\n"
+        "4. 一句话里既有事实又有建议时，拆成两条 claims：事实那条 kind=fact 带 evidence，\n"
+        "   建议那条 kind=recommendation 带 derived_from，不要合成一条标成 recommendation。\n"
         "证据 id 只能取下面「可用的证据 id」里出现过的值。"
     )
 
@@ -400,7 +402,8 @@ def build_map_repair_prompt(contract: dict[str, Any], answer_text: str,
     ids = "\n".join("- %s" % e["evidence_id"] for e in contract["evidence_index"])
     return (
         "下面是 PAW 助手已经写好的回答正文。正文不要改动，也不要重新回答。\n"
-        "我只缺机器可读的证据映射块。请只输出一行：\n"
+        "我只缺机器可读的证据映射块。请只输出下面这一行的内容，不要输出任何正文、"
+        "解释或代码围栏：\n"
         f"{_evidence_map_template()}\n\n"
         f"上次的问题：{reason_hint}{claim}\n"
         "规则：claims 里每一条 text 必须逐字取自下面的正文；fact 用 evidence，"
@@ -412,15 +415,26 @@ def build_map_repair_prompt(contract: dict[str, Any], answer_text: str,
 
 def merge_repaired_map(answer_text: str, repair_text: str) -> Optional[str]:
     """Return the original prose with the repaired block attached, or None."""
-    _, repaired = extract_evidence_map(repair_text or "")
-    if repaired is None:
-        return None
     body, _ = extract_evidence_map(answer_text or "")
     match = _EVIDENCE_MAP_RE.search(repair_text or "")
-    if not match:
+    inner = match.group("body").strip() if match else ""
+    if not inner:
+        # A model that answered with a bare JSON object still gave us the block;
+        # accept it rather than throwing the repair away.
+        raw = (repair_text or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start >= 0 and end > start:
+            inner = raw[start:end + 1]
+    if not inner:
         return None
-    return (body.rstrip() + "\n\n" + EVIDENCE_MAP_OPEN + " " + match.group("body").strip()
-            + " " + EVIDENCE_MAP_CLOSE)
+    try:
+        parsed = json.loads(inner)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return (body.rstrip() + "\n\n" + EVIDENCE_MAP_OPEN + " " + inner.strip() + " "
+            + EVIDENCE_MAP_CLOSE)
 
 
 
