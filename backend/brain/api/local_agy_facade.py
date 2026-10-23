@@ -105,6 +105,26 @@ def _conflict_preface(turn, text):
     return text
 
 
+def _include_mentioned_evidence_files(returned_sources, response_text, evidence_index,
+                                      context_items, *, grounded):
+    """Add only current-turn evidence files explicitly named in accepted prose."""
+    result = list(returned_sources or [])
+    if not grounded:
+        return result
+    evidence_ids = [
+        entry.get("evidence_id")
+        for entry in (evidence_index or [])
+        if isinstance(entry, dict) and entry.get("evidence_id")
+    ]
+    if not evidence_ids:
+        return result
+    from backend.pm import evidence_sources
+    for filename in evidence_sources.files_for_cited(context_items, evidence_ids):
+        if filename in response_text and filename not in result:
+            result.append(filename)
+    return result
+
+
 def _build_offline_retrieval_response(turn: Dict[str, Any]) -> str:
     """Format grounded evidence into structured retrieval display when no AI model is active."""
     contract = turn.get("contract") or {}
@@ -1383,6 +1403,13 @@ def send_chat_message(session_id: str, req: WebAgyMessageRequest):
         returned_sources = [e["title"] for e in turn["contract"].get("evidence_index", [])]
     # Original files are appended after the titles they belong to (never removed).
     returned_sources = list(dict.fromkeys([*returned_sources, *source_files]))
+    returned_sources = _include_mentioned_evidence_files(
+        returned_sources,
+        final_visible,
+        turn["contract"].get("evidence_index", []),
+        context_items,
+        grounded=grounded,
+    )
 
     return {
         "session_id": session_id,
